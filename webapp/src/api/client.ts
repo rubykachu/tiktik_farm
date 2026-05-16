@@ -44,6 +44,17 @@ export const Accounts = {
     api.post<Account>("/accounts", { username, display_name }).then(r => r.data),
   remove: (id: number) => api.delete(`/accounts/${id}`),
   importFromDisk: () => api.post<Account[]>("/accounts/import-from-disk").then(r => r.data),
+  importJson: (file: File, username: string, replace: boolean) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("username", username);
+    if (replace) fd.append("replace", "true");
+    return api
+      .post<Account>("/accounts/import-json", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then(r => r.data);
+  },
   update: (id: number, display_name: string) =>
     api.patch<Account>(`/accounts/${id}`, { display_name }).then(r => r.data),
 };

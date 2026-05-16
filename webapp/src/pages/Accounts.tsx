@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Trash2, RefreshCcw, LogIn, Download } from "lucide-react";
+import { Trash2, RefreshCcw, LogIn, Download, FileJson } from "lucide-react";
 import { Accounts } from "../api/client";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ImportJsonModal from "../components/ImportJsonModal";
 
 type DeleteTarget = { id: number; username: string } | null;
 
@@ -12,6 +13,7 @@ export default function AccountsPage() {
   const { data, isLoading } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
+  const [jsonModalOpen, setJsonModalOpen] = useState(false);
 
   const importMut = useMutation({
     mutationFn: Accounts.importFromDisk,
@@ -54,6 +56,13 @@ export default function AccountsPage() {
           >
             <Download size={16} />
             Import from disk
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => setJsonModalOpen(true)}
+          >
+            <FileJson size={16} />
+            Import JSON
           </button>
           <Link to="/login" className="btn-primary">
             <LogIn size={16} />
@@ -136,6 +145,11 @@ export default function AccountsPage() {
           </tbody>
         </table>
       </div>
+
+      <ImportJsonModal
+        open={jsonModalOpen}
+        onClose={() => setJsonModalOpen(false)}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}
