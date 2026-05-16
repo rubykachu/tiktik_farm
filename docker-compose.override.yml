@@ -1,0 +1,51 @@
+# Dev hot-reload overlay — Docker Compose auto-merges this with docker-compose.yml
+# when you run `docker compose` from this directory (default project files).
+#
+# Usage:
+#   docker compose up -d          # dev: Vite + uvicorn --reload + source mounts
+#   docker compose logs -f webapp api
+#
+# Production-like (no override — nginx static build, no reload):
+#   docker compose -f docker-compose.yml up --build -d
+#
+# To disable dev temporarily without -f: rename or remove this file.
+#
+# Scheduler: code mounts apply after `docker compose restart scheduler` (no auto-reload).
+
+services:
+  webapp:
+    image: node:20-alpine
+    build: !reset null
+    working_dir: /app
+    volumes:
+      - ./webapp:/app
+      - /app/node_modules
+    environment:
+      - VITE_DEV_API_PROXY=http://api:8000
+      - VITE_DEV_NOVNC_PROXY=http://novnc:6080
+    ports: !override
+      - "127.0.0.1:3000:5173"
+    command:
+      - sh
+      - -c
+      - |
+        npm ci 2>/dev/null || npm install
+        exec npm run dev -- --host 0.0.0.0 --port 5173
+
+  api:
+    volumes:
+      - ./api:/app/api
+    command:
+      - uvicorn
+      - api.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+
+  scheduler:
+    # Mounts only — restart container to pick up Python changes.
+    volumes:
+      - ./api:/app/api
+      - ./scheduler:/app/scheduler

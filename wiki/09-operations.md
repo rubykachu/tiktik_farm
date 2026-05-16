@@ -2,6 +2,27 @@
 
 [← Index](README.md) | [← 08-videos](08-videos.md)
 
+## Dev với `docker-compose.override.yml`
+
+File `docker-compose.override.yml` được Compose **tự merge** khi chạy lệnh mặc định trong thư mục `v2/` (cùng project với `docker-compose.yml`).
+
+| Lệnh | Ý nghĩa |
+|---|---|
+| `docker compose up -d` | **Dev**: Vite HMR (port host `3000` → container `5173`), API `uvicorn --reload`, mount source `webapp/` + `api/` |
+| `docker compose -f docker-compose.yml up --build -d` | **Prod-like**: không load override — nginx static webapp, không reload |
+
+Lần đầu dev webapp: container chạy `npm ci` / `npm install` vào volume ẩn `node_modules` (tránh ghi đè deps macOS).
+
+Sửa **scheduler**: mount code có sẵn nhưng **không** auto-reload — sau khi sửa `scheduler/` hoặc `api/` dùng chung:
+
+```bash
+docker compose restart scheduler
+```
+
+UI dev: http://127.0.0.1:3000 — Vite proxy `/api` → `api:8000`, `/novnc` + `/websockify` → `novnc:6080` (giống nginx prod).
+
+Chi tiết setup: [03-setup-docker](03-setup-docker.md).
+
 ## Bảo mật vận hành (Phase 1)
 
 - **Origin middleware**: `POST` / `PUT` / `PATCH` / `DELETE` phải có `Origin` hoặc `Referer` khớp `http://127.0.0.1:3000` hoặc `http://localhost:3000`. `curl` hoặc script automation phải gửi header tương ứng. GET/HEAD/OPTIONS không kiểm tra Origin (CORS vẫn giới hạn ở app).

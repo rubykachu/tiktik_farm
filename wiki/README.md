@@ -27,6 +27,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 | Lên lịch đăng video YouTube (1 lần) | [07-schedules](07-schedules.md) tab Single-shot |
 | Pipeline kênh YouTube → TikTok lặp lại | [07-schedules](07-schedules.md) tab Pipelines |
 | Xem lịch sử upload (pipeline) + filter | [08-videos](08-videos.md) |
+| Dev Docker hot-reload (override) | [09-operations](09-operations.md) § Dev với override |
 | Debug khi UI lỗi | [09-operations](09-operations.md) |
 | Hiểu vì sao có 4 fix tiktok.py | [10-known-bugs](10-known-bugs.md) |
 | Mở rộng SaaS | [11-roadmap](11-roadmap.md) |
