@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, Play as RunNow, Pencil, Trash2 } from "lucide-react";
 import { Pipelines, Pipeline } from "../api/pipelines";
 import ConfirmDialog from "./ConfirmDialog";
+import PipelineRunsExpand from "./PipelineRunsExpand";
 
 type Props = {
   onEdit?: (pipeline: Pipeline) => void;
@@ -34,6 +35,7 @@ export default function PipelinesTable({ onEdit }: Props) {
   });
 
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const toggleState = useMutation({
     mutationFn: (p: Pipeline) =>
@@ -127,60 +129,76 @@ export default function PipelinesTable({ onEdit }: Props) {
                 </td>
               </tr>
             )}
-            {data?.map((p) => (
-              <tr key={p.id} className="hover:bg-slate-50">
-                <td className="p-3 font-medium">{p.name}</td>
-                <td className="p-3 text-slate-600 max-w-xs truncate" title={p.channel_url}>
-                  {p.channel_url}
-                </td>
-                <td className="p-3 text-slate-600">{accountCount(p)}</td>
-                <td className="p-3 text-slate-600">{intervalLabel(p)}</td>
-                <td className="p-3 text-slate-600 text-xs">
-                  {new Date(p.next_fire_at).toLocaleString()}
-                </td>
-                <td className="p-3">
-                  <span className={"chip " + stateClass(p.state)}>{p.state}</span>
-                </td>
-                <td className="p-3 text-right space-x-2 whitespace-nowrap">
-                  <button
-                    className="text-xs text-slate-600 disabled:opacity-40"
-                    disabled={runNowDisabled.has(p.id)}
-                    onClick={() => runNowMut.mutate(p.id)}
-                    title="Run now"
-                  >
-                    <RunNow size={14} className="inline" /> Run now
-                  </button>
-                  <button
-                    className="text-xs text-slate-600"
-                    onClick={() => toggleState.mutate(p)}
-                  >
-                    {p.state === "active" ? (
-                      <>
-                        <Pause size={14} className="inline" /> Stop
-                      </>
-                    ) : (
-                      <>
-                        <Play size={14} className="inline" /> Resume
-                      </>
-                    )}
-                  </button>
-                  {onEdit && (
+            {data?.flatMap((p) => {
+              const rows = [
+                <tr
+                  key={p.id}
+                  className="hover:bg-slate-50 cursor-pointer"
+                  onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                >
+                  <td className="p-3 font-medium">{p.name}</td>
+                  <td className="p-3 text-slate-600 max-w-xs truncate" title={p.channel_url}>
+                    {p.channel_url}
+                  </td>
+                  <td className="p-3 text-slate-600">{accountCount(p)}</td>
+                  <td className="p-3 text-slate-600">{intervalLabel(p)}</td>
+                  <td className="p-3 text-slate-600 text-xs">
+                    {new Date(p.next_fire_at).toLocaleString()}
+                  </td>
+                  <td className="p-3">
+                    <span className={"chip " + stateClass(p.state)}>{p.state}</span>
+                  </td>
+                  <td className="p-3 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <button
-                      className="text-xs text-brand-600"
-                      onClick={() => onEdit(p)}
+                      className="text-xs text-slate-600 disabled:opacity-40"
+                      disabled={runNowDisabled.has(p.id)}
+                      onClick={() => runNowMut.mutate(p.id)}
+                      title="Run now"
                     >
-                      <Pencil size={14} className="inline" /> Edit
+                      <RunNow size={14} className="inline" /> Run now
                     </button>
-                  )}
-                  <button
-                    className="text-xs text-red-600"
-                    onClick={() => setDeleteTarget(p)}
-                  >
-                    <Trash2 size={14} className="inline" /> Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+                    <button
+                      className="text-xs text-slate-600"
+                      onClick={() => toggleState.mutate(p)}
+                    >
+                      {p.state === "active" ? (
+                        <>
+                          <Pause size={14} className="inline" /> Stop
+                        </>
+                      ) : (
+                        <>
+                          <Play size={14} className="inline" /> Resume
+                        </>
+                      )}
+                    </button>
+                    {onEdit && (
+                      <button
+                        className="text-xs text-brand-600"
+                        onClick={() => onEdit(p)}
+                      >
+                        <Pencil size={14} className="inline" /> Edit
+                      </button>
+                    )}
+                    <button
+                      className="text-xs text-red-600"
+                      onClick={() => setDeleteTarget(p)}
+                    >
+                      <Trash2 size={14} className="inline" /> Delete
+                    </button>
+                  </td>
+                </tr>,
+              ];
+              if (expandedId === p.id) {
+                rows.push(
+                  <tr key={`${p.id}-expand`}>
+                    <td colSpan={7} className="p-0">
+                      <PipelineRunsExpand pipelineId={p.id} />
+                    </td>
+                  </tr>
+                );
+              }
+              return rows;
+            })}
           </tbody>
         </table>
       </div>

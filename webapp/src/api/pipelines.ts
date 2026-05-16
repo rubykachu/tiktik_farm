@@ -57,6 +57,36 @@ export interface PipelineUpdate {
   clear_bot_token?: boolean;
 }
 
+export interface PipelineRunItem {
+  id: number;
+  pipeline_id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  trigger_reason: string;
+  pulled_count: number;
+  uploaded_count: number;
+  skipped_dup_count: number;
+  skipped_exhausted_count: number;
+  failed_count: number;
+  summary_text: string;
+  error_text: string | null;
+}
+
+export interface VideoUploadItem {
+  id: number;
+  account_id: number;
+  youtube_video_id: string;
+  youtube_url: string;
+  youtube_title: string | null;
+  tiktok_video_id: string | null;
+  tiktok_url: string | null;
+  rendered_caption: string | null;
+  status: string;
+  attempt_count: number;
+  error_text: string | null;
+  created_at: string | null;
+}
+
 export const Pipelines = {
   list: () => api.get<Pipeline[]>("/pipelines").then((r) => r.data),
   get: (id: number) => api.get<Pipeline>(`/pipelines/${id}`).then((r) => r.data),
@@ -67,4 +97,8 @@ export const Pipelines = {
   remove: (id: number) => api.delete(`/pipelines/${id}`),
   runNow: (id: number) =>
     api.post<{ ok: boolean; message: string }>(`/pipelines/${id}/run-now`).then((r) => r.data),
+  listRuns: (pipelineId: number, page = 1) =>
+    api.get<PipelineRunItem[]>(`/pipelines/${pipelineId}/runs`, { params: { page } }).then((r) => r.data),
+  listRunVideos: (pipelineId: number, runId: number) =>
+    api.get<VideoUploadItem[]>(`/pipelines/${pipelineId}/runs/${runId}/videos`).then((r) => r.data),
 };

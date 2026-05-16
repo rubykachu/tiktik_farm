@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
-from api.models import Account, ChannelPipeline
+from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate
 
 
@@ -237,3 +237,85 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
     session.add(row)
     session.commit()
     return {"ok": True, "message": "Đã xếp lịch chạy ngay"}
+
+
+# ─── Drill-down: runs + videos ──────────────────────────────────────────────
+
+
+@router.get("/{pipeline_id}/runs")
+def list_runs(
+    pipeline_id: int,
+    page: int = 1,
+    size: int = 50,
+    session: Session = Depends(get_session),
+):
+    pipeline = session.get(ChannelPipeline, pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="pipeline not found")
+
+    offset = (page - 1) * size
+    rows = session.exec(
+        select(PipelineRun)
+        .where(PipelineRun.pipeline_id == pipeline_id)
+        .order_by(PipelineRun.started_at.desc())  # type: ignore[union-attr]
+        .offset(offset)
+        .limit(size)
+    ).all()
+
+    return [
+        {
+            "id": r.id,
+            "pipeline_id": r.pipeline_id,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            "trigger_reason": r.trigger_reason,
+            "pulled_count": r.pulled_count,
+            "uploaded_count": r.uploaded_count,
+            "skipped_dup_count": r.skipped_dup_count,
+            "skipped_exhausted_count": r.skipped_exhausted_count,
+            "failed_count": r.failed_count,
+            "summary_text": r.summary_text,
+            "error_text": r.error_text,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/{pipeline_id}/runs/{run_id}/videos")
+def list_run_videos(
+    pipeline_id: int,
+    run_id: int,
+    session: Session = Depends(get_session),
+):
+    pipeline = session.get(ChannelPipeline, pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="pipeline not found")
+
+    run = session.get(PipelineRun, run_id)
+    if not run or run.pipeline_id != pipeline_id:
+        raise HTTPException(status_code=404, detail="run not found")
+
+    rows = session.exec(
+        select(VideoUpload)
+        .where(VideoUpload.run_id == run_id)
+        .order_by(VideoUpload.created_at.desc())  # type: ignore[union-attr]
+    ).all()
+
+    return [
+        {
+            "id": v.id,
+            "account_id": v.account_id,
+            "youtube_video_id": v.youtube_video_id,
+            "youtube_url": v.youtube_url,
+            "youtube_title": v.youtube_title,
+            "tiktok_video_id": v.tiktok_video_id,
+            "tiktok_url": v.tiktok_url,
+            "rendered_caption": v.rendered_caption,
+            "status": v.status,
+            "attempt_count": v.attempt_count,
+            "error_text": v.error_text,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for r in rows
+        for v in [r]
+    ]
