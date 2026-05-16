@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.db import init_db
+from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import accounts, login, schedules, uploads, videos
 from tiktok_uploader.Config import Config
 
@@ -34,10 +35,14 @@ def create_app() -> FastAPI:
     )
 
     # Local-first tool — webapp and api are on the same compose network and
-    # the api port binds to 127.0.0.1. CORS is permissive for dev convenience.
+    # the api port binds to 127.0.0.1. Tighten CORS to the localhost origins
+    # the webapp actually serves from; OriginCheckMiddleware additionally
+    # rejects mutating requests whose Origin/Referer is outside the whitelist
+    # (defense-in-depth against CSRF from a malicious tab).
+    app.add_middleware(OriginCheckMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=sorted(ALLOWED_ORIGINS),
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=False,
