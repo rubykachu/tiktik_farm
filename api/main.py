@@ -12,12 +12,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.db import init_db
+from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import accounts, login, schedules, uploads, videos
 from tiktok_uploader.Config import Config
 
 
 def create_app() -> FastAPI:
+    install_global_scrub_filter()
+
     # Load config.txt the same way cli.py does, so paths stay consistent when
     # the api container cwd is /app.
     config_path = os.getenv("TIKTOK_CONFIG_PATH", "./config.txt")
