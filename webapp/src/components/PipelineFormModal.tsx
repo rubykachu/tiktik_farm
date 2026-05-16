@@ -596,12 +596,29 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </div>
             <div>
               <label className="label">Chat ID</label>
-              <input
-                className="input"
-                {...register("telegram_chat_id")}
-                placeholder="-1001234567890"
-                inputMode="numeric"
-              />
+              <div className="flex gap-2 items-stretch">
+                <input
+                  className="input flex-1 min-w-0"
+                  {...register("telegram_chat_id")}
+                  placeholder="-1001234567890"
+                  inputMode="numeric"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                  disabled={
+                    telegramTestSending ||
+                    clearBotToken ||
+                    !String(telegramBotToken || "").trim() ||
+                    !String(telegramChatId || "").trim()
+                  }
+                  onClick={() => {
+                    void handleTelegramTest();
+                  }}
+                >
+                  {telegramTestSending ? "Đang gửi..." : "Gửi tin test"}
+                </button>
+              </div>
               <p className="text-xs text-slate-500 mt-1">
                 Chỉ nhập số (kênh riêng thường dạng{" "}
                 <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot
@@ -645,23 +662,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {telegramDetectErr && (
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
-            <div>
-              <button
-                type="button"
-                className="btn-secondary text-sm"
-                disabled={
-                  telegramTestSending ||
-                  clearBotToken ||
-                  !String(telegramBotToken || "").trim() ||
-                  !String(telegramChatId || "").trim()
-                }
-                onClick={() => {
-                  void handleTelegramTest();
-                }}
-              >
-                {telegramTestSending ? "Đang gửi..." : "Gửi tin test"}
-              </button>
-            </div>
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">
                 <input type="checkbox" {...register("clear_bot_token")} />
