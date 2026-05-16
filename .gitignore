@@ -156,5 +156,4 @@ node_modules/
 .vscode/
 
 # Misc
-tests/
 tiktok_uploader/tiktok-signature/command.txt
