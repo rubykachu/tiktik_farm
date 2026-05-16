@@ -64,18 +64,24 @@ export default function PipelinesTable({ onEdit }: Props) {
 
   const [runNowDisabled, setRunNowDisabled] = useState<Set<number>>(new Set());
 
+  function startRunNowCooldown(id: number) {
+    setRunNowDisabled((prev) => new Set([...prev, id]));
+    setTimeout(() => {
+      setRunNowDisabled((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 5000);
+  }
+
   const runNowMut = useMutation({
     mutationFn: (id: number) => Pipelines.runNow(id),
-    onSuccess: (_data, id) => {
+    onMutate: (id) => {
+      startRunNowCooldown(id);
+    },
+    onSuccess: () => {
       alert("Đã xếp lịch chạy ngay");
-      setRunNowDisabled((prev) => new Set([...prev, id]));
-      setTimeout(() => {
-        setRunNowDisabled((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      }, 5000);
       qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
     onError: (e: any) => {

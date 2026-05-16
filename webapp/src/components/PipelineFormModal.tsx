@@ -7,45 +7,53 @@ import { X, ChevronDown, ChevronRight } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 
-const schema = z
-  .object({
-    name: z.string().min(1, "Bắt buộc").max(128),
-    channel_url: z.string().min(1, "Bắt buộc").url("URL không hợp lệ"),
-    interval_value: z.coerce.number().int().min(1),
-    interval_unit: z.enum(["minutes", "hours", "days"]),
-    first_fire_at: z.string().min(1, "Bắt buộc"),
-    fetch_count: z.coerce.number().int().min(1).max(20),
-    max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
-    caption_template: z.string().min(1, "Bắt buộc").max(2200),
-    allow_comment: z.coerce.number().min(0).max(1),
-    allow_duet: z.coerce.number().min(0).max(1),
-    allow_stitch: z.coerce.number().min(0).max(1),
-    visibility_type: z.coerce.number().min(0).max(1),
-    account_ids: z.array(z.number()).min(1, "Chọn ít nhất 1 account"),
-    telegram_bot_token: z.string().optional().default(""),
-    telegram_chat_id: z.string().optional().default(""),
-    clear_bot_token: z.boolean().optional().default(false),
-  })
-  .refine(
-    (d) => {
-      if (d.interval_unit === "minutes" && d.interval_value < 2) return false;
-      return true;
-    },
-    { message: "Interval ≥ 2 khi chọn minutes", path: ["interval_value"] }
-  )
-  .refine(
-    (d) => {
-      const botSet = !!d.telegram_bot_token;
-      const chatSet = !!d.telegram_chat_id;
-      return botSet === chatSet;
-    },
-    {
-      message: "Phải nhập cả 2 hoặc bỏ trống cả 2",
-      path: ["telegram_bot_token"],
-    }
-  );
+const baseSchema = z.object({
+  name: z.string().min(1, "Bắt buộc").max(128),
+  channel_url: z.string().min(1, "Bắt buộc").url("URL không hợp lệ"),
+  interval_value: z.coerce.number().int().min(1),
+  interval_unit: z.enum(["minutes", "hours", "days"]),
+  first_fire_at: z.string().min(1, "Bắt buộc"),
+  fetch_count: z.coerce.number().int().min(1).max(20),
+  max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
+  caption_template: z.string().min(1, "Bắt buộc").max(2200),
+  allow_comment: z.coerce.number().min(0).max(1),
+  allow_duet: z.coerce.number().min(0).max(1),
+  allow_stitch: z.coerce.number().min(0).max(1),
+  visibility_type: z.coerce.number().min(0).max(1),
+  account_ids: z.array(z.number()).min(1, "Chọn ít nhất 1 account"),
+  telegram_bot_token: z.string().optional().default(""),
+  telegram_chat_id: z.string().optional().default(""),
+  clear_bot_token: z.boolean().optional().default(false),
+});
 
-type FormData = z.infer<typeof schema>;
+function buildSchema(existingTokenSet: boolean) {
+  return baseSchema
+    .refine(
+      (d) => {
+        if (d.interval_unit === "minutes" && d.interval_value < 2) return false;
+        return true;
+      },
+      { message: "Interval ≥ 2 khi chọn minutes", path: ["interval_value"] }
+    )
+    .refine(
+      (d) => {
+        if (d.clear_bot_token) {
+          // Clearing token → chat_id must also be empty
+          return !d.telegram_chat_id;
+        }
+        // Token is "present" if user typed one OR existing token is kept
+        const botPresent = !!d.telegram_bot_token || (existingTokenSet && !d.clear_bot_token);
+        const chatSet = !!d.telegram_chat_id;
+        return botPresent === chatSet;
+      },
+      {
+        message: "Phải nhập cả 2 hoặc bỏ trống cả 2",
+        path: ["telegram_bot_token"],
+      }
+    );
+}
+
+type FormData = z.infer<typeof baseSchema>;
 
 type Props = {
   open: boolean;
@@ -75,6 +83,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   });
 
   const validAccounts = accounts?.filter((a) => a.has_valid_session) ?? [];
+
+  const schema = buildSchema(pipeline?.telegram_bot_token_set ?? false);
 
   const {
     register,

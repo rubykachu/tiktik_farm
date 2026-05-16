@@ -98,25 +98,34 @@ def claim_due_pipeline() -> Optional[tuple[ChannelPipeline, str]]:
                 (ChannelPipeline.next_fire_at <= now)
                 | (ChannelPipeline.run_now_requested_at.isnot(None)),  # type: ignore[union-attr]
             )
-            .order_by(ChannelPipeline.next_fire_at)
+            .order_by(
+                # Prioritize manual triggers over scheduled
+                ChannelPipeline.run_now_requested_at.is_(None),  # type: ignore[union-attr]
+                ChannelPipeline.next_fire_at,
+            )
             .limit(1)
         ).first()
 
         if not row:
             return None
 
-        # CAS: set lock_until to claim
+        # CAS: re-verify all eligibility conditions to prevent stale claim
         new_lock = now + LOCK_TTL
         result = s.exec(
             update(ChannelPipeline)
             .where(
                 ChannelPipeline.id == row.id,
+                ChannelPipeline.state == "active",
                 (ChannelPipeline.lock_until.is_(None))  # type: ignore[union-attr]
                 | (ChannelPipeline.lock_until < now),  # type: ignore[operator]
+                (ChannelPipeline.next_fire_at <= now)
+                | (ChannelPipeline.run_now_requested_at.isnot(None)),  # type: ignore[union-attr]
             )
             .values(lock_until=new_lock, updated_at=now)
+            .execution_options(synchronize_session=False)
         )
         s.commit()
+        s.expire_all()
 
         if result.rowcount != 1:  # type: ignore[union-attr]
             return None  # lost the race
@@ -548,8 +557,32 @@ def pipeline_tick() -> bool:
         run = run_pipeline(pipeline, trigger_reason)
         advance_next_fire(pipeline, trigger_reason)
         send_telegram_summary(pipeline, run)
+    except Exception:
+        log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)
+        _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
+        advance_next_fire(pipeline, trigger_reason)
     finally:
         hb.stop()
         release_lock(pipeline.id)  # type: ignore[arg-type]
 
     return True
+
+
+def _emergency_finalize(pipeline_id: int) -> None:
+    """Finalize any in-flight PipelineRun for this pipeline so it isn't orphaned."""
+    try:
+        with Session(_api_db.engine) as s:
+            stale = s.exec(
+                select(PipelineRun).where(
+                    PipelineRun.pipeline_id == pipeline_id,
+                    PipelineRun.finished_at.is_(None),  # type: ignore[union-attr]
+                )
+            ).all()
+            for run in stale:
+                run.finished_at = now_utc()
+                if not run.error_text:
+                    run.error_text = "worker_crash"
+                s.add(run)
+            s.commit()
+    except Exception:
+        log.exception("_emergency_finalize itself failed for pipeline %d", pipeline_id)

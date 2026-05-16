@@ -52,6 +52,10 @@ export default function VideosPage() {
       qc.invalidateQueries({ queryKey: ["videos"] });
       setDeleteTarget(null);
     },
+    onError: (e: any) => {
+      alert(`Xóa lỗi: ${e?.response?.data?.detail || e.message}`);
+      setDeleteTarget(null);
+    },
   });
 
   return (
@@ -138,6 +142,7 @@ export default function VideosPage() {
                   <a
                     href={v.youtube_url}
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
                     title={v.youtube_title || v.youtube_url}
                   >
@@ -146,7 +151,7 @@ export default function VideosPage() {
                 </td>
                 <td className="p-3">
                   {v.tiktok_url ? (
-                    <a href={v.tiktok_url} target="_blank" className="text-blue-600 hover:underline">
+                    <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                       View
                     </a>
                   ) : (

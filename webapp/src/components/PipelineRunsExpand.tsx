@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
@@ -37,13 +37,13 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
           <tr key={v.id} className="border-t border-slate-50">
             <td className="p-1">{v.account_id}</td>
             <td className="p-1 max-w-[120px] truncate">
-              <a href={v.youtube_url} target="_blank" className="text-blue-600 hover:underline">
+              <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 {v.youtube_title || v.youtube_video_id}
               </a>
             </td>
             <td className="p-1">
               {v.tiktok_url ? (
-                <a href={v.tiktok_url} target="_blank" className="text-blue-600 hover:underline">
+                <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                   {v.tiktok_video_id || "link"}
                 </a>
               ) : (
@@ -96,9 +96,8 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
         </thead>
         <tbody>
           {data.map((r) => (
-            <>
+            <Fragment key={r.id}>
               <tr
-                key={r.id}
                 className="cursor-pointer hover:bg-slate-100"
                 onClick={() => setExpandedRun(expandedRun === r.id ? null : r.id)}
               >
@@ -129,13 +128,13 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
                 </td>
               </tr>
               {expandedRun === r.id && (
-                <tr key={`${r.id}-expand`}>
+                <tr>
                   <td colSpan={7} className="p-0">
                     <VideosList pipelineId={pipelineId} runId={r.id} />
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>
