@@ -332,3 +332,51 @@ class PipelineRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------- telegram (web UI helpers) --------------------------------------
+
+
+class TelegramDetectChatsRequest(BaseModel):
+    bot_token: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+
+class TelegramDetectedChat(BaseModel):
+    id: int
+    title: str
+    type: str
+
+
+class TelegramDetectChatsResponse(BaseModel):
+    chats: List[TelegramDetectedChat]
+
+
+class TelegramTestRequest(BaseModel):
+    bot_token: str = Field(min_length=1)
+    chat_id: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat_id_shape(cls, v: str) -> str:
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("chat_id format invalid")
+        return v
+
+
+class TelegramTestResponse(BaseModel):
+    ok: bool
+    message: str

@@ -100,3 +100,39 @@ class TestNetworkError:
 
         result = send_message(VALID_TOKEN, VALID_CHAT, "msg")
         assert result is False
+
+
+class TestDetectChatsHelpers:
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_uses_no_redirect_client(self, mock_cls):
+        from api.services.telegram import detect_chats
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        def post_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            if "getUpdates" in str(url):
+                mock_resp.json.return_value = {"ok": True, "result": []}
+            return mock_resp
+
+        mock_client.post.side_effect = post_side_effect
+        detect_chats(VALID_TOKEN)
+        mock_cls.assert_called_with(follow_redirects=False, timeout=15)
+
+    def test_chats_from_updates_skips_private_keeps_supergroup(self):
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [
+                {"message": {"chat": {"id": 1, "type": "private", "first_name": "A"}}},
+                {
+                    "my_chat_member": {
+                        "chat": {"id": -50, "title": "G", "type": "supergroup"}
+                    }
+                },
+            ]
+        )
+        assert rows == [{"id": -50, "title": "G", "type": "supergroup"}]

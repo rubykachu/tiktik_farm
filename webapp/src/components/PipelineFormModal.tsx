@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
+import { Telegram, TelegramChatItem } from "../api/telegram";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Bắt buộc").max(128),
@@ -97,6 +98,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     watch,
     reset,
     setError,
+    getValues,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -262,10 +264,34 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   }
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [telegramDetectLoading, setTelegramDetectLoading] = useState(false);
+  const [telegramDetectChats, setTelegramDetectChats] = useState<TelegramChatItem[] | null>(
+    null
+  );
+  const [telegramDetectErr, setTelegramDetectErr] = useState<string | null>(null);
+  const [telegramTestSending, setTelegramTestSending] = useState(false);
+
   const selectedAccounts = watch("account_ids");
   const clearBotToken = watch("clear_bot_token");
   const intervalValue = watch("interval_value");
   const intervalUnit = watch("interval_unit");
+  const telegramBotToken = watch("telegram_bot_token");
+  const telegramChatId = watch("telegram_chat_id");
+
+  useEffect(() => {
+    if (!open) {
+      setTelegramDetectChats(null);
+      setTelegramDetectErr(null);
+      setTelegramDetectLoading(false);
+      setTelegramTestSending(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTelegramDetectChats(null);
+    setTelegramDetectErr(null);
+  }, [telegramBotToken, open]);
 
   const repeatHint = useMemo(() => {
     const n = Number(intervalValue);
@@ -274,6 +300,43 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       intervalUnit === "minutes" ? "phút" : intervalUnit === "days" ? "ngày" : "giờ";
     return `Pipeline chạy lặp mỗi ${n} ${unitVi} kể từ mốc này, liên tục khi trạng thái active (scheduler tăng next fire sau mỗi lần chạy).`;
   }, [intervalValue, intervalUnit]);
+
+  async function handleTelegramDetect() {
+    const token = getValues("telegram_bot_token").trim();
+    if (!token || clearBotToken) return;
+    setTelegramDetectLoading(true);
+    setTelegramDetectErr(null);
+    try {
+      const data = await Telegram.detectChats(token);
+      setTelegramDetectChats(data.chats);
+    } catch (e: unknown) {
+      setTelegramDetectChats(null);
+      const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      setTelegramDetectErr(
+        typeof d === "string" ? d : "Không phát hiện được. Thử lại sau."
+      );
+    } finally {
+      setTelegramDetectLoading(false);
+    }
+  }
+
+  async function handleTelegramTest() {
+    const token = getValues("telegram_bot_token").trim();
+    const chatId = getValues("telegram_chat_id").trim();
+    if (!token || !chatId || clearBotToken) return;
+    setTelegramTestSending(true);
+    try {
+      const r = await Telegram.sendTest(token, chatId);
+      window.alert(r.message);
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
+      window.alert(typeof d === "string" ? d : "Gửi tin test thất bại.");
+    } finally {
+      setTelegramTestSending(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -503,17 +566,33 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </legend>
             <div>
               <label className="label">Bot token</label>
-              <input
-                type="password"
-                className="input"
-                {...register("telegram_bot_token")}
-                placeholder={
-                  isEdit && pipeline?.telegram_bot_token_set
-                    ? "••• (đã cấu hình)"
-                    : "123456:ABC-DEF..."
-                }
-                disabled={clearBotToken}
-              />
+              <div className="flex gap-2 items-stretch">
+                <input
+                  type="password"
+                  className="input flex-1 min-w-0"
+                  {...register("telegram_bot_token")}
+                  placeholder={
+                    isEdit && pipeline?.telegram_bot_token_set
+                      ? "••• (đã cấu hình)"
+                      : "123456:ABC-DEF..."
+                  }
+                  disabled={clearBotToken}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                  disabled={
+                    clearBotToken ||
+                    telegramDetectLoading ||
+                    !String(telegramBotToken || "").trim()
+                  }
+                  onClick={() => {
+                    void handleTelegramDetect();
+                  }}
+                >
+                  {telegramDetectLoading ? "Đang tải..." : "Tự động phát hiện"}
+                </button>
+              </div>
             </div>
             <div>
               <label className="label">Chat ID</label>
@@ -526,15 +605,62 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="text-xs text-slate-500 mt-1">
                 Chỉ nhập số (kênh riêng thường dạng{" "}
                 <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot
-                làm admin kênh, gửi 1 tin trong kênh, rồi gọi{" "}
-                <code className="bg-slate-100 px-1 rounded">getUpdates</code> (hoặc
-                xóa webhook trước:{" "}
-                <code className="bg-slate-100 px-1 rounded">deleteWebhook</code>) để
-                lấy <code className="bg-slate-100 px-1 rounded">chat.id</code>.
+                làm admin kênh
               </p>
               {errors.telegram_chat_id && (
                 <p className="field-error">{errors.telegram_chat_id.message}</p>
               )}
+            </div>
+            {telegramDetectChats && telegramDetectChats.length > 0 && (
+              <div>
+                <label className="label">Chọn kênh phát hiện được</label>
+                <select
+                  className="input"
+                  key={telegramDetectChats.map((c) => c.id).join(",")}
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v) {
+                      setValue("telegram_chat_id", v, { shouldValidate: true });
+                    }
+                  }}
+                >
+                  <option value="">— Chọn —</option>
+                  {telegramDetectChats.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {`${c.title} (${c.type}) — ${c.id}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {telegramDetectChats &&
+              telegramDetectChats.length === 0 &&
+              !telegramDetectLoading && (
+                <p className="text-sm text-amber-700">
+                  Không tìm thấy channel. Hãy thêm bot làm admin vào channel và gửi
+                  ít nhất 1 tin nhắn.
+                </p>
+              )}
+            {telegramDetectErr && (
+              <p className="text-sm text-red-600">{telegramDetectErr}</p>
+            )}
+            <div>
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                disabled={
+                  telegramTestSending ||
+                  clearBotToken ||
+                  !String(telegramBotToken || "").trim() ||
+                  !String(telegramChatId || "").trim()
+                }
+                onClick={() => {
+                  void handleTelegramTest();
+                }}
+              >
+                {telegramTestSending ? "Đang gửi..." : "Gửi tin test"}
+              </button>
             </div>
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">

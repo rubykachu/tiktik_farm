@@ -15,7 +15,7 @@ from api.db import engine as _engine, init_db
 from api.db_migrations import apply_indexes
 from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
-from api.routers import accounts, login, pipelines, schedules, uploads, videos
+from api.routers import accounts, login, pipelines, schedules, telegram, uploads, videos
 from tiktok_uploader.Config import Config
 
 
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(schedules.router)
     app.include_router(login.router)
     app.include_router(pipelines.router)
+    app.include_router(telegram.router)
     return app
 
 
