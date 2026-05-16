@@ -6,9 +6,15 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from api.services.caption import find_unknown_vars
+from api.services.youtube_validate import is_youtube_url as is_youtube_channel_url
+
+_BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
+_CHAT_ID_RE = re.compile(r"^(-?\d+|@[A-Za-z0-9_]{5,32})$")
 
 
 # ---------- accounts ---------------------------------------------------------
@@ -178,3 +184,149 @@ _YT_URL_RE = re.compile(
 
 def is_youtube_url(value: str) -> bool:
     return bool(_YT_URL_RE.match(value.strip()))
+
+
+# ---------- channel pipelines (Phase 1) -------------------------------------
+
+
+class PipelineUploadOptions(BaseModel):
+    """Subset of UploadOptions exposed in the pipeline form."""
+    allow_comment: Literal[0, 1] = 1
+    allow_duet: Literal[0, 1] = 0
+    allow_stitch: Literal[0, 1] = 0
+    visibility_type: Literal[0, 1] = 0
+
+
+class PipelineCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    channel_url: str
+    fetch_count: int = Field(ge=1, le=20)
+    interval_value: int = Field(ge=1)
+    interval_unit: Literal["minutes", "hours", "days"]
+    first_fire_at: datetime
+    caption_template: str = Field(min_length=1, max_length=2200)
+    upload_options: PipelineUploadOptions = Field(default_factory=PipelineUploadOptions)
+    account_ids: List[int] = Field(min_length=1)
+    max_duration_seconds: Optional[int] = Field(default=None, ge=1)
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+    @field_validator("channel_url")
+    @classmethod
+    def _validate_channel_url(cls, v: str) -> str:
+        if not is_youtube_channel_url(v):
+            raise ValueError("channel_url must point to a YouTube domain")
+        return v
+
+    @field_validator("caption_template")
+    @classmethod
+    def _validate_caption_vars(cls, v: str) -> str:
+        unknown = find_unknown_vars(v)
+        if unknown:
+            raise ValueError(
+                f"unknown caption variable(s): {', '.join(unknown)}. "
+                f"Allowed: title, title_hashtag, now"
+            )
+        return v
+
+    @field_validator("telegram_bot_token")
+    @classmethod
+    def _validate_bot_token(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("telegram_bot_token format invalid")
+        return v
+
+    @field_validator("telegram_chat_id")
+    @classmethod
+    def _validate_chat_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("telegram_chat_id format invalid")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_interval(self):
+        if self.interval_unit == "minutes" and self.interval_value < 2:
+            raise ValueError("interval_value must be ≥ 2 when interval_unit=minutes")
+        # Both telegram fields must be set together (or both empty).
+        bot_set = bool(self.telegram_bot_token)
+        chat_set = bool(self.telegram_chat_id)
+        if bot_set != chat_set:
+            raise ValueError(
+                "telegram_bot_token and telegram_chat_id must be set together"
+            )
+        return self
+
+
+class PipelineUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    state: Optional[Literal["active", "paused"]] = None
+    fetch_count: Optional[int] = Field(default=None, ge=1, le=20)
+    interval_value: Optional[int] = Field(default=None, ge=1)
+    interval_unit: Optional[Literal["minutes", "hours", "days"]] = None
+    caption_template: Optional[str] = Field(default=None, min_length=1, max_length=2200)
+    upload_options: Optional[PipelineUploadOptions] = None
+    account_ids: Optional[List[int]] = None
+    max_duration_seconds: Optional[int] = Field(default=None, ge=1)
+    # bot_token: empty / absent → keep existing. Use clear_bot_token to remove.
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    clear_bot_token: bool = False
+
+    @field_validator("caption_template")
+    @classmethod
+    def _validate_caption_vars(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        unknown = find_unknown_vars(v)
+        if unknown:
+            raise ValueError(
+                f"unknown caption variable(s): {', '.join(unknown)}"
+            )
+        return v
+
+    @field_validator("telegram_bot_token")
+    @classmethod
+    def _validate_bot_token(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("telegram_bot_token format invalid")
+        return v
+
+    @field_validator("telegram_chat_id")
+    @classmethod
+    def _validate_chat_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return v
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("telegram_chat_id format invalid")
+        return v
+
+
+class PipelineRead(BaseModel):
+    """Bot token is NEVER exposed — only the boolean flag indicating presence."""
+    id: int
+    name: str
+    channel_url: str
+    fetch_count: int
+    interval_value: int
+    interval_unit: str
+    first_fire_at: datetime
+    next_fire_at: datetime
+    state: str
+    caption_template: str
+    upload_options_json: str
+    account_ids_json: str
+    max_duration_seconds: Optional[int]
+    telegram_bot_token_set: bool
+    telegram_chat_id: Optional[str]
+    run_now_requested_at: Optional[datetime]
+    lock_until: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
