@@ -403,6 +403,11 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 	if not uploaded:
 		print("[-] Could not upload video")
 		return False
+	# Success path. Without this explicit `return True` the function falls
+	# off the end and returns None; callers like api/services/tiktok_adapter
+	# inspect `bool(result)` and report "upload failed" even though TikTok
+	# printed "Published successfully".
+	return True
 	# Check if video uploaded successfully (Tiktok has changed endpoint for this)
 	# url = f"https://www.tiktok.com/api/v1/web/project/list/?aid=1988"
 	#
