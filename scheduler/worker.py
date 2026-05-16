@@ -142,7 +142,7 @@ def run_one(row: ScheduledUpload) -> tuple[bool, str]:
 
     options = json.loads(row.options_json or "{}")
     try:
-        ok = tiktok_adapter.upload_from_options(username, video_path, row.title, options)
+        ok, _, _ = tiktok_adapter.upload_from_options(username, video_path, row.title, options)
     except Exception as e:
         return False, f"upload raised: {e}"
     return ok, "succeeded" if ok else "upload returned false"

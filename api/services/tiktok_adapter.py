@@ -6,9 +6,14 @@ which means no real network / subprocess fires in the test suite.
 """
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Optional
 
 from tiktok_uploader import tiktok as _tiktok
+
+logger = logging.getLogger(__name__)
+
+UploadResult = tuple[bool, Optional[str], Optional[str]]
 
 
 def perform_upload(
@@ -24,12 +29,11 @@ def perform_upload(
     branded_content_type: int = 0,
     ai_label: int = 0,
     proxy: str = "",
-) -> bool:
-    """Delegate to the underlying uploader. Returns True on success.
+) -> UploadResult:
+    """Delegate to the underlying uploader.
 
-    Note: schedule_time is deliberately 0 here — the new scheduler handles
-    time-based dispatch on our side, replacing TikTok's unreliable
-    server-side schedule_time.
+    Returns (ok, tiktok_video_id, tiktok_url).
+    If parse fails but upload succeeded: (True, None, None) + warning log.
     """
     result = _tiktok.upload_video(
         username,
@@ -45,12 +49,42 @@ def perform_upload(
         ai_label,
         proxy,
     )
-    # upload_video returns True on success, False on most failure paths.
-    return bool(result)
+
+    if not result:
+        return (False, None, None)
+
+    if isinstance(result, dict):
+        item_id = _extract_item_id(result)
+        if item_id:
+            url = f"https://www.tiktok.com/@{username}/video/{item_id}"
+            return (True, item_id, url)
+
+    if result is True or (isinstance(result, dict) and result):
+        logger.warning("Upload succeeded but could not extract item_id from response")
+        return (True, None, None)
+
+    return (False, None, None)
 
 
-def upload_from_options(username: str, video_path: str, title: str, options: dict[str, Any]) -> bool:
-    """Convenience: fan out an options dict into perform_upload kwargs."""
+def _extract_item_id(response: dict) -> Optional[str]:
+    """Try to extract item_id from TikTok upload response."""
+    try:
+        data = response.get("data") or response
+        item_id = data.get("item_id") or data.get("video_id")
+        if item_id:
+            return str(item_id)
+    except (AttributeError, TypeError):
+        pass
+    return None
+
+
+def upload_from_options(
+    username: str, video_path: str, title: str, options: dict[str, Any]
+) -> UploadResult:
+    """Convenience: fan out an options dict into perform_upload kwargs.
+
+    Returns (ok, tiktok_video_id, tiktok_url).
+    """
     return perform_upload(
         username,
         video_path,

@@ -61,7 +61,7 @@ async def upload_file(
         tmp.write(await video.read())
         tmp.flush()
         tmp.close()
-        ok = tiktok_adapter.upload_from_options(
+        ok, _, _ = tiktok_adapter.upload_from_options(
             username, tmp.name, title, options.model_dump()
         )
     finally:
@@ -81,7 +81,7 @@ def upload_youtube(
 ):
     acct = _require_account(session, payload.username)
     video_path = youtube.download(payload.youtube_url)
-    ok = tiktok_adapter.upload_from_options(
+    ok, _, _ = tiktok_adapter.upload_from_options(
         payload.username, video_path, payload.title, payload.options.model_dump()
     )
     _touch_last_used(session, acct)
