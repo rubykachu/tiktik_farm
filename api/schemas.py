@@ -310,6 +310,18 @@ class PipelineUpdate(BaseModel):
             raise ValueError("telegram_chat_id format invalid")
         return v
 
+    @model_validator(mode="after")
+    def _validate_telegram_pairing(self) -> "PipelineUpdate":
+        # Omitted fields mean "not changing". Final bot/chat symmetry on the stored
+        # row is enforced in update_pipeline after merge.
+        if self.clear_bot_token and "telegram_chat_id" in self.model_fields_set:
+            cid = (self.telegram_chat_id or "").strip()
+            if cid:
+                raise ValueError(
+                    "cannot set telegram_chat_id while clear_bot_token is true"
+                )
+        return self
+
 
 class PipelineRead(BaseModel):
     """Bot token is NEVER exposed — only the boolean flag indicating presence."""

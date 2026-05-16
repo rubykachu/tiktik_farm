@@ -66,6 +66,21 @@ type Props = {
   onClose: () => void;
 };
 
+/** FastAPI / Pydantic 422: detail may be string or validation error array */
+function formatHttpDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((e) => {
+        if (e && typeof e === "object" && "msg" in e) return String((e as { msg: string }).msg);
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return fallback;
+}
+
 function toLocalDatetime(iso?: string): string {
   if (!iso) {
     const now = new Date();
@@ -319,9 +334,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setTelegramDetectChats(null);
       const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
         ?.detail;
-      setTelegramDetectErr(
-        typeof d === "string" ? d : "Không phát hiện được. Thử lại sau."
-      );
+      setTelegramDetectErr(formatHttpDetail(d, "Không phát hiện được. Thử lại sau."));
     } finally {
       setTelegramDetectLoading(false);
     }
@@ -338,7 +351,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
         ?.detail;
-      window.alert(typeof d === "string" ? d : "Gửi tin test thất bại.");
+      window.alert(formatHttpDetail(d, "Gửi tin test thất bại."));
     } finally {
       setTelegramTestSending(false);
     }
@@ -615,6 +628,13 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                   {telegramDetectLoading ? "Đang tải..." : "Tự động phát hiện"}
                 </button>
               </div>
+              {isEdit &&
+                pipeline?.telegram_bot_token_set &&
+                !String(telegramBotToken || "").trim() && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Nhập lại Bot Token để sử dụng tính năng này
+                  </p>
+                )}
             </div>
             <div>
               <label className="label">Chat ID</label>

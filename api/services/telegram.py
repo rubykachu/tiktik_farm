@@ -99,9 +99,9 @@ def _chats_from_updates_result(result: list[Any]) -> list[dict[str, Any]]:
 def detect_chats(bot_token: str) -> list[dict[str, Any]]:
     """Poll Telegram for recent updates and list unique group/channel chats.
 
-    Calls deleteWebhook then getUpdates (long-polling buffer). Requires the
-    bot to have seen at least one update in the unread queue (e.g. a post in
-    a channel where the bot is admin).
+    Runs a best-effort ``deleteWebhook`` (see inline comment) so ``getUpdates``
+    can poll the long-polling buffer. The bot must have at least one unread
+    update queued (e.g. a post in a channel where the bot is admin).
 
     Raises:
         ValueError: bot_token format invalid.
@@ -115,7 +115,14 @@ def detect_chats(bot_token: str) -> list[dict[str, Any]]:
 
     try:
         with httpx.Client(follow_redirects=False, timeout=15) as client:
+            # Best-effort: deleteWebhook drops any webhook so getUpdates can poll.
+            # Side effect: if this bot legitimately used Telegram webhooks elsewhere,
+            # this call disables them until re-registered (acceptable for this tool).
             try:
+                logger.warning(
+                    "Telegram detect_chats: calling deleteWebhook (may clear an "
+                    "existing webhook for this bot)"
+                )
                 del_resp = client.post(del_url, json={})
                 if del_resp.status_code != 200:
                     logger.warning(

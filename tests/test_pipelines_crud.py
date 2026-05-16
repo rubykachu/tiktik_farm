@@ -321,6 +321,36 @@ class TestPatch:
         body = client.get(f"/api/pipelines/{pid}").json()
         assert body["telegram_bot_token_set"] is False
 
+    def test_patch_422_chat_id_without_stored_bot(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"telegram_chat_id": "-1001234567890"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+
+    def test_patch_422_clear_bot_token_with_chat_id_body(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json=_valid_payload(
+                aid,
+                telegram_bot_token="123:abcdefghij1234567890ABCDEFGHIJKL",
+                telegram_chat_id="100",
+            ),
+            headers=HEADERS_OK,
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"clear_bot_token": True, "telegram_chat_id": "-100999"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+
     def test_patch_first_fire_at_active_updates_next_fire(self, client):
         aid = _make_account(client)
         pid = client.post(

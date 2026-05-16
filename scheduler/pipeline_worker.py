@@ -215,7 +215,11 @@ def _has_future_upload_attempt(
     finished_video_idx: int,
     finished_account_idx: int,
 ) -> bool:
-    """True if some remaining (video, account) would still call the uploader."""
+    """True if some remaining (video, account) would still call the uploader.
+
+    Known limitation: repeats DB lookups (no cross-account dedupe cache); acceptable
+    for small fetch_count / account lists.
+    """
     cur_vid = videos[finished_video_idx]["id"]
     for j in range(finished_account_idx + 1, len(account_ids)):
         if _load_dedupe_set(session, account_ids[j], cur_vid) == "upload":
@@ -340,15 +344,6 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                             fail_details.append(
                                 f"- {video_url} [account_id={aid}]: download failed"
                             )
-                            with Session(_api_db.engine) as s:
-                                _maybe_upload_delay_after_record(
-                                    pipeline,
-                                    s,
-                                    videos=videos,
-                                    account_ids=account_ids,
-                                    finished_video_idx=vi,
-                                    finished_account_idx=account_idx,
-                                )
                         break
 
                 # Get username

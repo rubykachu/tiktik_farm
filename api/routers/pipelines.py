@@ -197,6 +197,14 @@ def update_pipeline(
             row.telegram_chat_id = payload.telegram_chat_id
             changed = True
 
+    bot_ok = bool(row.telegram_bot_token)
+    chat_ok = bool((row.telegram_chat_id or "").strip())
+    if bot_ok != chat_ok:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="telegram_bot_token and telegram_chat_id must be set together",
+        )
+
     if changed:
         row.updated_at = now_utc()
         session.add(row)
