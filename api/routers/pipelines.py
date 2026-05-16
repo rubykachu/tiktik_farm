@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
@@ -242,11 +242,14 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
 # ─── Drill-down: runs + videos ──────────────────────────────────────────────
 
 
+MAX_PAGE_SIZE = 200
+
+
 @router.get("/{pipeline_id}/runs")
 def list_runs(
     pipeline_id: int,
-    page: int = 1,
-    size: int = 50,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
     session: Session = Depends(get_session),
 ):
     pipeline = session.get(ChannelPipeline, pipeline_id)
@@ -299,6 +302,7 @@ def list_run_videos(
         select(VideoUpload)
         .where(VideoUpload.run_id == run_id)
         .order_by(VideoUpload.created_at.desc())  # type: ignore[union-attr]
+        .limit(500)
     ).all()
 
     return [
@@ -316,6 +320,5 @@ def list_run_videos(
             "error_text": v.error_text,
             "created_at": v.created_at.isoformat() if v.created_at else None,
         }
-        for r in rows
-        for v in [r]
+        for v in rows
     ]

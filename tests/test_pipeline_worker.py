@@ -16,6 +16,8 @@ from scheduler.pipeline_worker import (
     advance_next_fire,
     release_lock,
     send_telegram_summary,
+    pipeline_tick,
+    _emergency_finalize,
     LockHeartbeat,
 )
 
@@ -495,3 +497,108 @@ class TestTelegramSummary:
 
         # Should not raise
         send_telegram_summary(pipeline, run)
+
+
+class TestEmergencyFinalize:
+    """Tests for _emergency_finalize crash recovery."""
+
+    def test_finalizes_unfinished_runs(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            pid = p.id
+
+        with Session(_api_db.engine) as s:
+            run1 = PipelineRun(
+                pipeline_id=pid, started_at=now - timedelta(minutes=5),
+                trigger_reason="scheduled",
+            )
+            run2 = PipelineRun(
+                pipeline_id=pid, started_at=now - timedelta(minutes=2),
+                trigger_reason="manual",
+            )
+            s.add_all([run1, run2])
+            s.commit()
+            s.refresh(run1)
+            s.refresh(run2)
+            run1_id, run2_id = run1.id, run2.id
+
+        _emergency_finalize(pid)
+
+        with Session(_api_db.engine) as s:
+            r1 = s.get(PipelineRun, run1_id)
+            r2 = s.get(PipelineRun, run2_id)
+            assert r1.finished_at is not None
+            assert r1.error_text == "worker_crash"
+            assert r2.finished_at is not None
+            assert r2.error_text == "worker_crash"
+
+    def test_preserves_existing_error_text(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            pid = p.id
+
+        with Session(_api_db.engine) as s:
+            run = PipelineRun(
+                pipeline_id=pid, started_at=now - timedelta(minutes=5),
+                trigger_reason="scheduled", error_text="list_top_n failed",
+            )
+            s.add(run)
+            s.commit()
+            s.refresh(run)
+            run_id = run.id
+
+        _emergency_finalize(pid)
+
+        with Session(_api_db.engine) as s:
+            r = s.get(PipelineRun, run_id)
+            assert r.finished_at is not None
+            assert r.error_text == "list_top_n failed"
+
+    def test_does_not_touch_already_finished(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            pid = p.id
+
+        with Session(_api_db.engine) as s:
+            run = PipelineRun(
+                pipeline_id=pid, started_at=now - timedelta(minutes=10),
+                finished_at=now - timedelta(minutes=5),
+                trigger_reason="scheduled",
+            )
+            s.add(run)
+            s.commit()
+            s.refresh(run)
+            run_id = run.id
+            orig_finished = run.finished_at
+
+        _emergency_finalize(pid)
+
+        with Session(_api_db.engine) as s:
+            r = s.get(PipelineRun, run_id)
+            assert r.finished_at == orig_finished
+            assert r.error_text is None
+
+
+class TestClaimOrdering:
+    """Verify run_now pipelines are prioritized over scheduled."""
+
+    def test_run_now_claimed_first(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            # Scheduled pipeline due 1 minute ago
+            _make_pipeline(s, name="scheduled-one",
+                           next_fire_at=now - timedelta(minutes=1))
+            # run_now pipeline due in the future but manually triggered
+            p2 = _make_pipeline(s, name="manual-one",
+                                next_fire_at=now + timedelta(hours=5),
+                                run_now_requested_at=now)
+            p2_id = p2.id
+
+        result = claim_due_pipeline()
+        assert result is not None
+        pipeline, trigger = result
+        assert pipeline.id == p2_id
+        assert trigger == "manual"

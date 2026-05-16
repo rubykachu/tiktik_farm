@@ -1,20 +1,33 @@
-"""Upload history — backed by VideoUpload table (Phase 1).
-
-Replaces the old disk-based file listing. Supports filters: account_id,
-status, pipeline_id, date range. Paged 50/page.
-"""
+"""Upload history — backed by VideoUpload table (Phase 1)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import datetime
+from enum import Enum
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
-from api.db import get_session, now_utc
+from api.db import get_session
 from api.models import VideoUpload
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
+
+MAX_PAGE_SIZE = 200
+
+_VALID_STATUSES = {"succeeded", "failed"}
+
+
+def _parse_date(value: Optional[str], param_name: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid date format for '{param_name}': {value!r}. Use ISO 8601.",
+        )
 
 
 @router.get("")
@@ -24,30 +37,30 @@ def list_videos(
     pipeline_id: Optional[int] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    page: int = 1,
-    size: int = 50,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
     session: Session = Depends(get_session),
 ):
     q = select(VideoUpload)
 
     if account_id is not None:
         q = q.where(VideoUpload.account_id == account_id)
-    if status_filter and status_filter in ("succeeded", "failed"):
+    if status_filter:
+        if status_filter not in _VALID_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid status filter: {status_filter!r}. Must be one of: {sorted(_VALID_STATUSES)}",
+            )
         q = q.where(VideoUpload.status == status_filter)
     if pipeline_id is not None:
         q = q.where(VideoUpload.pipeline_id == pipeline_id)
-    if from_date:
-        try:
-            dt = datetime.fromisoformat(from_date)
-            q = q.where(VideoUpload.created_at >= dt)
-        except ValueError:
-            pass
-    if to_date:
-        try:
-            dt = datetime.fromisoformat(to_date)
-            q = q.where(VideoUpload.created_at <= dt)
-        except ValueError:
-            pass
+
+    dt_from = _parse_date(from_date, "from_date")
+    if dt_from:
+        q = q.where(VideoUpload.created_at >= dt_from)
+    dt_to = _parse_date(to_date, "to_date")
+    if dt_to:
+        q = q.where(VideoUpload.created_at <= dt_to)
 
     offset = (page - 1) * size
     rows = session.exec(
