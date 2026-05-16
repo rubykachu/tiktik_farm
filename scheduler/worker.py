@@ -168,25 +168,37 @@ def finalize(schedule_id: int, ok: bool, message: str) -> None:
 
 def tick() -> bool:
     """One poll cycle. Returns True if a job was processed, False if idle.
-    Visible in tests so they can drive the worker deterministically."""
+    Visible in tests so they can drive the worker deterministically.
+
+    Two-pass design:
+      Pass 1: single-shot scheduled uploads (legacy).
+      Pass 2: channel pipeline recurring uploads (Phase 1).
+    """
+    # Pass 1 — single-shot
     with Session(_api_db.engine) as s:
         reclaim_stale(s)
         claimed = claim_next_due(s)
-    if not claimed:
-        return False
+    if claimed:
+        hb = Heartbeat(claimed.id)
+        hb.start()
+        try:
+            ok, msg = run_one(claimed)
+        finally:
+            hb.stop()
+        finalize(claimed.id, ok, msg)
+        return True
 
-    hb = Heartbeat(claimed.id)
-    hb.start()
-    try:
-        ok, msg = run_one(claimed)
-    finally:
-        hb.stop()
-    finalize(claimed.id, ok, msg)
-    return True
+    # Pass 2 — pipeline
+    from scheduler.pipeline_worker import pipeline_tick
+    return pipeline_tick()
 
 
 def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by tick() in tests
     log.info("scheduler loop starting, poll_interval=%ss", poll_interval)
+
+    from scheduler.pipeline_worker import reap_orphans
+    reap_orphans()
+
     while True:
         try:
             busy = tick()
