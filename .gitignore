@@ -157,3 +157,6 @@ node_modules/
 
 # Misc
 tiktok_uploader/tiktok-signature/command.txt
+
+# OS
+.DS_Store

@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { api, Accounts } from "../api/client";
 import { Pipelines, VideoUploadItem } from "../api/pipelines";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { statusBadge } from "../utils/statusBadge";
 
 function fetchVideos(params: Record<string, string | undefined>) {
   const cleaned: Record<string, string> = {};
@@ -12,11 +13,6 @@ function fetchVideos(params: Record<string, string | undefined>) {
   }
   return api.get<VideoUploadItem[]>("/videos", { params: cleaned }).then((r) => r.data);
 }
-
-const statusBadge = (s: string) =>
-  s === "succeeded"
-    ? "bg-emerald-100 text-emerald-700"
-    : "bg-red-100 text-red-700";
 
 export default function VideosPage() {
   const qc = useQueryClient();

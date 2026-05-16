@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,10 +29,7 @@ const baseSchema = z.object({
 function buildSchema(existingTokenSet: boolean) {
   return baseSchema
     .refine(
-      (d) => {
-        if (d.interval_unit === "minutes" && d.interval_value < 2) return false;
-        return true;
-      },
+      (d) => !(d.interval_unit === "minutes" && d.interval_value < 2),
       { message: "Interval ≥ 2 khi chọn minutes", path: ["interval_value"] }
     )
     .refine(
@@ -84,7 +81,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
   const validAccounts = accounts?.filter((a) => a.has_valid_session) ?? [];
 
-  const schema = buildSchema(pipeline?.telegram_bot_token_set ?? false);
+  const tokenSet = pipeline?.telegram_bot_token_set ?? false;
+  const schema = useMemo(() => buildSchema(tokenSet), [tokenSet]);
 
   const {
     register,

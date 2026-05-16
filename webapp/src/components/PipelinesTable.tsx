@@ -65,7 +65,7 @@ export default function PipelinesTable({ onEdit }: Props) {
   const [runNowDisabled, setRunNowDisabled] = useState<Set<number>>(new Set());
 
   function startRunNowCooldown(id: number) {
-    setRunNowDisabled((prev) => new Set([...prev, id]));
+    setRunNowDisabled((prev) => new Set(prev).add(id));
     setTimeout(() => {
       setRunNowDisabled((prev) => {
         const next = new Set(prev);

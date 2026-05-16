@@ -2,15 +2,9 @@ import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
+import { statusBadge } from "../utils/statusBadge";
 
 type Props = { pipelineId: number };
-
-const statusBadge = (s: string) => {
-  if (!s) return "";
-  return s === "succeeded"
-    ? "bg-emerald-100 text-emerald-700"
-    : "bg-red-100 text-red-700";
-};
 
 function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }) {
   const { data, isLoading } = useQuery({
@@ -63,10 +57,10 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
   );
 }
 
+const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at);
+
 export default function PipelineRunsExpand({ pipelineId }: Props) {
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
-
-  const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline-runs", pipelineId],

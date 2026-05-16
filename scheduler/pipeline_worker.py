@@ -99,7 +99,6 @@ def claim_due_pipeline() -> Optional[tuple[ChannelPipeline, str]]:
                 | (ChannelPipeline.run_now_requested_at.isnot(None)),  # type: ignore[union-attr]
             )
             .order_by(
-                # Prioritize manual triggers over scheduled
                 ChannelPipeline.run_now_requested_at.is_(None),  # type: ignore[union-attr]
                 ChannelPipeline.next_fire_at,
             )
@@ -109,7 +108,6 @@ def claim_due_pipeline() -> Optional[tuple[ChannelPipeline, str]]:
         if not row:
             return None
 
-        # CAS: re-verify all eligibility conditions to prevent stale claim
         new_lock = now + LOCK_TTL
         result = s.exec(
             update(ChannelPipeline)
@@ -128,9 +126,8 @@ def claim_due_pipeline() -> Optional[tuple[ChannelPipeline, str]]:
         s.expire_all()
 
         if result.rowcount != 1:  # type: ignore[union-attr]
-            return None  # lost the race
+            return None
 
-        # Re-read with fresh data
         pipeline = s.get(ChannelPipeline, row.id)
         if not pipeline:
             return None
@@ -270,7 +267,6 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     skipped_exhausted_count += 1
                     continue
 
-                # Lazy download
                 if download_path is None:
                     try:
                         temp_dir = tempfile.mkdtemp(prefix="pipeline_dl_")
@@ -572,17 +568,26 @@ def _emergency_finalize(pipeline_id: int) -> None:
     """Finalize any in-flight PipelineRun for this pipeline so it isn't orphaned."""
     try:
         with Session(_api_db.engine) as s:
-            stale = s.exec(
-                select(PipelineRun).where(
+            s.exec(
+                update(PipelineRun)
+                .where(
                     PipelineRun.pipeline_id == pipeline_id,
                     PipelineRun.finished_at.is_(None),  # type: ignore[union-attr]
+                    PipelineRun.error_text.is_(None),  # type: ignore[union-attr]
                 )
-            ).all()
-            for run in stale:
-                run.finished_at = now_utc()
-                if not run.error_text:
-                    run.error_text = "worker_crash"
-                s.add(run)
+                .values(finished_at=now_utc(), error_text="worker_crash")
+                .execution_options(synchronize_session=False)
+            )
+            s.exec(
+                update(PipelineRun)
+                .where(
+                    PipelineRun.pipeline_id == pipeline_id,
+                    PipelineRun.finished_at.is_(None),  # type: ignore[union-attr]
+                    PipelineRun.error_text.isnot(None),  # type: ignore[union-attr]
+                )
+                .values(finished_at=now_utc())
+                .execution_options(synchronize_session=False)
+            )
             s.commit()
     except Exception:
         log.exception("_emergency_finalize itself failed for pipeline %d", pipeline_id)
