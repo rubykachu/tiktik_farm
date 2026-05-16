@@ -3,11 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Trash2, RefreshCcw, LogIn, Download } from "lucide-react";
 import { Accounts } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
+
+type DeleteTarget = { id: number; username: string } | null;
 
 export default function AccountsPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
 
   const importMut = useMutation({
     mutationFn: Accounts.importFromDisk,
@@ -27,7 +31,10 @@ export default function AccountsPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => Accounts.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      setDeleteTarget(null);
+    },
   });
 
   return (
@@ -119,7 +126,7 @@ export default function AccountsPage() {
                   </Link>
                   <button
                     className="inline-flex items-center gap-1 text-red-600 text-xs font-medium"
-                    onClick={() => deleteMut.mutate(a.id)}
+                    onClick={() => setDeleteTarget({ id: a.id, username: a.username })}
                   >
                     <Trash2 size={14} /> Delete
                   </button>
@@ -129,6 +136,19 @@ export default function AccountsPage() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Xóa account "${deleteTarget?.username ?? ""}"?`}
+        body={
+          <p>
+            Account và cookie file sẽ bị xóa. Các schedule liên quan cũng bị xóa.
+            Hành động không thể hoàn tác.
+          </p>
+        }
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
     </div>
   );
 }
