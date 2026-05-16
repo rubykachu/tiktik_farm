@@ -95,11 +95,15 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 	if not session_id:
 		eprint("No cookie with Tiktok session id found: use login to save session id")
 		sys.exit(1)
+	# tt-target-idc routes the request to a specific TikTok datacenter.
+	# Defaulting to "useast2a" when the cookie file is missing this hint
+	# routes the request to a DC that does NOT host the session → status_code
+	# 8. Leave it unset and let TikTok resolve the DC from sessionid itself.
 	if not dc_id:
-		print("[WARNING]: Please login, tiktok datacenter id must be allocated, or may fail")
-		dc_id = "useast2a"
+		print("[INFO] tt-target-idc not in cookie; relying on session-resolved routing")
+	else:
+		print(f"Tiktok Datacenter Assigned: {dc_id}")
 	print("User successfully logged in.")
-	print(f"Tiktok Datacenter Assigned: {dc_id}")
 	
 	print("Uploading video...")
 	# Parameter validation,
@@ -154,8 +158,15 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 	if not assert_success(project_url, r):
 		return False
 
-	# get project_id
-	project_id = r.json()["project"]["project_id"]
+	# get project_id. If TikTok replies status_code 8 the body has no
+	# "project" key — usually means the cookie is stale or tt-target-idc
+	# was forced to the wrong datacenter.
+	try:
+		project_id = r.json()["project"]["project_id"]
+	except KeyError:
+		body = r.text[:500]
+		print(f"[-] TikTok refused project/create (likely auth/dc issue): {body}")
+		return False
 	video_id, session_key, upload_id, crcs, upload_host, store_uri, video_auth, aws_auth = upload_to_tiktok(video, session)
 
 	url = f"https://{upload_host}/{store_uri}?uploadID={upload_id}&phase=finish&uploadmode=part"
