@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Trash2, RefreshCcw, LogIn, Download } from "lucide-react";
@@ -6,10 +7,22 @@ import { Accounts } from "../api/client";
 export default function AccountsPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   const importMut = useMutation({
     mutationFn: Accounts.importFromDisk,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onSuccess: (imported) => {
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      const n = imported?.length ?? 0;
+      setImportMsg(
+        n === 0
+          ? "Nothing to import — every cookie file on disk is already registered."
+          : `Imported ${n} account${n === 1 ? "" : "s"}: ${imported.map((a) => a.username).join(", ")}`,
+      );
+    },
+    onError: (e: any) => {
+      setImportMsg(`Import failed: ${e?.response?.data?.detail ?? e.message}`);
+    },
   });
 
   const deleteMut = useMutation({
@@ -41,6 +54,19 @@ export default function AccountsPage() {
           </Link>
         </div>
       </div>
+
+      {importMsg && (
+        <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 flex items-start justify-between gap-3">
+          <span>{importMsg}</span>
+          <button
+            className="text-slate-400 hover:text-slate-600"
+            onClick={() => setImportMsg(null)}
+            aria-label="dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="card p-0 overflow-hidden">
         <table className="w-full text-sm">
