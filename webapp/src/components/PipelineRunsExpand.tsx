@@ -1,6 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
 
@@ -11,6 +12,19 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
     queryKey: ["run-videos", pipelineId, runId],
     queryFn: () => Pipelines.listRunVideos(pipelineId, runId),
   });
+
+  const { data: accounts } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: Accounts.list,
+  });
+
+  const accountLabel = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const a of accounts ?? []) {
+      m.set(a.id, (a.display_name || a.username).trim() || a.username);
+    }
+    return m;
+  }, [accounts]);
 
   if (isLoading) return <div className="p-2 text-xs text-slate-400">Loading videos…</div>;
   if (!data?.length) return <div className="p-2 text-xs text-slate-400">No videos.</div>;
@@ -29,7 +43,7 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
       <tbody>
         {data.map((v) => (
           <tr key={v.id} className="border-t border-slate-50">
-            <td className="p-1">{v.account_id}</td>
+            <td className="p-1">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
             <td className="p-1 max-w-[120px] truncate">
               <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                 {v.youtube_title || v.youtube_video_id}

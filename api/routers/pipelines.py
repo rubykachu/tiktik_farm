@@ -144,6 +144,14 @@ def update_pipeline(
     if payload.interval_unit is not None:
         row.interval_unit = payload.interval_unit
         changed = True
+    if payload.first_fire_at is not None:
+        row.first_fire_at = payload.first_fire_at
+        if row.state == "active":
+            anchor = payload.first_fire_at
+            if anchor.tzinfo is None:
+                anchor = anchor.replace(tzinfo=timezone.utc)
+            row.next_fire_at = max(now_utc(), anchor)
+        changed = True
     if payload.caption_template is not None:
         row.caption_template = payload.caption_template
         changed = True

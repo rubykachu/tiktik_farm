@@ -345,6 +345,7 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 		data["feature_common_info_list"][0]["schedule_time"] = schedule_time + int(time.time())
 	
 	uploaded = False
+	post_json = None
 	while True:
 		mstoken = session.cookies.get("msToken")
 		# xbogus = subprocess_jsvmp(os.path.join(os.getcwd(), "tiktok_uploader", "./x-bogus.js"), user_agent, f"app_name=tiktok_web&channel=tiktok_web&device_platform=web&aid=1988&msToken={mstoken}")
@@ -381,9 +382,11 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 			printError(url, r)
 			return False
 
-		if r.json()["status_code"] == 0:
+		body = r.json()
+		if body.get("status_code") == 0:
 			print(f"Published successfully {'| Scheduled for ' + str(schedule_time) if schedule_time else ''}")
 			uploaded = True
+			post_json = body
 			break
 		else:
 			print("[-] Publish failed to Tiktok, trying again...")
@@ -403,11 +406,9 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 	if not uploaded:
 		print("[-] Could not upload video")
 		return False
-	# Success path. Without this explicit `return True` the function falls
-	# off the end and returns None; callers like api/services/tiktok_adapter
-	# inspect `bool(result)` and report "upload failed" even though TikTok
-	# printed "Published successfully".
-	return True
+	# Return publish JSON so callers can read item_id / share_url for links.
+	# (Legacy code returned True, which hid all response fields.)
+	return post_json if isinstance(post_json, dict) else True
 	# Check if video uploaded successfully (Tiktok has changed endpoint for this)
 	# url = f"https://www.tiktok.com/api/v1/web/project/list/?aid=1988"
 	#

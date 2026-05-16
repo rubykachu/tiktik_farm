@@ -214,6 +214,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
         interval_unit: data.interval_unit,
+        first_fire_at: firstFireAt,
         caption_template: data.caption_template,
         upload_options: {
           allow_comment: data.allow_comment as 0 | 1,
@@ -347,14 +348,14 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 type="datetime-local"
                 className="input"
                 {...register("first_fire_at")}
-                disabled={isEdit}
               />
-              {repeatHint && !isEdit && (
+              {repeatHint && (
                 <p className="text-xs text-slate-500 mt-1">{repeatHint}</p>
               )}
               {isEdit && (
                 <p className="text-xs text-slate-400 mt-1">
-                  Thời gian bắt đầu không thể thay đổi.
+                  Khi pipeline đang active, scheduler sẽ đặt lần chạy kế tiếp không sớm hơn mốc này
+                  (và không sớm hơn thời điểm hiện tại).
                 </p>
               )}
             </div>

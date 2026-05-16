@@ -287,6 +287,44 @@ class TestPatch:
         body = client.get(f"/api/pipelines/{pid}").json()
         assert body["telegram_bot_token_set"] is False
 
+    def test_patch_first_fire_at_active_updates_next_fire(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        new_start = (_now() + timedelta(days=2)).isoformat()
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"first_fire_at": new_start},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["first_fire_at"] is not None
+        nxt = datetime.fromisoformat(body["next_fire_at"].replace("Z", "+00:00"))
+        if nxt.tzinfo is None:
+            nxt = nxt.replace(tzinfo=timezone.utc)
+        assert nxt >= _now()
+
+    def test_patch_first_fire_at_when_paused(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        client.patch(
+            f"/api/pipelines/{pid}",
+            json={"state": "paused"},
+            headers=HEADERS_OK,
+        )
+        future = (_now() + timedelta(days=10)).isoformat()
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"first_fire_at": future},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "paused"
+
 
 # ----------------- DELETE ---------------------------------------------------
 

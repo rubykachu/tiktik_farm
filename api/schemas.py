@@ -267,6 +267,7 @@ class PipelineUpdate(BaseModel):
     fetch_count: Optional[int] = Field(default=None, ge=1, le=20)
     interval_value: Optional[int] = Field(default=None, ge=1)
     interval_unit: Optional[Literal["minutes", "hours", "days"]] = None
+    first_fire_at: Optional[datetime] = None
     caption_template: Optional[str] = Field(default=None, min_length=1, max_length=2200)
     upload_options: Optional[PipelineUploadOptions] = None
     account_ids: Optional[List[int]] = None

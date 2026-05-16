@@ -48,6 +48,7 @@ export interface PipelineUpdate {
   fetch_count?: number;
   interval_value?: number;
   interval_unit?: "minutes" | "hours" | "days";
+  first_fire_at?: string;
   caption_template?: string;
   upload_options?: PipelineCreate["upload_options"];
   account_ids?: number[];
