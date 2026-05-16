@@ -2,14 +2,22 @@
 
 [← Index](README.md) | [← 10-known-bugs](10-known-bugs.md)
 
-## Hiện trạng (Phase 1)
+## Hiện trạng (sau Phase 1 implementation)
 
-✅ Core upload pipeline (local file + YouTube URL single)
-✅ Schedule (YouTube only)
-✅ noVNC browser login
-✅ Multi-account local single-user
-✅ Docker stack production-ready (smoke test pass)
-✅ 4 bug upstream đã fix
+✅ Core upload pipeline (local file + YouTube URL single)  
+✅ Schedule **Single-shot** (YouTube only, `ScheduledUpload`)  
+✅ **Channel pipeline** lặp: YouTube → TikTok, dedupe, `VideoUpload` history, drill-down API/UI  
+✅ Caption template (`{title}`, `{title_hashtag}`, `{now}`), Telegram tùy chọn (summary theo tick)  
+✅ Trang `/schedules` hai tab; `/videos` = DB `VideoUpload` (chủ yếu pipeline)  
+✅ Import JSON Cookie (`/api/accounts/import-json`), modal confirm delete nhiều chỗ  
+✅ Worker hai pass + CAS lock/heartbeat/orphan reaper  
+✅ noVNC browser login  
+✅ Multi-account local single-user  
+✅ Docker stack production-ready (smoke test pass)  
+✅ 4 bug upstream đã fix  
+✅ Security baseline tối thiểu: Origin check mutating, validation URL/caption/Telegram, log scrub token  
+
+**Còn gap so với “full upload history”**: `VideoUpload` **không** ghi cho upload thủ công / single-shot — chỉ pipeline. Phase 2 có thể mở rộng bảng hoặc ghi thêm nguồn.
 
 ## Phase 2 — Port nghiệp vụ v1
 
@@ -56,30 +64,14 @@ Scheduler picks:
 - `/pipelines` page — hiển thị từng account + nút "Run now" + lịch sử pipeline run
 - `/config/{username}` page — override defaults (sliders cho filter, input cho date_filter, channel URL)
 
-## Phase 2a — Upload history (gap cần lấp trước SaaS)
+## Phase 2a — Mở rộng lịch sử upload (đã có một phần)
 
-Hiện không track "đã đăng cái gì". Cần để:
+Phase 1 đã có bảng **`VideoUpload`** cho pipeline. Phase 2a còn lại:
 
-- Hiển thị "video đã đăng" trên UI thay vì chỉ "file trên disk"
-- Idempotent retry — không double-post
-- Metric per-account
+- Ghi lịch sử cho **manual upload** và/hoặc **ScheduledUpload** (cùng schema hoặc bảng liên quan).
+- Thống nhất hiển thị `/videos` cho mọi nguồn.
 
-```sql
-CREATE TABLE upload_history (
-  id INTEGER PRIMARY KEY,
-  account_id INTEGER REFERENCES accounts(id),
-  source_type TEXT,                -- 'local' | 'youtube' | 'youtube_channel'
-  source_ref TEXT,
-  title TEXT,
-  tiktok_post_id TEXT,             -- ⚠️ cần wire từ upload_video (hiện chỉ return bool)
-  status TEXT,                     -- 'success' | 'failed'
-  error TEXT,
-  published_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-Để có `tiktok_post_id`, sửa `upload_video()` return dict thay vì bool. TikTok response của step publish có `aweme_id` (post_id).
+Sơ đồ cũ `upload_history` có thể gộp concept với `VideoUpload` thay vì tạo bảng trùng.
 
 ## Phase 2b — Playlist support
 
@@ -115,7 +107,7 @@ CREATE TABLE tenant (
 
 ALTER TABLE accounts ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
 ALTER TABLE scheduled_uploads ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
-ALTER TABLE upload_history ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
+ALTER TABLE video_uploads ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
 ```
 
 Mọi query trong API thêm `WHERE tenant_id = :current_tenant`.

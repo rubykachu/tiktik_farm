@@ -13,7 +13,7 @@ Trạng thái lưu ở 2 nơi:
 
 Hai phải đồng bộ. Add account = đảm bảo cả 2 tồn tại.
 
-## 3 cách add account
+## 3 cách add account (+ Import JSON trên UI)
 
 ### Cách A — noVNC login (Docker, đầy đủ tự động)
 
@@ -37,7 +37,8 @@ Chrome thật trên máy host mở. Login. `wait_for_session_cookies()` polling 
 
 → **DB chưa biết**. Sync bằng cách:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/accounts/import-from-disk
+curl -X POST http://127.0.0.1:8000/api/accounts/import-from-disk \
+  -H "Origin: http://127.0.0.1:3000"
 ```
 Hoặc UI `/accounts` → click "Import from disk".
 
@@ -64,12 +65,28 @@ mkdir -p /tmp/cookies && cp my_export.json /tmp/cookies/TK_cookies_<username>.js
 #   (20 cookies, sessionid=yes)
 
 # Sync DB
-curl -X POST http://127.0.0.1:8000/api/accounts/import-from-disk
+curl -X POST http://127.0.0.1:8000/api/accounts/import-from-disk \
+  -H "Origin: http://127.0.0.1:3000"
 ```
 
 Script convert: rename pattern, map Chrome DevTools keys (`expirationDate`, `hostOnly`...) sang Selenium keys (`expiry`, `secure`...), rewrite `sameSite: "None"` → `"Strict"` (bug TikTok yêu cầu).
 
 **Tên file phải match pattern `TK_cookies_<username>.json`** — script regex theo đó để extract username.
+
+### Cách D — Import JSON Cookie (UI `/accounts`, Phase 1)
+
+Modal **Import JSON**: upload một file export kiểu Cookie-Editor (JSON array) + nhập **username** tay; tùy chọn **Thay thế** nếu account đã tồn tại (`replace=true`).
+
+**`POST /api/accounts/import-json`** (multipart):
+
+- File **≤ 256 KB**; JSON top-level là **list**; **≤ 200** entry; mỗi entry dict có ít nhất `name`, `value`, `domain`; phải có ít nhất một cookie `name=sessionid`.
+- **Username**: regex `^[A-Za-z0-9_.]{1,32}$` (chống path traversal — cookie path join an toàn trong `cookie_store`).
+- Username đã có mà `replace != true` → **409** `ACCOUNT_EXISTS`.
+- Lưu pickle vào `CookiesDir` (quyền file **0600**, thư mục **0700**) + upsert `Account`.
+
+Request cần **`Origin: http://127.0.0.1:3000`** (hoặc `localhost:3000`).
+
+Xóa account: **modal xác nhận** (đồng bộ UX toàn site Phase 1).
 
 ## "Import from disk" hoạt động thế nào
 
@@ -128,7 +145,8 @@ UI `/accounts` row → "Delete":
 
 API equivalent:
 ```bash
-curl -X DELETE http://127.0.0.1:8000/api/accounts/<id>
+curl -X DELETE http://127.0.0.1:8000/api/accounts/<id> \
+  -H "Origin: http://127.0.0.1:3000"
 ```
 
 ⚠️ Cascade xóa cả schedule pending. Nếu muốn giữ schedule history, sửa endpoint thành soft-delete (xem [11-roadmap](11-roadmap.md)).

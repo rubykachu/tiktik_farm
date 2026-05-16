@@ -10,8 +10,8 @@
 │  ├ /accounts                                                 │
 │  ├ /login                                                    │
 │  ├ /upload                                                   │
-│  ├ /schedules                                                │
-│  └ /videos                                                   │
+│  ├ /schedules  (2 tab: Pipelines | Single-shot)              │
+│  └ /videos     (lịch sử VideoUpload từ pipeline)             │
 └──────────────────┬────────────────────┬─────────────────────┘
                    │                    │
         proxy /api/*           proxy /novnc/* (ws+html)
@@ -25,8 +25,9 @@
 │  /api/uploads/file           │◄──┤  + control_server    │
 │  /api/uploads/youtube        │   │    :7900             │
 │  /api/schedules              │   │                      │
-│  /api/login/browser/*        │   │  POSTs cookie back   │
-│  /api/videos                 │   │  to api/.../complete │
+│  /api/pipelines (+ runs…)  │   │                      │
+│  /api/login/browser/*      │   │  POSTs cookie back   │
+│  /api/videos               │   │  to api/.../complete │
 └──────────┬───────────────────┘   └──────────────────────┘
            │
            │ shared SQLite + CookiesDir + VideosDirPath
@@ -35,8 +36,9 @@
 ┌──────────────────────────────┐
 │  scheduler — Python worker   │
 │  poll DB mỗi 30s             │
-│  pick due jobs → download    │
-│  → upload qua tiktok_adapter │
+│  Pass 1: ScheduledUpload     │
+│  Pass 2: ChannelPipeline     │
+│  (yt-dlp → tiktok_adapter)   │
 └───────────────────────────────┘
 ```
 
@@ -44,7 +46,7 @@
 
 ```
 v2/data/
-├── tiktok.db                  (SQLite — accounts, schedules, login_sessions)
+├── tiktok.db                  (SQLite — accounts, scheduled_uploads, channel_pipelines, pipeline_runs, video_uploads, …)
 ├── tiktok.db-shm              (WAL shared memory)
 ├── tiktok.db-wal              (WAL log)
 ├── CookiesDir/
@@ -143,7 +145,49 @@ User → webapp → POST /api/schedules (datetime, youtube_url, options)
             UPDATE status=succeeded|failed, result_text=...
 ```
 
-## Image sizes (đã build trên máy m4)
+### Pipeline (YouTube kênh → TikTok, Phase 1)
+
+```
+User → webapp → POST /api/pipelines (channel_url, interval, account_ids, caption_template, …)
+                    │
+                    ▼
+                INSERT ChannelPipeline(state=active, next_fire_at=first_fire_at, …)
+                    │
+        scheduler tick — pass 2 (chỉ khi pass 1 idle):
+            reap_orphans() [startup + implicit recovery paths]
+            claim_due_pipeline() — CAS set lock_until = now+10 phút
+            LockHeartbeat thread — mỗi 5 phút bump lock (CAS)
+                    │
+                    ▼
+            INSERT PipelineRun(started_at, trigger_reason=scheduled|manual)
+            yt-dlp flat-playlist → top fetch_count videos
+            Với mỗi video, mỗi account (tuần tự):
+              dedupe (account_id, youtube_video_id) qua VideoUpload
+              download 1 lần/video (trim/skip theo max_duration_seconds)
+              render_caption(template) → upload tiktok_adapter
+              INSERT VideoUpload (sau khi adapter trả về)
+                    │
+                    ▼
+            UPDATE PipelineRun(counts, summary_text, finished_at)
+            advance next_fire_at HOẶC clear run_now (CAS)
+            release lock, stop heartbeat
+            optional Telegram send_message(summary counts)
+```
+
+**Run now**: `POST /api/pipelines/{id}/run-now` — xếp cờ `run_now_requested_at`; không đẩy `next_fire_at`. Hai lần bấm khi đang khóa → 409.
+
+**Pause / Resume**: `PATCH` `state=paused` — tick đang chạy vẫn hoàn tất; tick sau bỏ qua. `Resume` → `state=active`, `next_fire_at=now` (worker vẫn tôn trọng `lock_until`).
+
+## Bảo mật mặt phẳng (Phase 1)
+
+- **Origin / Referer**: mọi `POST/PUT/PATCH/DELETE` phải có `Origin` hoặc `Referer` trỏ tới `http://127.0.0.1:3000` hoặc `http://localhost:3000` — giảm CSRF / DNS rebinding tới API local.
+- **Cấu hình mạng**: nên bind dịch vụ ra `127.0.0.1`; mở LAN/Internet chỉ qua reverse proxy có auth (ví dụ nginx basic auth). Trong `docker-compose`, map port API về `127.0.0.1:...` nếu host-expose.
+- **Cookie pickle**: file `.cookie` là mặt phẳng thực thi mã khi `pickle.load` — quyền file chặt (`0600`), thư mục `0700`; không chia sẻ file cho user khác.
+- **Telegram `bot_token`**: không bao giờ trả về trong JSON GET; log được lọc token (`api/logging.py`).
+- **YouTube URL**: validate domain YouTube trước khi đưa vào yt-dlp; caption render dùng `re.sub`, không `str.format`.
+- **Chưa có đăng nhập user** trên API — mô hình self-hosted một người dùng; multi-tenant là roadmap.
+
+Chi tiết vận hành: [09-operations](09-operations.md).
 
 | Image | Size | Note |
 |---|---|---|
@@ -162,7 +206,7 @@ VPS production: cần ≥8 GB disk free + ≥4 GB RAM. Idle ~1.5 GB RAM, peak ~3
 - `api` port 8000: chỉ bind compose network (`expose`), nginx proxy ra port 3000
 - `webapp` port 3000 → host `127.0.0.1:3000` (chỉ localhost, không expose Internet)
 - `novnc` port 6080 + 7900: internal compose only
-- Production VPS muốn expose Internet: dùng Cloudflare Tunnel hoặc đặt reverse proxy (Caddy/Traefik) lên trước `127.0.0.1:3000`
+- Production VPS muốn expose Internet: dùng Cloudflare Tunnel hoặc đặt reverse proxy (Caddy/Traefik) lên trước `127.0.0.1:3000`, bật **HTTPS + auth** (Phase 1 không có auth trong app).
 
 ## Code structure
 
@@ -171,13 +215,15 @@ v2/
 ├── api/                  — FastAPI app
 │   ├── main.py           — app factory
 │   ├── db.py             — SQLite engine + WAL
-│   ├── models.py         — SQLModel tables: Account, ScheduledUpload, LoginSession
-│   ├── schemas.py        — Pydantic request/response schemas
-│   ├── routers/          — endpoint groups
-│   └── services/         — adapters: cookie_store, novnc_client, tiktok_adapter, youtube
-├── scheduler/            — worker
+│   ├── models.py         — SQLModel: Account, ScheduledUpload, ChannelPipeline,
+│   │                     PipelineRun, VideoUpload, LoginSession
+│   ├── schemas.py        — Pydantic (PipelineCreate/Update, …)
+│   ├── routers/          — endpoint groups (+ pipelines, videos history)
+│   └── services/         — cookie_store, caption, youtube_channel, telegram, …
+├── scheduler/
 │   ├── main.py           — entrypoint
-│   └── worker.py         — poll loop
+│   ├── worker.py         — poll loop (pass 1 + pass 2)
+│   └── pipeline_worker.py — claim, run tick, Telegram, advance next_fire
 ├── novnc/                — control server inside noVNC container
 │   ├── control_server.py — FastAPI :7900
 │   └── entrypoint.sh     — boot Xvfb + x11vnc + websockify + uvicorn

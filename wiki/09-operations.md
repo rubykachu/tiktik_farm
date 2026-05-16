@@ -2,6 +2,14 @@
 
 [← Index](README.md) | [← 08-videos](08-videos.md)
 
+## Bảo mật vận hành (Phase 1)
+
+- **Origin middleware**: `POST` / `PUT` / `PATCH` / `DELETE` phải có `Origin` hoặc `Referer` khớp `http://127.0.0.1:3000` hoặc `http://localhost:3000`. `curl` hoặc script automation phải gửi header tương ứng. GET/HEAD/OPTIONS không kiểm tra Origin (CORS vẫn giới hạn ở app).
+- **Không có auth đăng nhập**: coi API là **localhost / tin cậy**. Ra Internet → **reverse proxy + HTTPS + basic auth** (hoặc tương đương) trước webapp.
+- **Bind**: ưu tiên chỉ lắng nghe `127.0.0.1` trên host; trong Docker giữ API internal, chỉ webapp map `127.0.0.1:3000`.
+- **Cookie / path**: username & path cookie file có guard chống path traversal; import JSON có giới hạn kích thước/cấu trúc (xem [05-accounts](05-accounts.md)).
+- **Telegram**: URL cố định `api.telegram.org`, httpx `follow_redirects=False`, timeout 10s; token trong log bị redact (`api/logging.py`).
+
 ## Xem log
 
 ### Docker
@@ -85,17 +93,28 @@ Tìm phrase:
 - Docker stack: `docker compose ps novnc` show Up?
 - `docker compose logs novnc` có error Chromium? Khả năng OOM, kiểm `/dev/shm` tmpfs (đã setup 512MB trong compose).
 
-### 4. Schedule không chạy
+### 4. Schedule Single-shot không chạy
 
 ```bash
 docker compose logs --tail=20 scheduler
 ```
 
 - `scheduler loop starting` → đã khởi động
-- Không thấy log gì sau đó → đang poll, chưa có job đến hạn
-- Job đến hạn nhưng không run → check `scheduled_for` timezone (UTC trong DB)
+- Không thấy log gì sau đó → đang poll; pass 1 ưu tiên single-shot
+- Job đến hạn nhưng không run → kiểm `scheduled_for` timezone (UTC trong DB)
 
-### 5. Cookie debug
+### 5. Pipeline không tick / Run now 409
+
+```bash
+docker compose logs --tail=80 scheduler
+```
+
+- Xác nhận pass 1 không “kẹt” hàng loạt `ScheduledUpload` (pass 2 chỉ chạy khi pass 1 rảnh).
+- Kiểm tra `channel_pipelines.state`, `next_fire_at`, `lock_until` (SQLite snippet dưới).
+- **409 Run now**: pipeline đang chạy (`lock_until`) hoặc đã xếp sẵn Run now — đợi tick hiện tại xong.
+- **low_disk**: free `/tmp` trong container < 1 GB.
+
+### 6. Cookie debug
 
 ```bash
 docker compose exec api python -c "
@@ -108,7 +127,7 @@ print('has tt-target-idc:', any(x['name']=='tt-target-idc' for x in c))
 "
 ```
 
-### 6. SQLite inspect
+### 7. SQLite inspect
 
 Container Python (sqlite3 CLI không có sẵn):
 
@@ -116,14 +135,20 @@ Container Python (sqlite3 CLI không có sẵn):
 docker compose exec api python -c "
 from sqlmodel import Session, select
 from api.db import engine
-from api.models import Account, ScheduledUpload, LoginSession
+from api.models import Account, ScheduledUpload, ChannelPipeline, PipelineRun, VideoUpload, LoginSession
 with Session(engine) as s:
     print('Accounts:')
     for a in s.exec(select(Account)).all():
         print(f'  {a.id} {a.username} valid={a.has_valid_session}')
-    print('Schedules:')
+    print('Schedules (last 10):')
     for sc in s.exec(select(ScheduledUpload).order_by(ScheduledUpload.id.desc())).all()[:10]:
         print(f'  {sc.id} acct={sc.account_id} status={sc.status} when={sc.scheduled_for}')
+    print('Pipelines:')
+    for p in s.exec(select(ChannelPipeline).order_by(ChannelPipeline.id.desc())).all()[:10]:
+        print(f'  {p.id} {p.name!r} state={p.state} next={p.next_fire_at} lock={p.lock_until}')
+    print('Recent VideoUpload (5):')
+    for v in s.exec(select(VideoUpload).order_by(VideoUpload.id.desc())).all()[:5]:
+        print(f'  {v.id} acct={v.account_id} yt={v.youtube_video_id} status={v.status}')
 "
 ```
 

@@ -8,7 +8,8 @@ Tự động đăng video lên TikTok thông qua REST API trực tiếp (không 
 
 - Quản lý nhiều TikTok account trên cùng máy
 - Upload video local hoặc tải từ YouTube URL rồi upload
-- Lên lịch upload tương lai (chỉ YouTube URL, lên đến 10 ngày)
+- Lên lịch upload tương lai (chỉ YouTube URL, lên đến 10 ngày) — **Single-shot**
+- **Pipeline** kênh YouTube: lặp theo interval (phút/giờ/ngày), lấy top-N video mới, dedupe, upload lên nhiều TikTok account tuần tự, tùy chọn Telegram + caption template
 - Login account qua trình duyệt ảo (noVNC) — debug bằng mắt người
 - Đồng thời chạy được CLI (legacy) và REST API + UI (mới)
 
@@ -50,11 +51,15 @@ Source code base: fork từ `makiisthenes/TiktokAutoUploader`. v2 thêm: REST AP
 │  yt-dlp tải về /data/VideosDirPath/pre-processed.mp4 →       │
 │  upload TikTok → xong                                        │
 │                                                              │
-│  Option C — Schedule YouTube:                                │
-│  /upload page → paste URL + future datetime → ghi row        │
-│  ScheduledUpload(status=pending) vào SQLite → scheduler      │
-│  worker poll 30s/lần → khi đến hạn: download + upload →      │
-│  status=succeeded|failed                                     │
+│  Option C — Single-shot schedule YouTube:                     │
+│  /upload hoặc /schedules tab Single-shot → future datetime → │
+│  ScheduledUpload(pending) → worker pass 1: download + upload  │
+│                                                              │
+│  Option D — Pipeline kênh YouTube (Phase 1):                   │
+│  /schedules tab Pipelines → cấu hình URL kênh + interval +    │
+│  account(s) + caption template → ChannelPipeline (active) →  │
+│  worker pass 2: yt-dlp list top-N → mỗi video upload tuần tự │
+│  → ghi VideoUpload + PipelineRun; optional Telegram summary  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -74,7 +79,7 @@ Source code base: fork từ `makiisthenes/TiktokAutoUploader`. v2 thêm: REST AP
 | Service | Tech | Vai trò |
 |---|---|---|
 | api | FastAPI + SQLite | REST endpoints, OpenAPI docs |
-| scheduler | Python worker | Poll DB 30s, chạy job đến hạn |
+| scheduler | Python worker | Poll DB 30s, **hai pass**: (1) single-shot `ScheduledUpload`, (2) `ChannelPipeline` recurring |
 | novnc | Xvfb + chromium + x11vnc + websockify | Trình duyệt ảo cho login |
 | webapp | React + Vite + nginx | UI |
 | (shared base) | Python 3.11 + Node 20 + Playwright + ffmpeg | Image base cho 3 service Python |
