@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
 from api.models import Account, ScheduledUpload
 from api.schemas import AccountCreate, AccountRead, AccountUpdate
-from api.services import cookie_store
+from api.services import cookie_import, cookie_store
+from api.services.safe_path import safe_join_under, validate_username
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -100,6 +101,77 @@ def delete_account(account_id: int, session: Session = Depends(get_session)):
     session.delete(acct)
     session.commit()
     cookie_store.delete(username)
+
+
+@router.post("/import-json", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
+async def import_json_cookie(
+    file: UploadFile = File(...),
+    username: str = Form(...),
+    replace: str = Form(default="false"),
+    session: Session = Depends(get_session),
+):
+    """Accept a Chrome Cookie-Editor JSON export, convert to pickle, store as
+    `tiktok_session-<username>.cookie`, and upsert the Account row.
+
+    Username is rejected if it contains characters outside
+    `^[A-Za-z0-9_.]{1,32}$` so the resulting path can never escape CookiesDir.
+    File size capped at 256KB and ≤200 cookie entries; sessionid required.
+    """
+    try:
+        username = validate_username(username)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid username")
+
+    raw = await file.read()
+    try:
+        cookies = cookie_import.parse_and_validate(raw)
+    except cookie_import.CookieImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing = session.exec(select(Account).where(Account.username == username)).first()
+    replace_flag = str(replace).lower() in ("true", "1", "yes", "on")
+    if existing and not replace_flag:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "ACCOUNT_EXISTS",
+                "message": (
+                    f"Account '{username}' already exists. Pass replace=true to overwrite."
+                ),
+            },
+        )
+
+    cookies_dir = cookie_store.cookies_dir()
+    try:
+        cookie_path = safe_join_under(
+            cookies_dir, f"{cookie_store.COOKIE_PREFIX}{username}.cookie"
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid username")
+
+    cookie_import.save_cookies_secure(cookie_path, cookies)
+    has_session = any(
+        c.get("name") == "sessionid" and c.get("value") for c in cookies
+    )
+
+    if existing:
+        existing.cookie_path = cookie_path
+        existing.has_valid_session = has_session
+        existing.updated_at = now_utc()
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    acct = Account(
+        username=username,
+        cookie_path=cookie_path,
+        has_valid_session=has_session,
+    )
+    session.add(acct)
+    session.commit()
+    session.refresh(acct)
+    return acct
 
 
 @router.post("/import-from-disk", response_model=List[AccountRead])
