@@ -29,4 +29,7 @@
   .chip {
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
   }
+  .field-error {
+    @apply text-xs text-red-600 mt-1;
+  }
 }
