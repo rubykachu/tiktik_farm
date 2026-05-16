@@ -78,9 +78,13 @@ def login(login_name: str):
 
 # Local Code...
 def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, allow_duet=0, allow_stitch=0, visibility_type=0, brand_organic_type=0, branded_content_type=0, ai_label=0, proxy=None):
+	# TikTok's /api/v1/web/* endpoints reject mobile User-Agents with
+	# status_code 8. `fake_useragent.UserAgent().random` returns iPhone/Android
+	# UAs from its modern pool, so filter to desktop Chrome explicitly.
 	try:
-		user_agent = UserAgent().random
-	except FakeUserAgentError as e:
+		ua_obj = UserAgent(platforms="desktop", browsers="Chrome")
+		user_agent = ua_obj.random
+	except (FakeUserAgentError, TypeError, Exception):
 		user_agent = _UA
 		print("[-] Could not get random user agent, using default")
 
