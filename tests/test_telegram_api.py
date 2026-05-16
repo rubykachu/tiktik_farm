@@ -93,7 +93,7 @@ class TestDetectChats:
                 {"id": -1003735696189, "title": "NotifyTiktok", "type": "channel"}
             ]
         }
-        assert mock_client.post.call_count >= 2
+        assert mock_client.post.call_count == 1
 
     @patch("api.services.telegram.httpx.Client")
     def test_empty_result(self, mock_cls, client):

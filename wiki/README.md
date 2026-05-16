@@ -15,6 +15,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 9. [Vận hành: log, debug, restart, bảo mật](09-operations.md) — Docker, SQLite, hardening Phase 1
 10. [Bug đã fix từ upstream](10-known-bugs.md) — 4 bug source code upstream
 11. [Roadmap Phase 2 + SaaS](11-roadmap.md) — port nghiệp vụ v1, multi-tenant prep
+12. [Lấy Telegram Chat ID (Bot API)](how_to_get_telegram_chat_id.md) — token, `getUpdates`, group/channel
 
 ## Quick reference
 
@@ -31,6 +32,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 | Debug khi UI lỗi | [09-operations](09-operations.md) |
 | Hiểu vì sao có 4 fix tiktok.py | [10-known-bugs](10-known-bugs.md) |
 | Mở rộng SaaS | [11-roadmap](11-roadmap.md) |
+| Lấy `chat_id` số cho Telegram (pipeline) | [how_to_get_telegram_chat_id](how_to_get_telegram_chat_id.md) |
 
 ---
 

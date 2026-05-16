@@ -121,6 +121,8 @@ class TestDetectChatsHelpers:
         mock_client.post.side_effect = post_side_effect
         detect_chats(VALID_TOKEN)
         mock_cls.assert_called_with(follow_redirects=False, timeout=15)
+        assert mock_client.post.call_count == 1
+        assert "getUpdates" in str(mock_client.post.call_args[0][0])
 
     def test_chats_from_updates_skips_private_keeps_supergroup(self):
         from api.services.telegram import _chats_from_updates_result

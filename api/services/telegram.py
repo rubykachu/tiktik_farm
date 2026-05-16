@@ -99,9 +99,9 @@ def _chats_from_updates_result(result: list[Any]) -> list[dict[str, Any]]:
 def detect_chats(bot_token: str) -> list[dict[str, Any]]:
     """Poll Telegram for recent updates and list unique group/channel chats.
 
-    Runs a best-effort ``deleteWebhook`` (see inline comment) so ``getUpdates``
-    can poll the long-polling buffer. The bot must have at least one unread
-    update queued (e.g. a post in a channel where the bot is admin).
+    Uses ``getUpdates`` only (limit 100). The bot should have recent activity
+    in a group, supergroup, or channel so those chats appear in the update
+    buffer.
 
     Raises:
         ValueError: bot_token format invalid.
@@ -110,28 +110,10 @@ def detect_chats(bot_token: str) -> list[dict[str, Any]]:
     if not _BOT_TOKEN_RE.match(bot_token):
         raise ValueError("telegram bot_token format invalid")
 
-    del_url = _method_url(bot_token, "deleteWebhook")
     get_url = _method_url(bot_token, "getUpdates")
 
     try:
         with httpx.Client(follow_redirects=False, timeout=15) as client:
-            # Best-effort: deleteWebhook drops any webhook so getUpdates can poll.
-            # Side effect: if this bot legitimately used Telegram webhooks elsewhere,
-            # this call disables them until re-registered (acceptable for this tool).
-            try:
-                logger.warning(
-                    "Telegram detect_chats: calling deleteWebhook (may clear an "
-                    "existing webhook for this bot)"
-                )
-                del_resp = client.post(del_url, json={})
-                if del_resp.status_code != 200:
-                    logger.warning(
-                        "Telegram deleteWebhook non-200: status=%s",
-                        del_resp.status_code,
-                    )
-            except httpx.HTTPError as exc:
-                logger.warning("Telegram deleteWebhook request failed: %s", exc)
-
             resp = client.post(get_url, json={"limit": 100})
     except httpx.HTTPError as exc:
         logger.warning("Telegram getUpdates network error: %s", exc)

@@ -111,6 +111,10 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 
 ## Telegram (tùy chọn, theo pipeline)
 
+- **`telegram_chat_id`**: chỉ chấp nhận **chuỗi số** (ví dụ `21xxxxxx38`, `-1001234567890`). **Không** dùng `@username`, invite link hay `t.me/...` trong form — API trả **422** nếu format sai. Cách lấy ID chi tiết: [how_to_get_telegram_chat_id.md](how_to_get_telegram_chat_id.md).
+- Trong modal pipeline (**Telegram**): **Tự động phát hiện** gọi `getUpdates` và liệt kê các chat loại **group / supergroup / channel** có trong buffer cập nhật (bấm chọn một dòng để điền `chat_id`). Chat **private** với bot **không** xuất hiện trong danh sách này — nếu cần, lấy ID bằng `getUpdates` (hoặc bot khác) rồi **dán tay** vào ô Chat ID.
+- **Gửi tin test** gửi một tin nhắn thử qua Bot API (cùng token + `chat_id` đang nhập) để xác nhận trước khi lưu pipeline.
+- Worker chỉ gọi `sendMessage` với `chat_id` + text — **không** hỗ trợ `message_thread_id` (forum topic); thông báo pipeline không nhắm vào topic con trong nhóm forum.
 - Cần **cả** `telegram_bot_token` + `telegram_chat_id` hoặc **cả hai trống** (validate ở API).
 - Token **không** xuất hiện trong GET list/detail — chỉ `telegram_bot_token_set: bool`. PATCH: token rỗng/không gửi → giữ cũ; xóa token: `clear_bot_token: true`.
 - Sau **mỗi** tick (kể cả 0 video), gửi **một** tin nhắn plaintext (không `parse_mode`) tóm tắt số liệu: tên pipeline, giờ bắt đầu (HH:mm VN), Pulled / Uploaded / Skipped / Failed, và dòng Error nếu `PipelineRun.error_text`. Chi tiết từng URL nằm trong **`summary_text`** trên DB / UI drill-down, không nhất thiết lặp đủ trong Telegram (triển khai hiện tại ưu tiên gọn).
