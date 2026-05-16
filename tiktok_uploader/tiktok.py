@@ -114,8 +114,20 @@ def upload_video(session_user, video, title, schedule_time=0, allow_comment=1, a
 
 	# Creating Session
 	session = requests.Session()
-	session.cookies.set("sessionid", session_id, domain=".tiktok.com")
-	session.cookies.set("tt-target-idc", dc_id, domain=".tiktok.com")
+	# Load the full cookie jar — TikTok's anti-bot rejects requests that carry
+	# only sessionid/tt-target-idc. msToken, ttwid, tt_csrf_token, sid_guard
+	# etc. must travel together or /api/v1/web/project/create/ replies
+	# status_code 8 (no "project" key in response → KeyError downstream).
+	for c in cookies:
+		session.cookies.set(
+			c["name"],
+			c["value"],
+			domain=c.get("domain", ".tiktok.com"),
+			path=c.get("path", "/"),
+		)
+	# Defensive: ensure sessionid present even if the pickle is missing it.
+	if not any(c["name"] == "sessionid" for c in cookies):
+		session.cookies.set("sessionid", session_id, domain=".tiktok.com")
 	session.verify = True
 
 	headers = {
