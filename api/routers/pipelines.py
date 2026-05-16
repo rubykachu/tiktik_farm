@@ -130,6 +130,9 @@ def update_pipeline(
         if payload.state == "active" and row.state == "paused":
             # Resume — restart firing now so the user sees progress.
             row.next_fire_at = now_utc()
+        elif payload.state == "paused" and row.state == "active":
+            # Drop queued manual run; worker only claims active pipelines.
+            row.run_now_requested_at = None
         row.state = payload.state
         changed = True
     if payload.fetch_count is not None:
@@ -212,6 +215,15 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
     row = session.get(ChannelPipeline, pipeline_id)
     if not row:
         raise HTTPException(status_code=404, detail="pipeline not found")
+
+    if row.state != "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PIPELINE_PAUSED",
+                "message": "Pipeline đang tạm dừng. Bấm Resume rồi chạy lại.",
+            },
+        )
 
     lock = _as_utc(row.lock_until)
     if lock is not None and lock > now_utc():

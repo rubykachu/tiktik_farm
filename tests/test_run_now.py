@@ -77,6 +77,12 @@ class TestRunNow:
         assert resp.status_code == 409
         assert resp.json()["detail"]["code"] == "RUN_NOW_QUEUED"
 
+    def test_409_paused(self, client):
+        pid = _make_pipeline(state="paused")
+        resp = client.post(f"/api/pipelines/{pid}/run-now")
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == "PIPELINE_PAUSED"
+
     def test_404_not_found(self, client):
         resp = client.post("/api/pipelines/999/run-now")
         assert resp.status_code == 404

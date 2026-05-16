@@ -81,6 +81,10 @@ services:
       - "7900"
     restart: unless-stopped
 
+  # Static UI is baked into the image at build time. After changing webapp
+  # source, rebuild before recreating: `docker compose build webapp` then
+  # `docker compose up -d webapp` (or `docker compose up --build -d`). Using
+  # only `up --force-recreate` reuses the previous image and stale assets.
   webapp:
     image: tiktok-webapp:latest
     build:

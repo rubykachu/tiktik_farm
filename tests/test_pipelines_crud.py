@@ -217,6 +217,22 @@ class TestRead:
 # ----------------- PATCH ----------------------------------------------------
 
 class TestPatch:
+    def test_patch_pause_clears_run_now_queue(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        client.post(f"/api/pipelines/{pid}/run-now", headers=HEADERS_OK)
+        assert client.get(f"/api/pipelines/{pid}").json()["run_now_requested_at"] is not None
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"state": "paused"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200
+        assert r.json()["state"] == "paused"
+        assert r.json()["run_now_requested_at"] is None
+
     def test_patch_state_paused(self, client):
         aid = _make_account(client)
         pid = client.post(

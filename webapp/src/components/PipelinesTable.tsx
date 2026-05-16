@@ -62,31 +62,17 @@ export default function PipelinesTable({ onEdit }: Props) {
     },
   });
 
-  const [runNowDisabled, setRunNowDisabled] = useState<Set<number>>(new Set());
-
-  function startRunNowCooldown(id: number) {
-    setRunNowDisabled((prev) => new Set(prev).add(id));
-    setTimeout(() => {
-      setRunNowDisabled((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, 5000);
-  }
-
   const runNowMut = useMutation({
     mutationFn: (id: number) => Pipelines.runNow(id),
-    onMutate: (id) => {
-      startRunNowCooldown(id);
-    },
     onSuccess: () => {
       alert("Đã xếp lịch chạy ngay");
       qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
-      if (detail?.code === "PIPELINE_RUNNING") {
+      if (detail?.code === "PIPELINE_PAUSED") {
+        alert(detail?.message ?? "Pipeline đang paused — bấm Resume trước.");
+      } else if (detail?.code === "PIPELINE_RUNNING") {
         alert("Pipeline đang chạy, đợi xong.");
       } else if (detail?.code === "RUN_NOW_QUEUED") {
         alert("Đã xếp Run now, chờ tick tới.");
@@ -96,6 +82,15 @@ export default function PipelinesTable({ onEdit }: Props) {
     },
   });
 
+  function isPipelineLocked(p: Pipeline): boolean {
+    if (!p.lock_until) return false;
+    return new Date(p.lock_until).getTime() > Date.now();
+  }
+
+  function isRunNowQueued(p: Pipeline): boolean {
+    return p.run_now_requested_at != null;
+  }
+
   const activeCount = data?.filter((p) => p.state === "active").length ?? 0;
 
   return (
@@ -103,7 +98,7 @@ export default function PipelinesTable({ onEdit }: Props) {
       {activeCount > 5 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Bạn đang chạy {activeCount} pipeline. Hiệu suất xử lý có thể chậm.
-          Cân nhắc Stop bớt.
+          Cân nhắc Pause bớt.
         </div>
       )}
 
@@ -155,28 +150,64 @@ export default function PipelinesTable({ onEdit }: Props) {
                     <span className={"chip " + stateClass(p.state)}>{p.state}</span>
                   </td>
                   <td className="p-3 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="text-xs text-slate-600 disabled:opacity-40"
-                      disabled={runNowDisabled.has(p.id)}
-                      onClick={() => runNowMut.mutate(p.id)}
-                      title="Run now"
-                    >
-                      <RunNow size={14} className="inline" /> Run now
-                    </button>
-                    <button
-                      className="text-xs text-slate-600"
-                      onClick={() => toggleState.mutate(p)}
-                    >
-                      {p.state === "active" ? (
+                    {(() => {
+                      const locked = isPipelineLocked(p);
+                      const queued = isRunNowQueued(p);
+                      if (p.state === "paused") {
+                        return (
+                          <button
+                            className="text-xs text-slate-600"
+                            onClick={() => toggleState.mutate(p)}
+                          >
+                            <Play size={14} className="inline" /> Resume
+                          </button>
+                        );
+                      }
+                      if (locked) {
+                        return (
+                          <span className="text-xs text-slate-500" title="Worker đang xử lý tick">
+                            Đang chạy…
+                          </span>
+                        );
+                      }
+                      if (queued) {
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              disabled
+                              className="text-xs text-slate-400 cursor-not-allowed"
+                              title="Scheduler sẽ chạy ở tick tiếp theo"
+                            >
+                              Queued…
+                            </button>
+                            <button
+                              className="text-xs text-slate-600"
+                              onClick={() => toggleState.mutate(p)}
+                            >
+                              <Pause size={14} className="inline" /> Pause
+                            </button>
+                          </>
+                        );
+                      }
+                      return (
                         <>
-                          <Pause size={14} className="inline" /> Stop
+                          <button
+                            className="text-xs text-slate-600"
+                            onClick={() => runNowMut.mutate(p.id)}
+                            title="Chạy một tick ngay"
+                          >
+                            <RunNow size={14} className="inline" /> Run now
+                          </button>
+                          <button
+                            className="text-xs text-slate-600"
+                            onClick={() => toggleState.mutate(p)}
+                          >
+                            <Pause size={14} className="inline" /> Pause
+                          </button>
                         </>
-                      ) : (
-                        <>
-                          <Play size={14} className="inline" /> Resume
-                        </>
-                      )}
-                    </button>
+                      );
+                    })()}
                     {onEdit && (
                       <button
                         className="text-xs text-brand-600"

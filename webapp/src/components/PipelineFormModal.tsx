@@ -257,6 +257,16 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const selectedAccounts = watch("account_ids");
   const clearBotToken = watch("clear_bot_token");
+  const intervalValue = watch("interval_value");
+  const intervalUnit = watch("interval_unit");
+
+  const repeatHint = useMemo(() => {
+    const n = Number(intervalValue);
+    if (!Number.isFinite(n) || n < 1) return null;
+    const unitVi =
+      intervalUnit === "minutes" ? "phút" : intervalUnit === "days" ? "ngày" : "giờ";
+    return `Pipeline chạy lặp mỗi ${n} ${unitVi} kể từ mốc này, liên tục khi trạng thái active (scheduler tăng next fire sau mỗi lần chạy).`;
+  }, [intervalValue, intervalUnit]);
 
   if (!open) return null;
 
@@ -332,13 +342,16 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="field-error">{errors.interval_value.message}</p>
             )}
             <div>
-              <label className="label">Bắt đầu lúc</label>
+              <label className="label">Bắt đầu từ</label>
               <input
                 type="datetime-local"
                 className="input"
                 {...register("first_fire_at")}
                 disabled={isEdit}
               />
+              {repeatHint && !isEdit && (
+                <p className="text-xs text-slate-500 mt-1">{repeatHint}</p>
+              )}
               {isEdit && (
                 <p className="text-xs text-slate-400 mt-1">
                   Thời gian bắt đầu không thể thay đổi.
