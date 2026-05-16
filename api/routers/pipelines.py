@@ -205,3 +205,35 @@ def delete_pipeline(pipeline_id: int, session: Session = Depends(get_session)):
         )
     session.delete(row)
     session.commit()
+
+
+@router.post("/{pipeline_id}/run-now", status_code=status.HTTP_202_ACCEPTED)
+def run_now(pipeline_id: int, session: Session = Depends(get_session)):
+    row = session.get(ChannelPipeline, pipeline_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="pipeline not found")
+
+    lock = _as_utc(row.lock_until)
+    if lock is not None and lock > now_utc():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PIPELINE_RUNNING",
+                "message": "Pipeline đang chạy. Đợi tick xong.",
+            },
+        )
+
+    if row.run_now_requested_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RUN_NOW_QUEUED",
+                "message": "Đã xếp Run now, chờ tick tới.",
+            },
+        )
+
+    row.run_now_requested_at = now_utc()
+    row.updated_at = now_utc()
+    session.add(row)
+    session.commit()
+    return {"ok": True, "message": "Đã xếp lịch chạy ngay"}

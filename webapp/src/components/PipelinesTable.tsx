@@ -60,6 +60,34 @@ export default function PipelinesTable({ onEdit }: Props) {
     },
   });
 
+  const [runNowDisabled, setRunNowDisabled] = useState<Set<number>>(new Set());
+
+  const runNowMut = useMutation({
+    mutationFn: (id: number) => Pipelines.runNow(id),
+    onSuccess: (_data, id) => {
+      alert("Đã xếp lịch chạy ngay");
+      setRunNowDisabled((prev) => new Set([...prev, id]));
+      setTimeout(() => {
+        setRunNowDisabled((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 5000);
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
+    },
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail;
+      if (detail?.code === "PIPELINE_RUNNING") {
+        alert("Pipeline đang chạy, đợi xong.");
+      } else if (detail?.code === "RUN_NOW_QUEUED") {
+        alert("Đã xếp Run now, chờ tick tới.");
+      } else {
+        alert(`Lỗi: ${e.message}`);
+      }
+    },
+  });
+
   const activeCount = data?.filter((p) => p.state === "active").length ?? 0;
 
   return (
@@ -115,9 +143,10 @@ export default function PipelinesTable({ onEdit }: Props) {
                 </td>
                 <td className="p-3 text-right space-x-2 whitespace-nowrap">
                   <button
-                    className="text-xs text-slate-600"
-                    onClick={() => alert("Run now sẽ active ở task F2")}
-                    title="Run now (F2 wires this)"
+                    className="text-xs text-slate-600 disabled:opacity-40"
+                    disabled={runNowDisabled.has(p.id)}
+                    onClick={() => runNowMut.mutate(p.id)}
+                    title="Run now"
                   >
                     <RunNow size={14} className="inline" /> Run now
                   </button>

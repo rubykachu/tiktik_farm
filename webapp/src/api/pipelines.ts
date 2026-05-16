@@ -65,4 +65,6 @@ export const Pipelines = {
   update: (id: number, p: PipelineUpdate) =>
     api.patch<Pipeline>(`/pipelines/${id}`, p).then((r) => r.data),
   remove: (id: number) => api.delete(`/pipelines/${id}`),
+  runNow: (id: number) =>
+    api.post<{ ok: boolean; message: string }>(`/pipelines/${id}/run-now`).then((r) => r.data),
 };
