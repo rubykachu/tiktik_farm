@@ -22,7 +22,13 @@ const baseSchema = z.object({
   visibility_type: z.coerce.number().min(0).max(1),
   account_ids: z.array(z.number()).min(1, "Chọn ít nhất 1 account"),
   telegram_bot_token: z.string().optional().default(""),
-  telegram_chat_id: z.string().optional().default(""),
+  telegram_chat_id: z
+    .string()
+    .optional()
+    .default("")
+    .refine((v) => !v || /^-?\d+$/.test(v), {
+      message: "Chat ID phải là số (vd. -1001234567890)",
+    }),
   clear_bot_token: z.boolean().optional().default(false),
 });
 
@@ -514,8 +520,21 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <input
                 className="input"
                 {...register("telegram_chat_id")}
-                placeholder="-1001234567890 hoặc @channel"
+                placeholder="-1001234567890"
+                inputMode="numeric"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                Chỉ nhập số (kênh riêng thường dạng{" "}
+                <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot
+                làm admin kênh, gửi 1 tin trong kênh, rồi gọi{" "}
+                <code className="bg-slate-100 px-1 rounded">getUpdates</code> (hoặc
+                xóa webhook trước:{" "}
+                <code className="bg-slate-100 px-1 rounded">deleteWebhook</code>) để
+                lấy <code className="bg-slate-100 px-1 rounded">chat.id</code>.
+              </p>
+              {errors.telegram_chat_id && (
+                <p className="field-error">{errors.telegram_chat_id.message}</p>
+              )}
             </div>
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">

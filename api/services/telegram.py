@@ -12,7 +12,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
-_CHAT_ID_RE = re.compile(r"^(-?\d+|@[A-Za-z0-9_]{5,32})$")
+# Numeric only — private channels/supergroups use -100xxxxxxxxxx.
+_CHAT_ID_RE = re.compile(r"^-?\d+$")
 _ALLOWED_HOST = "api.telegram.org"
 
 

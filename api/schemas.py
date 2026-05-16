@@ -14,7 +14,8 @@ from api.services.caption import find_unknown_vars
 from api.services.youtube_validate import is_youtube_url as is_youtube_channel_url
 
 _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
-_CHAT_ID_RE = re.compile(r"^(-?\d+|@[A-Za-z0-9_]{5,32})$")
+# Numeric only — private channels/supergroups use -100xxxxxxxxxx.
+_CHAT_ID_RE = re.compile(r"^-?\d+$")
 
 
 # ---------- accounts ---------------------------------------------------------

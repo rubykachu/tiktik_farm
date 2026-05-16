@@ -118,6 +118,19 @@ class TestCreate:
         )
         assert r.status_code in (400, 422)
 
+    def test_400_telegram_chat_id_username(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_valid_payload(
+                aid,
+                telegram_bot_token="1234567:abcdefghijklmnopqrstuvwxyz_AAA",
+                telegram_chat_id="@mychannel",
+            ),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code in (400, 422)
+
     def test_400_minutes_interval_below_2(self, client):
         aid = _make_account(client)
         r = client.post(
@@ -204,7 +217,7 @@ class TestRead:
             json=_valid_payload(
                 aid,
                 telegram_bot_token="555:abcdefghij1234567890ABCDEFGHIJKL",
-                telegram_chat_id="@channel123",
+                telegram_chat_id="-1001234567890",
             ),
             headers=HEADERS_OK,
         )

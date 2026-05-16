@@ -22,16 +22,9 @@ class TestValidation:
         with pytest.raises(ValueError, match="bot_token format"):
             send_message("123:short", VALID_CHAT, "hello")
 
-    def test_valid_channel_username(self):
-        with patch("api.services.telegram.httpx.Client") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-            mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-            mock_resp = MagicMock()
-            mock_resp.status_code = 200
-            mock_client.post.return_value = mock_resp
-
-            assert send_message(VALID_TOKEN, "@my_channel", "hi") is True
+    def test_username_chat_id_raises(self):
+        with pytest.raises(ValueError, match="chat_id format"):
+            send_message(VALID_TOKEN, "@my_channel", "hi")
 
 
 class TestHappyPath:
