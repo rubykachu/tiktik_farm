@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.db import engine as _engine, init_db
-from api.db_migrations import apply_indexes
+from api.db_migrations import apply_indexes, apply_schema_patches
 from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import accounts, login, pipelines, schedules, telegram, uploads, videos
@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
         init_db()
         # Composite indexes SQLModel does not emit on its own.
         from api import db as _db
+        apply_schema_patches(_db.engine)
         apply_indexes(_db.engine)
 
     @app.get("/health", tags=["meta"])

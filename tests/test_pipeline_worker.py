@@ -61,7 +61,7 @@ def _make_pipeline(session: Session, **overrides) -> ChannelPipeline:
     _ = (p.id, p.name, p.channel_url, p.fetch_count, p.interval_value,
          p.interval_unit, p.first_fire_at, p.next_fire_at, p.state,
          p.caption_template, p.upload_options_json, p.account_ids_json,
-         p.max_duration_seconds, p.telegram_bot_token, p.telegram_chat_id,
+         p.max_duration_seconds, p.upload_delay_minutes, p.telegram_bot_token, p.telegram_chat_id,
          p.run_now_requested_at, p.lock_until, p.created_at, p.updated_at)
     return p
 
@@ -345,6 +345,51 @@ class TestRunPipeline:
 
         assert run.pulled_count == 2
         assert run.uploaded_count == 4  # 2 videos * 2 accounts
+
+    @patch("scheduler.pipeline_worker.time.sleep")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    def test_upload_delay_sleeps_between_uploads(
+        self, mock_upload, mock_download, mock_list, mock_sleep
+    ):
+        mock_list.return_value = [
+            {"id": "v1", "title": "Video 1", "url": "https://www.youtube.com/watch?v=v1"},
+            {"id": "v2", "title": "Video 2", "url": "https://www.youtube.com/watch?v=v2"},
+        ]
+        mock_download.return_value = "/tmp/fake.mp4"
+        mock_upload.return_value = (True, "tk1", "https://tiktok.com/@user/video/tk1")
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s, upload_delay_minutes=2)
+            s.expunge(pipeline)
+
+        run = run_pipeline(pipeline, "scheduled")
+
+        assert run.uploaded_count == 2
+        assert mock_sleep.call_count == 1
+        mock_sleep.assert_called_once_with(120)
+
+    @patch("scheduler.pipeline_worker.time.sleep")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    def test_upload_delay_zero_no_sleep(self, mock_upload, mock_download, mock_list, mock_sleep):
+        mock_list.return_value = [
+            {"id": "v1", "title": "Video 1", "url": "https://www.youtube.com/watch?v=v1"},
+            {"id": "v2", "title": "Video 2", "url": "https://www.youtube.com/watch?v=v2"},
+        ]
+        mock_download.return_value = "/tmp/fake.mp4"
+        mock_upload.return_value = (True, "tk1", "https://tiktok.com/@user/video/tk1")
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s, upload_delay_minutes=0)
+            s.expunge(pipeline)
+
+        run_pipeline(pipeline, "scheduled")
+        mock_sleep.assert_not_called()
 
 
 # ─── E4: Advance next_fire_at ──────────────────────────────────────────────

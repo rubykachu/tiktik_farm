@@ -52,6 +52,7 @@ class TestChannelPipeline:
         assert p.lock_until is None
         assert p.max_duration_seconds is None
         assert p.telegram_bot_token is None
+        assert p.upload_delay_minutes == 0
 
     def test_nullable_fields_default_to_none(self, session):
         p = ChannelPipeline(

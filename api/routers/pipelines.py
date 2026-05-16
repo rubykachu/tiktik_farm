@@ -46,6 +46,7 @@ def _to_read(row: ChannelPipeline) -> dict:
         "upload_options_json": row.upload_options_json,
         "account_ids_json": row.account_ids_json,
         "max_duration_seconds": row.max_duration_seconds,
+        "upload_delay_minutes": row.upload_delay_minutes or 0,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
         "telegram_chat_id": row.telegram_chat_id,
         "run_now_requested_at": row.run_now_requested_at,
@@ -103,6 +104,7 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         upload_options_json=json.dumps(payload.upload_options.model_dump()),
         account_ids_json=json.dumps(payload.account_ids),
         max_duration_seconds=payload.max_duration_seconds,
+        upload_delay_minutes=payload.upload_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
     )
@@ -176,6 +178,9 @@ def update_pipeline(
         changed = True
     if payload.max_duration_seconds is not None:
         row.max_duration_seconds = payload.max_duration_seconds
+        changed = True
+    if payload.upload_delay_minutes is not None:
+        row.upload_delay_minutes = payload.upload_delay_minutes
         changed = True
 
     # Telegram secret handling: only update when caller sent non-empty token,

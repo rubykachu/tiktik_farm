@@ -84,6 +84,7 @@ class ChannelPipeline(SQLModel, table=True):
     account_ids_json: str = Field(default="[]")
 
     max_duration_seconds: Optional[int] = Field(default=None)
+    upload_delay_minutes: Optional[int] = Field(default=0, ge=0, le=30)
 
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)

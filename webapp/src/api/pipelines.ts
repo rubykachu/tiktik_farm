@@ -14,6 +14,7 @@ export interface Pipeline {
   upload_options_json: string;
   account_ids_json: string;
   max_duration_seconds: number | null;
+  upload_delay_minutes: number;
   telegram_bot_token_set: boolean;
   telegram_chat_id: string | null;
   run_now_requested_at: string | null;
@@ -38,6 +39,7 @@ export interface PipelineCreate {
   };
   account_ids: number[];
   max_duration_seconds?: number | null;
+  upload_delay_minutes?: number;
   telegram_bot_token?: string;
   telegram_chat_id?: string;
 }
@@ -53,6 +55,7 @@ export interface PipelineUpdate {
   upload_options?: PipelineCreate["upload_options"];
   account_ids?: number[];
   max_duration_seconds?: number | null;
+  upload_delay_minutes?: number;
   telegram_bot_token?: string;
   telegram_chat_id?: string;
   clear_bot_token?: boolean;

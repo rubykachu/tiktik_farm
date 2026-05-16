@@ -26,7 +26,8 @@ def client(tmp_path, monkeypatch):
     eng = _db.make_engine(f"sqlite:///{tmp_path}/test.db")
     _db.override_engine(eng)
     _db.init_db()
-    from api.db_migrations import apply_indexes
+    from api.db_migrations import apply_indexes, apply_schema_patches
+    apply_schema_patches(eng)
     apply_indexes(eng)
     return TestClient(create_app())
 
@@ -85,6 +86,7 @@ class TestCreate:
         assert body["telegram_bot_token_set"] is False
         # next_fire_at == first_fire_at on create.
         assert body["next_fire_at"] == body["first_fire_at"]
+        assert body["upload_delay_minutes"] == 0
 
     def test_400_unknown_template_var(self, client):
         aid = _make_account(client)
@@ -163,6 +165,25 @@ class TestCreate:
         r = client.post(
             "/api/pipelines",
             json=_valid_payload(aid, fetch_count=21),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code in (400, 422)
+
+    def test_201_with_upload_delay_minutes(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, upload_delay_minutes=5),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["upload_delay_minutes"] == 5
+
+    def test_422_upload_delay_minutes_over_30(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, upload_delay_minutes=31),
             headers=HEADERS_OK,
         )
         assert r.status_code in (400, 422)
@@ -337,6 +358,19 @@ class TestPatch:
         )
         assert r.status_code == 200, r.text
         assert r.json()["state"] == "paused"
+
+    def test_patch_upload_delay_minutes(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"upload_delay_minutes": 15},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["upload_delay_minutes"] == 15
 
 
 # ----------------- DELETE ---------------------------------------------------

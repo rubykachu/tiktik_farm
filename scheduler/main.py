@@ -10,7 +10,9 @@ from __future__ import annotations
 import logging
 import os
 
+from api import db as _db
 from api.db import init_db
+from api.db_migrations import apply_schema_patches
 from scheduler import worker
 from tiktok_uploader.Config import Config
 
@@ -25,6 +27,7 @@ def main() -> None:
         Config.load(config_path)
 
     init_db()
+    apply_schema_patches(_db.engine)
     poll = float(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
     worker.loop(poll_interval=poll)
 

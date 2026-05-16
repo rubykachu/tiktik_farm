@@ -207,6 +207,51 @@ def _load_dedupe_set(session: Session, account_id: int, youtube_video_id: str) -
     return "upload"
 
 
+def _has_future_upload_attempt(
+    session: Session,
+    *,
+    videos: list[dict],
+    account_ids: list[int],
+    finished_video_idx: int,
+    finished_account_idx: int,
+) -> bool:
+    """True if some remaining (video, account) would still call the uploader."""
+    cur_vid = videos[finished_video_idx]["id"]
+    for j in range(finished_account_idx + 1, len(account_ids)):
+        if _load_dedupe_set(session, account_ids[j], cur_vid) == "upload":
+            return True
+    for vj in range(finished_video_idx + 1, len(videos)):
+        vid = videos[vj]["id"]
+        for aid in account_ids:
+            if _load_dedupe_set(session, aid, vid) == "upload":
+                return True
+    return False
+
+
+def _maybe_upload_delay_after_record(
+    pipeline: ChannelPipeline,
+    session: Session,
+    *,
+    videos: list[dict],
+    account_ids: list[int],
+    finished_video_idx: int,
+    finished_account_idx: int,
+) -> None:
+    delay_min = pipeline.upload_delay_minutes or 0
+    if delay_min <= 0:
+        return
+    if not _has_future_upload_attempt(
+        session,
+        videos=videos,
+        account_ids=account_ids,
+        finished_video_idx=finished_video_idx,
+        finished_account_idx=finished_account_idx,
+    ):
+        return
+    log.info("Upload delay: sleeping %d minutes before next upload", delay_min)
+    time.sleep(delay_min * 60)
+
+
 def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     """Execute one pipeline tick. Returns the finalized PipelineRun."""
     now = now_utc()
@@ -246,7 +291,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     account_ids: list[int] = json.loads(pipeline.account_ids_json)
     upload_opts: dict = json.loads(pipeline.upload_options_json)
 
-    for video in videos:
+    for vi, video in enumerate(videos):
         video_id = video["id"]
         video_title = video.get("title", "")
         video_url = video.get("url", f"https://www.youtube.com/watch?v={video_id}")
@@ -256,7 +301,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         temp_dir: Optional[str] = None
 
         try:
-            for account_id in account_ids:
+            for ai, account_id in enumerate(account_ids):
                 with Session(_api_db.engine) as s:
                     action = _load_dedupe_set(s, account_id, video_id)
 
@@ -279,7 +324,8 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     except Exception as e:
                         log.error("Download failed for %s: %s", video_url, e)
                         # Record failed for each remaining account
-                        for aid in account_ids[account_ids.index(account_id):]:
+                        for account_idx in range(ai, len(account_ids)):
+                            aid = account_ids[account_idx]
                             _record_upload(
                                 run_id=run_id,
                                 pipeline_id=pipeline.id,  # type: ignore[arg-type]
@@ -291,7 +337,18 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                                 error_text=f"download failed: {e}",
                             )
                             failed_count += 1
-                            fail_details.append(f"- {video_url} [account_id={aid}]: download failed")
+                            fail_details.append(
+                                f"- {video_url} [account_id={aid}]: download failed"
+                            )
+                            with Session(_api_db.engine) as s:
+                                _maybe_upload_delay_after_record(
+                                    pipeline,
+                                    s,
+                                    videos=videos,
+                                    account_ids=account_ids,
+                                    finished_video_idx=vi,
+                                    finished_account_idx=account_idx,
+                                )
                         break
 
                 # Get username
@@ -353,6 +410,16 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     failed_count += 1
                     err_short = truncate(error_msg or "", 120, suffix="")
                     fail_details.append(f"- {video_url} [account: {username}]: {err_short}")
+
+                with Session(_api_db.engine) as s:
+                    _maybe_upload_delay_after_record(
+                        pipeline,
+                        s,
+                        videos=videos,
+                        account_ids=account_ids,
+                        finished_video_idx=vi,
+                        finished_account_idx=ai,
+                    )
 
         finally:
             if temp_dir and os.path.exists(temp_dir):

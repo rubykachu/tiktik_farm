@@ -15,6 +15,7 @@ const baseSchema = z.object({
   interval_unit: z.enum(["minutes", "hours", "days"]),
   first_fire_at: z.string().min(1, "Bắt buộc"),
   fetch_count: z.coerce.number().int().min(1).max(20),
+  upload_delay_minutes: z.coerce.number().int().min(0).max(30).default(0),
   max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
   caption_template: z.string().min(1, "Bắt buộc").max(2200),
   allow_comment: z.coerce.number().min(0).max(1),
@@ -109,6 +110,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       interval_unit: "hours",
       first_fire_at: toLocalDatetime(),
       fetch_count: 3,
+      upload_delay_minutes: 0,
       max_duration_seconds: "" as any,
       caption_template: "{title}",
       allow_comment: 1,
@@ -142,6 +144,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         interval_unit: pipeline.interval_unit,
         first_fire_at: toLocalDatetime(pipeline.first_fire_at),
         fetch_count: pipeline.fetch_count,
+        upload_delay_minutes: pipeline.upload_delay_minutes ?? 0,
         max_duration_seconds: pipeline.max_duration_seconds ?? ("" as any),
         caption_template: pipeline.caption_template,
         allow_comment: uploadOpts.allow_comment as 0 | 1,
@@ -161,6 +164,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         interval_unit: "hours",
         first_fire_at: toLocalDatetime(),
         fetch_count: 3,
+        upload_delay_minutes: 0,
         max_duration_seconds: "" as any,
         caption_template: "{title}",
         allow_comment: 1,
@@ -232,6 +236,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         },
         account_ids: data.account_ids,
         max_duration_seconds: maxDur ?? null,
+        upload_delay_minutes: data.upload_delay_minutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
       };
@@ -256,6 +261,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         },
         account_ids: data.account_ids,
         max_duration_seconds: maxDur,
+        upload_delay_minutes: data.upload_delay_minutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
       };
@@ -444,6 +450,22 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               />
               {errors.fetch_count && (
                 <p className="field-error">{errors.fetch_count.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="label">Nghỉ giữa upload</label>
+              <input
+                type="number"
+                className="input"
+                min={0}
+                max={30}
+                {...register("upload_delay_minutes")}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Phút nghỉ giữa mỗi lần upload video (0 = không nghỉ). Giúp tránh bị TikTok phát hiện spam.
+              </p>
+              {errors.upload_delay_minutes && (
+                <p className="field-error">{errors.upload_delay_minutes.message}</p>
               )}
             </div>
             <div>

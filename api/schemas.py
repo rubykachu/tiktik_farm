@@ -209,6 +209,7 @@ class PipelineCreate(BaseModel):
     upload_options: PipelineUploadOptions = Field(default_factory=PipelineUploadOptions)
     account_ids: List[int] = Field(min_length=1)
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
+    upload_delay_minutes: int = Field(default=0, ge=0, le=30)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
@@ -273,6 +274,7 @@ class PipelineUpdate(BaseModel):
     upload_options: Optional[PipelineUploadOptions] = None
     account_ids: Optional[List[int]] = None
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
+    upload_delay_minutes: Optional[int] = Field(default=None, ge=0, le=30)
     # bot_token: empty / absent → keep existing. Use clear_bot_token to remove.
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
@@ -324,6 +326,7 @@ class PipelineRead(BaseModel):
     upload_options_json: str
     account_ids_json: str
     max_duration_seconds: Optional[int]
+    upload_delay_minutes: int
     telegram_bot_token_set: bool
     telegram_chat_id: Optional[str]
     run_now_requested_at: Optional[datetime]

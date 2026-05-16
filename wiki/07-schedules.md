@@ -63,6 +63,7 @@ Lifecycle, huỷ, retry: giữ nguyên như tài liệu cũ (`pending` → `runn
 - **Caption**: template trong DB, render bằng `api/services/caption.py` (biến whitelist, hashtag dedupe, tối đa 2200 ký tự). Worker gọi `render_caption` trước mỗi lần gọi adapter trong tick; kết quả lưu vào `VideoUpload.rendered_caption` cho bản ghi tương ứng.
 - **Tùy chọn nâng cao** (giống upload): `allow_comment`, `allow_duet`, `allow_stitch`, `visibility_type` — lưu trong `upload_options_json`.
 - **`max_duration_seconds`** (optional): yt-dlp **bỏ qua** video dài hơn `3 × N` giây; nếu tải, **cắt** 0…N giây (native, không shell ffmpeg riêng). Giới hạn file **500MB** mỗi lần tải.
+- **`upload_delay_minutes`** (0–30, mặc định 0): **Nghỉ giữa upload** — số phút scheduler `sleep` giữa **mỗi lần** upload TikTok thực hiện trong cùng một tick (áp dụng sau mỗi bản ghi upload thành công hoặc thất bại). `0` = hành vi cũ, không nghỉ. Giảm rủi ro bị TikTok coi là spam khi một tick đẩy nhiều video/account liên tiếp. Ví dụ: `fetch_count=10`, mỗi video 1 account, `upload_delay_minutes=5` → thời gian chờ upload khoảng **9 × 5 = 45** phút (cộng thời gian tải/upload thực tế). **LockHeartbeat** (mỗi 5 phút) vẫn gia hạn `lock_until` trong lúc tick dài.
 - **Đĩa**: kiểm tra free trên `/tmp` — nếu **< 1 GB**, bỏ qua tick, `PipelineRun.error_text = low_disk`.
 
 ### Lặp lại & thời điểm bắn
@@ -136,7 +137,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 
 ## UI Pipelines
 
-- **+ New pipeline** / **Edit** modal: Basic, Trigger (interval + datetime bắt đầu), Content (`fetch_count`, `max_duration_seconds`), Caption, Advanced (collapsible), Accounts (multi-select session hợp lệ), Telegram.
+- **+ New pipeline** / **Edit** modal: Basic, Trigger (interval + datetime bắt đầu), Content (`fetch_count`, **Nghỉ giữa upload** (`upload_delay_minutes`), `max_duration_seconds`), Caption, Advanced (collapsible), Accounts (multi-select session hợp lệ), Telegram.
 - Bảng: Run now, Stop/Resume, Edit, Delete (modal).
 - **Drill-down**: mở hàng pipeline → lazy load `runs`; mở hàng run → video con. Poll ~5s khi có run chưa `finished_at`.
 
