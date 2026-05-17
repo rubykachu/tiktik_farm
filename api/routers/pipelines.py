@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
@@ -20,6 +20,8 @@ from sqlmodel import Session, select
 from api.db import get_session, now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate
+from api.services.caption import template_uses_ai_title
+from api.services.llm_config import get_default_llm_model, is_llm_enabled
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -47,6 +49,7 @@ def _to_read(row: ChannelPipeline) -> dict:
         "account_ids_json": row.account_ids_json,
         "max_duration_seconds": row.max_duration_seconds,
         "upload_delay_minutes": row.upload_delay_minutes or 0,
+        "caption_ai_prompt": row.caption_ai_prompt,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
         "telegram_chat_id": row.telegram_chat_id,
         "run_now_requested_at": row.run_now_requested_at,
@@ -54,6 +57,27 @@ def _to_read(row: ChannelPipeline) -> dict:
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+def _validate_ai_title_preconditions(template: str, prompt: Optional[str]) -> None:
+    """Three preconditions when {ai_title} appears in the template."""
+    if not template_uses_ai_title(template):
+        return
+    if not prompt or not prompt.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Add an AI prompt or remove {ai_title} from the caption template",
+        )
+    if not is_llm_enabled():
+        raise HTTPException(
+            status_code=422,
+            detail="Enable LLM in Settings before using {ai_title}",
+        )
+    if get_default_llm_model() is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Configure a default LLM in Settings before using {ai_title}",
+        )
 
 
 @router.get("", response_model=List[PipelineRead])
@@ -91,6 +115,8 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
             detail=f"account_id(s) do not exist: {missing}",
         )
 
+    _validate_ai_title_preconditions(payload.caption_template, payload.caption_ai_prompt)
+
     row = ChannelPipeline(
         name=payload.name,
         channel_url=payload.channel_url,
@@ -105,6 +131,7 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         account_ids_json=json.dumps(payload.account_ids),
         max_duration_seconds=payload.max_duration_seconds,
         upload_delay_minutes=payload.upload_delay_minutes,
+        caption_ai_prompt=(payload.caption_ai_prompt or None),
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
     )
@@ -182,6 +209,12 @@ def update_pipeline(
     if payload.upload_delay_minutes is not None:
         row.upload_delay_minutes = payload.upload_delay_minutes
         changed = True
+    if "caption_ai_prompt" in payload.model_fields_set:
+        row.caption_ai_prompt = payload.caption_ai_prompt or None
+        changed = True
+
+    # Cross-field check after merging.
+    _validate_ai_title_preconditions(row.caption_template, row.caption_ai_prompt)
 
     # Telegram secret handling: only update when caller sent non-empty token,
     # or explicitly asked to clear.
