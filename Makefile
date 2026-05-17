@@ -28,6 +28,22 @@ RESET  := \033[0m
 
 # ─── Day-to-day ────────────────────────────────────────────────────────────
 
+.PHONY: deploy
+deploy:  ## Build all images + force-recreate containers (safe default after any code change)
+	@printf "$(YELLOW)Building all images (tiktok-base + services)…$(RESET)\n"
+	$(COMPOSE) build
+	@printf "$(YELLOW)Recreating containers from fresh images…$(RESET)\n"
+	$(COMPOSE) up -d --force-recreate
+	@$(MAKE) --no-print-directory ps
+
+.PHONY: deploy-prod
+deploy-prod:  ## Like deploy but prod compose only (no dev override / Vite)
+	@printf "$(YELLOW)Building production images…$(RESET)\n"
+	$(COMPOSE) -f docker-compose.yml build
+	@printf "$(YELLOW)Starting production stack…$(RESET)\n"
+	$(COMPOSE) -f docker-compose.yml up -d --force-recreate
+	@$(COMPOSE) -f docker-compose.yml ps
+
 .PHONY: up
 up:  ## Start the full stack in dev mode (uses docker-compose.override.yml)
 	@printf "$(GREEN)Starting stack…$(RESET)\n"
@@ -161,7 +177,10 @@ help:  ## Show this help (default target)
 			printf "  $(GREEN)%-18s$(RESET) %s\n", $$1, $$2 \
 		}' $(MAKEFILE_LIST)
 	@printf "\n$(YELLOW)Common recipes:$(RESET)\n"
-	@printf "  Edited requirements.txt    -> make rebuild-base && make up\n"
-	@printf "  Edited api/*.py            -> make restart\n"
-	@printf "  Edited webapp/*.tsx        -> (nothing — Vite HMR auto-reloads)\n"
-	@printf "  Stack is broken            -> make nuke && make rebuild-base && make up\n"
+	@printf "  Unsure / shipped a feature -> make deploy  (build + recreate; always picks up new code)\n"
+	@printf "  Edited requirements.txt    -> make deploy  (or make rebuild-base && make up)\n"
+	@printf "  Edited api/*.py (dev)      -> uvicorn --reload (or make restart)\n"
+	@printf "  Edited scheduler/*.py      -> make restart  (no auto-reload)\n"
+	@printf "  Edited webapp/*.tsx (dev)  -> (nothing — Vite HMR)\n"
+	@printf "  VPS prod-like              -> make deploy-prod\n"
+	@printf "  Stack is broken            -> make nuke && make deploy\n"

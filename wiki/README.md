@@ -24,6 +24,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 |---|---|
 | Hiểu hệ thống làm gì | [01-overview](01-overview.md) |
 | Deploy lên VPS | [03-setup-docker](03-setup-docker.md) |
+| Cập nhật code / tránh image cũ | `make deploy` — [03-setup-docker](03-setup-docker.md) |
 | Thêm account mới | [05-accounts](05-accounts.md) |
 | Đăng 1 video lên TikTok | [06-upload](06-upload.md) |
 | Lên lịch đăng video YouTube (1 lần) | [07-schedules](07-schedules.md) tab Single-shot |

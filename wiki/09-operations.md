@@ -2,6 +2,30 @@
 
 [← Index](README.md) | [← 08-videos](08-videos.md)
 
+## Makefile (`v2/Makefile`)
+
+Chạy trong `v2/`. `make` = `make help`.
+
+| Target | Tác dụng |
+|---|---|
+| **`deploy`** | `compose build` + `up -d --force-recreate` — **dùng khi không chắc** đã có image mới chưa |
+| `deploy-prod` | Giống `deploy`, chỉ `docker-compose.yml` (VPS / prod-like) |
+| `up` / `down` / `ps` | Start / stop / status |
+| `restart` | Restart `api` + `scheduler` only — **không rebuild** |
+| `recreate` | Force-recreate mọi container — **không rebuild** |
+| `rebuild-base` | Rebuild `tiktok-base` + api/scheduler/novnc (`--no-cache` base) |
+| `rebuild` | Full no-cache rebuild mọi image |
+| `rebuild-app` | Rebuild api + scheduler + webapp (prod webapp image) |
+| `logs`, `logs-api`, … | Tail logs |
+| `test` / `test-local` | Pytest trong container / `.venv` |
+| `webapp-fresh` | Xóa `node_modules` trong container dev + reinstall |
+| `shell-api`, `shell-scheduler`, … | Exec vào container |
+| `nuke` / `nuke-all` | Xóa containers (+ images local); `nuke-all` xóa volume DB |
+
+**Anti-pattern:** `docker compose restart` hoặc `up --force-recreate` sau khi sửa code bake trong image (`tiktok_uploader/`, Dockerfile, prod `webapp` build) → container vẫn chạy layer cũ. Fix: **`make deploy`**.
+
+Chi tiết deploy VPS: [03-setup-docker](03-setup-docker.md).
+
 ## Dev với `docker-compose.override.yml`
 
 File `docker-compose.override.yml` được Compose **tự merge** khi chạy lệnh mặc định trong thư mục `v2/` (cùng project với `docker-compose.yml`).
@@ -13,11 +37,14 @@ File `docker-compose.override.yml` được Compose **tự merge** khi chạy l�
 
 Lần đầu dev webapp: container chạy `npm ci` / `npm install` vào volume ẩn `node_modules` (tránh ghi đè deps macOS).
 
-Sửa **scheduler**: mount code có sẵn nhưng **không** auto-reload — sau khi sửa `scheduler/` hoặc `api/` dùng chung:
+Sửa **scheduler**: mount code có sẵn nhưng **không** auto-reload:
 
 ```bash
-docker compose restart scheduler
+make restart    # api + scheduler
+# hoặc: docker compose restart scheduler
 ```
+
+Sửa **`tiktok_uploader/`** hoặc **`requirements.txt`**: không mount — bắt buộc **`make deploy`** (hoặc `make rebuild-base && make up`).
 
 UI dev: http://127.0.0.1:3000 — Vite proxy `/api` → `api:8000`, `/novnc` + `/websockify` → `novnc:6080` (giống nginx prod).
 
@@ -53,20 +80,14 @@ tail -f /tmp/v2_webapp.log
 
 ## Operational rule: rebuild → force-recreate webapp
 
-**Nginx (webapp) cache DNS IP upstream tại boot, không TTL.** Nếu recreate `api` hoặc `novnc` → IP đổi → 502 cho đến khi webapp restart.
+**Nginx (prod webapp) cache DNS IP upstream tại boot.** Recreate `api`/`novnc` mà không recreate `webapp` → 502.
 
-→ **Mỗi lần** rebuild `api`/`novnc`, force-recreate luôn `webapp`:
+→ Dùng **`make deploy`** (recreate toàn stack sau build). Hoặc thủ công:
 
 ```bash
-# Sửa code api
-docker compose build api
-docker compose up -d --force-recreate api webapp
-
-# An toàn nhất: recreate hết
+docker compose build
 docker compose up -d --force-recreate
 ```
-
-Đừng over-engineer nginx config với `resolver` directive để auto-heal — operational rule này đơn giản và an toàn hơn.
 
 ## Restart không cần rebuild
 
@@ -204,11 +225,10 @@ docker compose up -d
 
 ```bash
 git pull
-docker compose build      # rebuild image cho service có code mới
-docker compose up -d --force-recreate
+make deploy-prod
 ```
 
-Cookie + DB persist qua volume → không mất gì.
+Cookie + DB persist qua volume → không mất gì. Trên máy dev (có override): `make deploy`.
 
 ## Reset toàn bộ (cẩn thận)
 

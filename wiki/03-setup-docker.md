@@ -13,11 +13,39 @@
 | Disk | ≥ 8 GB free | Image stack ~12.5 GB nhưng layer share |
 | RAM | ≥ 4 GB | Idle ~1.5 GB, peak ~3-4 GB |
 
-## Build (lần đầu hoặc khi sửa code)
+## Makefile — lệnh chính
+
+Chạy trong thư mục `v2/`. Gõ `make` hoặc `make help` để xem đầy đủ.
+
+| Lệnh | Khi nào dùng |
+|---|---|
+| **`make deploy`** | **Mặc định an toàn** sau mọi thay đổi code: `build` toàn bộ image rồi `--force-recreate` container. Tránh lỗi “đã sửa code nhưng container vẫn chạy image cũ”. |
+| `make up` | Lần đầu start stack (không rebuild). |
+| `make down` | Stop + xóa container (giữ volume + image). |
+| `make restart` | Chỉ kick lại `api` + `scheduler` (không rebuild — **không** lấy code bake trong image mới). |
+| `make recreate` | Tạo lại container từ image **hiện có** (vẫn không build). |
+| `make rebuild-base` | `requirements.txt` hoặc `tiktok_uploader/` đổi — rebuild base + api/scheduler/novnc. |
+| `make rebuild` | Full `build --no-cache` (chậm nhất). |
+| `make deploy-prod` | Giống `deploy` nhưng **không** merge `docker-compose.override.yml` (nginx static, không Vite). |
+| `make logs` / `make logs-api` | Tail log. |
+| `make test` | `pytest` trong container `api`. |
+| `make nuke` | Xóa container + image local; volume `data/` giữ nguyên. |
+
+**Quy tắc vàng:** `docker compose restart` và `docker compose up --force-recreate` **không** rebuild image. Nếu không chắc → **`make deploy`**.
+
+```bash
+cd v2/
+make deploy    # build + recreate — dùng sau git pull hoặc thêm tính năng
+```
+
+## Build (lần đầu hoặc thủ công)
+
+Tương đương bước build trong `make deploy` (không recreate):
 
 ```bash
 cd v2/
 docker compose build
+# hoặc: make deploy   # khuyên dùng — gồm cả recreate
 ```
 
 Build mất ~10-15 phút trên VPS 2-core, ~5 phút trên M4. 5 images sinh ra:
@@ -31,11 +59,16 @@ Build mất ~10-15 phút trên VPS 2-core, ~5 phút trên M4. 5 images sinh ra:
 ## Up / Down
 
 ```bash
-docker compose up -d              # start all (detached)
-docker compose ps                 # verify all "Up"
+make up                           # start dev stack (detached)
+make down                         # stop + remove containers (volume vẫn còn)
+make ps                           # trạng thái container
+
+# tương đương thuần compose:
+docker compose up -d
+docker compose ps
 docker compose stop               # stop tạm, giữ volume
-docker compose down               # stop + remove containers (volume vẫn còn)
-docker compose down -v            # ⚠️ NUKE volume (mất DB + cookies)
+docker compose down
+make nuke-all EXTRA=yes           # ⚠️ xóa cả named volumes (mất DB) — cần xác nhận
 ```
 
 Sau khi up:
@@ -50,24 +83,41 @@ Sau khi up:
 
 ## Workflow update code
 
-**Rule quan trọng**: rebuild service nào → recreate cả `webapp`. Vì nginx cache DNS upstream IP ở boot time. Recreate `api`/`novnc` → IP đổi → 502 cho đến khi webapp restart.
+### Một lệnh (khuyên dùng)
 
 ```bash
-# Sửa code api → rebuild image + force-recreate cả api + webapp
-docker compose build api
-docker compose up -d --force-recreate api webapp
-
-# Recreate hết stack — an toàn nhất, không cần nhớ
-docker compose up -d --force-recreate
-
-# Sửa webapp (React/nginx)
-docker compose build webapp
-docker compose up -d --force-recreate webapp
+make deploy
 ```
 
-Code thay đổi nhưng KHÔNG cần rebuild image:
-- Chỉ data (cookie, video) — đặt vào `./data/` rồi `docker compose restart` service liên quan
-- Config qua env var — sửa `docker-compose.yml` rồi `docker compose up -d <service>`
+Làm đủ: `docker compose build` (mọi service, gồm `tiktok-base` khi `tiktok_uploader/` hoặc `requirements.txt` đổi) + `up -d --force-recreate` (mọi container, gồm `webapp` — tránh nginx/Vite proxy DNS stale).
+
+### Dev với override — khi nào *không* cần deploy
+
+| Thay đổi | Cách lấy code mới |
+|---|---|
+| `api/*.py` | Uvicorn `--reload` tự load (mount `./api`) |
+| `webapp/src/*` | Vite HMR (mount `./webapp`) |
+| `scheduler/*.py` | `make restart` hoặc `docker compose restart scheduler` |
+| `tiktok_uploader/*`, `requirements.txt` | **Bắt buộc** `make deploy` hoặc `make rebuild-base && make up` (không mount vào container) |
+| Không chắc / vừa merge feature | **`make deploy`** |
+
+### Prod / VPS (không override)
+
+```bash
+git pull
+make deploy-prod
+```
+
+### Thủ công (nếu không dùng make)
+
+**Rule quan trọng**: rebuild service nào → recreate cả `webapp`. Nginx cache DNS upstream IP lúc boot.
+
+```bash
+docker compose build
+docker compose up -d --force-recreate
+```
+
+Chỉ data (cookie, video) trong `./data/` — không cần rebuild: `docker compose restart <service>`.
 
 ## Lần đầu setup data
 
@@ -98,23 +148,17 @@ Trước khi expose ra Internet:
 
 ## Tự động hóa deploy (gợi ý)
 
-`Makefile`:
-```makefile
-.PHONY: deploy redeploy logs
-
-deploy:
-	git pull
-	docker compose build
-	docker compose up -d --force-recreate
-
-redeploy:
-	docker compose up -d --force-recreate
-
-logs:
-	docker compose logs -f
+```bash
+cd v2/
+git pull
+make deploy-prod    # VPS: không dùng dev override
+# hoặc trên máy dev:
+make deploy
 ```
 
-Hoặc cron job pull + redeploy mỗi 5 phút (nếu CI/CD chưa setup).
+Cron / CI: gọi `make deploy-prod` sau `git pull`. **Không** chỉ `docker compose up --force-recreate` — sẽ bỏ qua code mới trong image.
+
+Xem thêm bảng lệnh: [09-operations](09-operations.md) § Makefile.
 
 ---
 
