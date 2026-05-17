@@ -16,6 +16,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 10. [Bug đã fix từ upstream](10-known-bugs.md) — 4 bug source code upstream
 11. [Roadmap Phase 2 + SaaS](11-roadmap.md) — port nghiệp vụ v1, multi-tenant prep
 12. [Lấy Telegram Chat ID (Bot API)](how_to_get_telegram_chat_id.md) — token, `getUpdates`, group/channel
+13. [Settings — LLM caption rewrite](12-settings.md) — toggle global, list/CRUD model, secret key file, validation `{ai_title}`
 
 ## Quick reference
 
@@ -33,6 +34,7 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 | Hiểu vì sao có 4 fix tiktok.py | [10-known-bugs](10-known-bugs.md) |
 | Mở rộng SaaS | [11-roadmap](11-roadmap.md) |
 | Lấy `chat_id` số cho Telegram (pipeline) | [how_to_get_telegram_chat_id](how_to_get_telegram_chat_id.md) |
+| Cấu hình LLM rewrite caption (Phase 3) | [12-settings](12-settings.md) |
 
 ---
 
