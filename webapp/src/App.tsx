@@ -4,7 +4,7 @@ import AccountsPage from "./pages/Accounts";
 import UploadPage from "./pages/Upload";
 import SchedulesPage from "./pages/Schedules";
 import LoginPage from "./pages/Login";
-import VideosPage from "./pages/Videos";
+import HistoriesPage from "./pages/Histories";
 import SettingsPage from "./pages/Settings";
 
 export default function App() {
@@ -19,7 +19,8 @@ export default function App() {
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login/:sessionId" element={<LoginPage />} />
-          <Route path="/videos" element={<VideosPage />} />
+          <Route path="/histories" element={<HistoriesPage />} />
+          <Route path="/videos" element={<Navigate to="/histories" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

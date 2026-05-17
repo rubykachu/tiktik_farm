@@ -6,7 +6,7 @@ const items = [
   { to: "/accounts", label: "Accounts", icon: Users },
   { to: "/upload", label: "Upload", icon: Upload },
   { to: "/schedules", label: "Schedules", icon: Calendar },
-  { to: "/videos", label: "Histories", icon: History },
+  { to: "/histories", label: "Histories", icon: History },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
   { to: "/login", label: "Browser login", icon: LogIn },
 ];

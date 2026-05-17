@@ -14,7 +14,7 @@ function fetchVideos(params: Record<string, string | undefined>) {
   return api.get<VideoUploadItem[]>("/videos", { params: cleaned }).then((r) => r.data);
 }
 
-export default function VideosPage() {
+export default function HistoriesPage() {
   const qc = useQueryClient();
 
   const [accountFilter, setAccountFilter] = useState("");
@@ -49,7 +49,7 @@ export default function VideosPage() {
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      alert(`Xóa lỗi: ${e?.response?.data?.detail || e.message}`);
+      alert(`Delete failed: ${e?.response?.data?.detail || e.message}`);
       setDeleteTarget(null);
     },
   });
@@ -59,7 +59,7 @@ export default function VideosPage() {
       <div>
         <h2 className="text-2xl font-semibold">Histories</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Lịch sử upload từ pipeline và các lần chạy.
+          Upload history per pipeline and run.
         </p>
       </div>
 
