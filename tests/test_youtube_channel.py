@@ -92,11 +92,12 @@ class TestDownload:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_ydl.extract_info.return_value = {"id": "abc123"}
+        mock_ydl.extract_info.return_value = {"id": "abc123", "description": "desc-text"}
         mock_ydl.add_post_processor = MagicMock()
 
-        result = download(VALID_VIDEO, str(tmp_path))
-        assert result == out_file
+        path, description = download(VALID_VIDEO, str(tmp_path))
+        assert path == out_file
+        assert description == "desc-text"
 
     def test_invalid_url_raises(self, tmp_path):
         with pytest.raises(ValueError, match="Not a valid YouTube URL"):
@@ -121,11 +122,11 @@ class TestDownload:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_ydl.extract_info.return_value = {"id": "abc123"}
+        mock_ydl.extract_info.return_value = {"id": "abc123", "description": ""}
         mock_ydl.add_post_processor = MagicMock()
 
-        result = download(VALID_VIDEO, str(tmp_path), max_duration_seconds=60)
-        assert result == out_file
+        path, _ = download(VALID_VIDEO, str(tmp_path), max_duration_seconds=60)
+        assert path == out_file
         init_call = mock_ydl_cls.call_args[0][0] if mock_ydl_cls.call_args[0] else mock_ydl_cls.call_args[1]
         assert "match_filter" in init_call or True  # opts checked via constructor
 

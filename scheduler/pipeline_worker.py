@@ -21,8 +21,9 @@ from sqlmodel import Session, select
 import api.db as _api_db
 from api.db import now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
-from api.services import tiktok_adapter, telegram, youtube_channel
-from api.services.caption import render_caption
+from api.services import llm, tiktok_adapter, telegram, youtube_channel
+from api.services.caption import render_caption, template_uses_ai_title
+from api.services.llm_config import get_default_llm_model, is_llm_enabled
 from api.utils.text import truncate
 
 log = logging.getLogger("scheduler.pipeline_worker")
@@ -256,6 +257,29 @@ def _maybe_upload_delay_after_record(
     time.sleep(delay_min * 60)
 
 
+def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
+    """Return the rewritten title, or `title` on any failure path."""
+    if not is_llm_enabled():
+        log.info("LLM globally disabled; using raw title for {ai_title}")
+        return title
+    default = get_default_llm_model()
+    if default is None:
+        log.warning("Pipeline has caption_ai_prompt but no default LLM is set")
+        return title
+    try:
+        rewritten = llm.rewrite_title(
+            prompt,
+            title=title,
+            description=description,
+            model_id=default.model_id,
+            api_key_encrypted=default.api_key_encrypted,
+        )
+    except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
+        log.warning("LLM rewrite skipped: %s", e)
+        return title
+    return rewritten or title
+
+
 def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     """Execute one pipeline tick. Returns the finalized PipelineRun."""
     now = now_utc()
@@ -295,6 +319,14 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     account_ids: list[int] = json.loads(pipeline.account_ids_json)
     upload_opts: dict = json.loads(pipeline.upload_options_json)
 
+    # LLM rewrite is opt-in per pipeline. Cache per video so multi-account
+    # pipelines only pay for one rewrite per video.
+    ai_title_by_video: dict[str, str] = {}
+    use_ai_title = bool(
+        pipeline.caption_ai_prompt
+        and template_uses_ai_title(pipeline.caption_template)
+    )
+
     for vi, video in enumerate(videos):
         video_id = video["id"]
         video_title = video.get("title", "")
@@ -302,6 +334,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
 
         # Lazy download — only when at least one account needs upload
         download_path: Optional[str] = None
+        description: str = ""
         temp_dir: Optional[str] = None
 
         try:
@@ -319,7 +352,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                 if download_path is None:
                     try:
                         temp_dir = tempfile.mkdtemp(prefix="pipeline_dl_")
-                        download_path = youtube_channel.download(
+                        download_path, description = youtube_channel.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
                     except youtube_channel.VideoTooLong:
@@ -355,8 +388,27 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                         continue
                     username = acct.username
 
+                # Resolve {ai_title} via LLM (cached per video). On any
+                # failure, fall back to the raw YouTube title so the run
+                # never aborts because of an LLM hiccup.
+                ai_title = video_title
+                if use_ai_title:
+                    if video_id in ai_title_by_video:
+                        ai_title = ai_title_by_video[video_id]
+                    else:
+                        ai_title = _rewrite_with_llm(
+                            pipeline.caption_ai_prompt or "",
+                            video_title,
+                            description,
+                        )
+                        ai_title_by_video[video_id] = ai_title
+
                 # Render caption
-                caption = render_caption(pipeline.caption_template, title=video_title)
+                caption = render_caption(
+                    pipeline.caption_template,
+                    title=video_title,
+                    ai_title=ai_title,
+                )
 
                 # Get existing failed count for attempt_count
                 with Session(_api_db.engine) as s:

@@ -62,8 +62,12 @@ def download(
     video_url: str,
     output_dir: str,
     max_duration_seconds: Optional[int] = None,
-) -> str:
-    """Download a single video and return the path to the downloaded file.
+) -> tuple[str, str]:
+    """Download a single video and return ``(file_path, description)``.
+
+    The description is yt-dlp's `description` field (falls back to ""). The
+    pipeline worker forwards it to the LLM rewrite step so we don't pay a
+    second metadata request.
 
     If max_duration_seconds is set:
     - Videos longer than 3x max_duration_seconds are skipped (VideoTooLong).
@@ -121,13 +125,15 @@ def download(
     if result is None:
         raise DownloadError("yt-dlp returned no info (video unavailable?)")
 
+    description = str(result.get("description") or "")
+
     if downloaded_files:
-        return downloaded_files[-1]
+        return downloaded_files[-1], description
 
     video_id = result.get("id", "unknown")
     for ext in ("mp4", "webm", "mkv"):
         candidate = os.path.join(output_dir, f"{video_id}.{ext}")
         if os.path.exists(candidate):
-            return candidate
+            return candidate, description
 
     raise DownloadError(f"Download completed but output file not found for {video_url}")
