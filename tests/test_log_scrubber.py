@@ -35,6 +35,24 @@ class TestScrubFunction:
         assert "bbbbb" not in out
         assert out.count("bot***") == 2
 
+    def test_redacts_bytes_literal_with_opaque_token(self):
+        # Reproduces the Azure leak: httpx surfaces the header value verbatim
+        # when the underlying request is rejected for "Illegal header value".
+        text = (
+            "litellm.APIError: AzureException APIError - Illegal header value "
+            "b'3UFQDUs5PEXo6GeWAD1o0ZzDj7QUDuOTE0ys0e1R2XTfNNydEKncJQQJ99CEACqBBLyXJ3w3AAAAACOGRG3H'"
+        )
+        out = scrub_bot_tokens(text)
+        assert "3UFQDUs5PEXo6GeWAD" not in out
+        assert "RG3H" not in out
+        assert "b'***'" in out
+
+    def test_redacts_long_opaque_alphanumeric_token(self):
+        text = "401 error using key 3UFQDUs5PEXo6GeWAD1o0ZzDj7QUDuOTE0ys0e1R2XTfNNydEKncJQQJ in body"
+        out = scrub_bot_tokens(text)
+        assert "3UFQDUs5PEXo6GeWAD" not in out
+        assert "***" in out
+
 
 class TestFilterIntegration:
     def test_filter_redacts_log_record_message(self):

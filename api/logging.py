@@ -24,6 +24,14 @@ _AUTH_HEADER_RE = re.compile(
 _KNOWN_KEY_PREFIX_RE = re.compile(
     r"\b(sk-ant-[A-Za-z0-9_\-]{16,}|sk-[A-Za-z0-9_\-]{16,}|AIza[A-Za-z0-9_\-]{20,})\b"
 )
+# Python bytes-literal exposing a credential, e.g. httpx "Illegal header value
+# b'<key>'" when an Azure key reaches the wire and fails header validation.
+_BYTES_LITERAL_OPAQUE_RE = re.compile(r"b'[A-Za-z0-9+/=_\-]{20,}'")
+# Long opaque alphanumeric tokens (≥ 32 chars) inside error free-text. Azure
+# / OpenAI keys, JWTs, and similar credentials all match this shape. False
+# positives (UUIDs ≤ 36 chars) are acceptable in error messages — better to
+# over-scrub than leak a key.
+_LONG_OPAQUE_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_\-]{32,}\b")
 
 
 def scrub_bot_tokens(text: str) -> str:
@@ -31,6 +39,8 @@ def scrub_bot_tokens(text: str) -> str:
     text = _API_KEY_KV_RE.sub(r"\1=***", text)
     text = _AUTH_HEADER_RE.sub(r"\1=***", text)
     text = _KNOWN_KEY_PREFIX_RE.sub("***", text)
+    text = _BYTES_LITERAL_OPAQUE_RE.sub("b'***'", text)
+    text = _LONG_OPAQUE_TOKEN_RE.sub("***", text)
     return text
 
 

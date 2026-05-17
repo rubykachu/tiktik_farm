@@ -166,11 +166,13 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <LLMModelModal
-        key={editState?.mode === "edit" ? `edit-${editState.model.id}` : "create"}
-        state={editState}
-        onClose={() => setEditState(null)}
-      />
+      {editState && (
+        <LLMModelModal
+          key={editState.mode === "edit" ? `edit-${editState.model.id}` : "create"}
+          state={editState}
+          onClose={() => setEditState(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -212,15 +214,30 @@ function LLMModelModal({
   const [setDefault, setSetDefault] = useState(!isEdit);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const needsEndpoint = modelId.trim().toLowerCase().startsWith("azure/");
 
+  function formatApiError(e: any): string {
+    const detail = e?.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    // FastAPI validation errors arrive as [{loc, msg, type}, ...]
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d) => `${(d.loc ?? []).join(".")}: ${d.msg}`)
+        .join("; ");
+    }
+    return e?.message || "Request failed";
+  }
+
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),
+    onMutate: () => setSubmitError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
     },
+    onError: (e: any) => setSubmitError(formatApiError(e)),
   });
 
   const updateMut = useMutation({
@@ -243,10 +260,12 @@ function LLMModelModal({
         api_base: payload.api_base,
         api_version: payload.api_version,
       }),
+    onMutate: () => setSubmitError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
     },
+    onError: (e: any) => setSubmitError(formatApiError(e)),
   });
 
   const testMut = useMutation({
@@ -308,8 +327,8 @@ function LLMModelModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8">
-      <div className="rounded-lg bg-white shadow-xl w-full max-w-md p-6 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="rounded-lg bg-white shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
             {isEdit ? "Edit LLM model" : "Add LLM model"}
@@ -424,7 +443,7 @@ function LLMModelModal({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="space-y-2">
             <button
               type="button"
               className="btn-secondary"
@@ -439,14 +458,19 @@ function LLMModelModal({
               {testMut.isPending ? "Testing…" : "Test connection"}
             </button>
             {testResult && (
-              <span
+              <div
                 className={
-                  "text-xs " + (testOk ? "text-emerald-700" : "text-red-600")
+                  "text-xs break-words rounded-md px-3 py-2 max-h-32 overflow-y-auto " +
+                  (testOk
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-red-50 text-red-700 border border-red-200")
                 }
               >
-                {testOk ? "✓ " : "✗ "}
+                <span className="font-medium">
+                  {testOk ? "✓ Success: " : "✗ Failed: "}
+                </span>
                 {testResult}
-              </span>
+              </div>
             )}
           </div>
 
@@ -461,6 +485,12 @@ function LLMModelModal({
             </label>
           )}
         </div>
+
+        {submitError && (
+          <div className="text-xs break-words rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+            <span className="font-medium">✗ {submitError}</span>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-3 border-t">
           <button className="btn-secondary" onClick={onClose}>
