@@ -27,7 +27,10 @@ COPY novnc/entrypoint.sh /app/novnc/entrypoint.sh
 RUN chmod +x /app/novnc/entrypoint.sh
 
 # Symlink noVNC's vnc.html as the index so /novnc/ serves the client directly.
-RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
+# Also seed a stub package.json: noVNC's ui.js fetches it at boot to display
+# the version, and Debian's novnc package omits it (404 floods the console).
+RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html \
+ && printf '{"name":"noVNC","version":"0.0.0"}\n' > /usr/share/novnc/package.json
 
 EXPOSE 6080 7900
 
