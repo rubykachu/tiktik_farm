@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
@@ -269,6 +270,11 @@ def delete_pipeline(pipeline_id: int, session: Session = Depends(get_session)):
                 "message": "Pipeline is running. Stop it and wait for the tick to finish.",
             },
         )
+    # Hard cascade: child rows are owned by the pipeline. Caller accepts
+    # losing the upload history. SQLite FKs were declared NO ACTION, so we
+    # purge children explicitly before deleting the parent.
+    session.execute(delete(VideoUpload).where(VideoUpload.pipeline_id == pipeline_id))
+    session.execute(delete(PipelineRun).where(PipelineRun.pipeline_id == pipeline_id))
     session.delete(row)
     session.commit()
 

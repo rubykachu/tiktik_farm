@@ -35,6 +35,11 @@ export default function AccountsPage() {
     mutationFn: (id: number) => Accounts.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] });
+      alert(`Account "${deleteTarget?.username ?? ""}" was deleted.`);
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => {
+      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
       setDeleteTarget(null);
     },
   });

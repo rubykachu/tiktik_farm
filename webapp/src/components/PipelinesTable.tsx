@@ -49,6 +49,8 @@ export default function PipelinesTable({ onEdit }: Props) {
     mutationFn: (id: number) => Pipelines.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
+      qc.invalidateQueries({ queryKey: ["videos"] });
+      alert(`Pipeline "${deleteTarget?.name ?? ""}" and its upload history were deleted.`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
@@ -245,9 +247,9 @@ export default function PipelinesTable({ onEdit }: Props) {
         title={`Delete pipeline "${deleteTarget?.name ?? ""}"?`}
         body={
           <p>
-            Pipeline run history is removed with the pipeline. Upload history
-            (VideoUpload) stays. If the pipeline is currently running, the
-            request returns 409 — stop it first.
+            Pipeline runs and upload history will be permanently deleted with
+            the pipeline. This cannot be undone. If the pipeline is currently
+            running, stop it first.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}

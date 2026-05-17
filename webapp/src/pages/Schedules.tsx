@@ -47,6 +47,11 @@ function SingleShotTab() {
     mutationFn: (id: number) => Schedules.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
+      alert(`Scheduled upload "${deleteTarget?.title ?? ""}" was deleted.`);
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => {
+      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
       setDeleteTarget(null);
     },
   });

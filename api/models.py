@@ -127,8 +127,9 @@ class VideoUpload(SQLModel, table=True):
     __tablename__ = "video_uploads"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    # pipeline_id + run_id SET NULL on parent delete so /videos history is
-    # preserved even after a pipeline is removed.
+    # pipeline_id + run_id are hard-deleted with the parent pipeline (see
+    # delete_pipeline). Nullable because legacy rows from the previous
+    # SET NULL behavior may still exist.
     pipeline_id: Optional[int] = Field(
         default=None, foreign_key="channel_pipelines.id", nullable=True,
     )

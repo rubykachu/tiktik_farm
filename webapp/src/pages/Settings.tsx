@@ -39,6 +39,11 @@ export default function SettingsPage() {
     mutationFn: (id: number) => LLMModels.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
+      alert(`LLM model "${deleteTarget?.label ?? ""}" was deleted.`);
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => {
+      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
       setDeleteTarget(null);
     },
   });
