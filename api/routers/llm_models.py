@@ -9,7 +9,12 @@ from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
 from api.models import LLMModel
-from api.schemas import LLMModelCreate, LLMModelRead, LLMModelUpdate
+from api.schemas import (
+    LLMModelCreate,
+    LLMModelRead,
+    LLMModelUpdate,
+    _require_azure_fields,
+)
 from api.services import secrets
 from api.services.llm_config import set_default_llm_model
 
@@ -57,6 +62,13 @@ def create_model(payload: LLMModelCreate, session: Session = Depends(get_session
     return _to_read(row)
 
 
+def _resolve_optional(payload_val, current):
+    """Merge a PATCH field over a stored value. None = unchanged, "" = clear."""
+    if payload_val is None:
+        return current
+    return payload_val or None
+
+
 @router.patch("/{model_id}", response_model=LLMModelRead)
 def update_model(
     model_id: int,
@@ -66,6 +78,20 @@ def update_model(
     row = session.get(LLMModel, model_id)
     if row is None:
         raise HTTPException(status_code=404, detail="llm model not found")
+
+    # Validate the post-merge candidate against schema invariants BEFORE
+    # mutating row state, so a 422 leaves the stored row untouched.
+    candidate_model_id = payload.model_id if payload.model_id is not None else row.model_id
+    if payload.clear_api_base:
+        candidate_base = None
+        candidate_version = None
+    else:
+        candidate_base = _resolve_optional(payload.api_base, row.api_base)
+        candidate_version = _resolve_optional(payload.api_version, row.api_version)
+    try:
+        _require_azure_fields(candidate_model_id, candidate_base, candidate_version)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     changed = False
     if payload.label is not None:

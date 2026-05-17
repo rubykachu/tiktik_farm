@@ -176,6 +176,74 @@ class TestAzureRequiresBothFields:
         )
         assert r.status_code == 422
 
+    def test_patch_to_azure_without_endpoint_rejected(self, client):
+        # Row starts as a non-azure provider with no endpoint fields.
+        created = client.post(
+            "/api/llm-models",
+            json={
+                "label": "OpenAI",
+                "model_id": "openai/gpt-4o-mini",
+                "api_key": "k",
+            },
+            headers=HEADERS_OK,
+        ).json()
+        r = client.patch(
+            f"/api/llm-models/{created['id']}",
+            json={"model_id": "azure/gpt-5.4"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+        assert "api_base" in r.text
+
+        # Row state preserved.
+        rows = client.get("/api/llm-models", headers=HEADERS_OK).json()
+        assert rows[0]["model_id"] == "openai/gpt-4o-mini"
+
+    def test_patch_clear_api_base_on_azure_row_rejected(self, client):
+        created = client.post(
+            "/api/llm-models",
+            json={
+                "label": "Azure",
+                "model_id": "azure/gpt-5.4",
+                "api_key": "k",
+                "api_base": "https://x.openai.azure.com/",
+                "api_version": "2024-08-01-preview",
+            },
+            headers=HEADERS_OK,
+        ).json()
+        r = client.patch(
+            f"/api/llm-models/{created['id']}",
+            json={"clear_api_base": True},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+        # Row state preserved.
+        rows = client.get("/api/llm-models", headers=HEADERS_OK).json()
+        assert rows[0]["api_base"] == "https://x.openai.azure.com/"
+        assert rows[0]["api_version"] == "2024-08-01-preview"
+
+    def test_patch_azure_with_only_api_base_rejected(self, client):
+        created = client.post(
+            "/api/llm-models",
+            json={
+                "label": "Azure",
+                "model_id": "azure/gpt-5.4",
+                "api_key": "k",
+                "api_base": "https://x.openai.azure.com/",
+                "api_version": "2024-08-01-preview",
+            },
+            headers=HEADERS_OK,
+        ).json()
+        # Wipe api_version (set empty) via PATCH should be rejected because
+        # row stays in azure/ but loses the required field.
+        r = client.patch(
+            f"/api/llm-models/{created['id']}",
+            json={"api_version": ""},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
     @patch("api.routers.settings.llm.test_completion")
     def test_azure_test_endpoint_forwards_fields(self, mock_test, client):
         mock_test.return_value = (True, "ok")

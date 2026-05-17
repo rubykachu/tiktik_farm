@@ -213,7 +213,7 @@ function LLMModelModal({
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
 
-  const needsEndpoint = modelId.startsWith("azure/");
+  const needsEndpoint = modelId.trim().toLowerCase().startsWith("azure/");
 
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),
@@ -236,9 +236,12 @@ function LLMModelModal({
         label: payload.label,
         model_id: payload.model_id,
         api_key: payload.api_key || undefined,
-        ...(payload.api_base
-          ? { api_base: payload.api_base, api_version: payload.api_version || undefined }
-          : { clear_api_base: true }),
+        // Send each endpoint field independently. "" clears on the server
+        // (router maps `"" or None` → None) so the user can wipe one field
+        // without losing the other. clear_api_base is reserved for callers
+        // that want to nuke both atomically.
+        api_base: payload.api_base,
+        api_version: payload.api_version,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
@@ -376,7 +379,7 @@ function LLMModelModal({
             )}
           </div>
 
-          {(needsEndpoint || apiBase) && (
+          {(needsEndpoint || apiBase || apiVersion) && (
             <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/50 p-3">
               <p className="text-xs font-medium text-blue-700">
                 {needsEndpoint
