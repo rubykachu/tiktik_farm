@@ -11,10 +11,13 @@ import logging
 import re
 
 _BOT_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]{10,}")
+_API_KEY_KV_RE = re.compile(r"(api_key)\s*=\s*[^\s,;]+", re.IGNORECASE)
 
 
 def scrub_bot_tokens(text: str) -> str:
-    return _BOT_TOKEN_RE.sub("bot***", text)
+    text = _BOT_TOKEN_RE.sub("bot***", text)
+    text = _API_KEY_KV_RE.sub(r"\1=***", text)
+    return text
 
 
 class BotTokenScrubFilter(logging.Filter):

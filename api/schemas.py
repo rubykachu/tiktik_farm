@@ -395,3 +395,47 @@ class TelegramTestRequest(BaseModel):
 class TelegramTestResponse(BaseModel):
     ok: bool
     message: str
+
+
+# ---------- LLM caption rewrite (Phase 3) -----------------------------------
+
+
+class LLMModelCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=128)
+    model_id: str = Field(min_length=1, max_length=128)
+    api_key: str = Field(min_length=1)
+    set_default: bool = False
+
+
+class LLMModelUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    model_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    api_key: Optional[str] = None  # empty / absent → keep existing
+
+
+class LLMModelRead(BaseModel):
+    id: int
+    label: str
+    model_id: str
+    api_key_masked: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class SettingsRead(BaseModel):
+    llm_enabled: bool
+
+
+class SettingsUpdate(BaseModel):
+    llm_enabled: Optional[bool] = None
+
+
+class LLMTestRequest(BaseModel):
+    model_id: str = Field(min_length=1, max_length=128)
+    api_key: str = Field(min_length=1)
+
+
+class LLMTestResponse(BaseModel):
+    ok: bool
+    message: str
