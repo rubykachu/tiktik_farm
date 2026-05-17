@@ -396,12 +396,16 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     if video_id in ai_title_by_video:
                         ai_title = ai_title_by_video[video_id]
                     else:
-                        ai_title = _rewrite_with_llm(
+                        rewritten = _rewrite_with_llm(
                             pipeline.caption_ai_prompt or "",
                             video_title,
                             description,
                         )
-                        ai_title_by_video[video_id] = ai_title
+                        # Only cache on success. A transient LLM failure must
+                        # not poison the cache for the rest of the tick.
+                        if rewritten and rewritten != video_title:
+                            ai_title_by_video[video_id] = rewritten
+                            ai_title = rewritten
 
                 # Render caption
                 caption = render_caption(

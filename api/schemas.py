@@ -224,11 +224,12 @@ class PipelineCreate(BaseModel):
     @field_validator("caption_template")
     @classmethod
     def _validate_caption_vars(cls, v: str) -> str:
+        from api.services.caption import ALLOWED_VARS
         unknown = find_unknown_vars(v)
         if unknown:
             raise ValueError(
                 f"unknown caption variable(s): {', '.join(unknown)}. "
-                f"Allowed: title, title_hashtag, now"
+                f"Allowed: {', '.join(sorted(ALLOWED_VARS))}"
             )
         return v
 
@@ -402,18 +403,45 @@ class TelegramTestResponse(BaseModel):
 
 # ---------- LLM caption rewrite (Phase 3) -----------------------------------
 
+# Format: provider/model. Constrains the provider segment to lowercase
+# litellm-style identifiers so a careless typo can't open SSRF surface
+# (e.g. proxy/ollama base-url style routes).
+_MODEL_ID_RE = re.compile(r"^[a-z0-9_\-]+/[A-Za-z0-9._:\-]+$")
+
+# Real provider keys are 30-200 chars; 512 is comfortable headroom and
+# protects against DoS from an API-key field stuffed with megabytes.
+_API_KEY_MAX = 512
+
+
+def _validate_model_id(v: str) -> str:
+    if not _MODEL_ID_RE.match(v):
+        raise ValueError(
+            "model_id must be in 'provider/model' format (e.g. gemini/gemini-2.0-flash-lite)"
+        )
+    return v
+
 
 class LLMModelCreate(BaseModel):
     label: str = Field(min_length=1, max_length=128)
     model_id: str = Field(min_length=1, max_length=128)
-    api_key: str = Field(min_length=1)
+    api_key: str = Field(min_length=1, max_length=_API_KEY_MAX)
     set_default: bool = False
+
+    @field_validator("model_id")
+    @classmethod
+    def _check_model_id(cls, v: str) -> str:
+        return _validate_model_id(v)
 
 
 class LLMModelUpdate(BaseModel):
     label: Optional[str] = Field(default=None, min_length=1, max_length=128)
     model_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    api_key: Optional[str] = None  # empty / absent → keep existing
+    api_key: Optional[str] = Field(default=None, max_length=_API_KEY_MAX)
+
+    @field_validator("model_id")
+    @classmethod
+    def _check_model_id(cls, v: Optional[str]) -> Optional[str]:
+        return None if v is None else _validate_model_id(v)
 
 
 class LLMModelRead(BaseModel):
@@ -436,7 +464,12 @@ class SettingsUpdate(BaseModel):
 
 class LLMTestRequest(BaseModel):
     model_id: str = Field(min_length=1, max_length=128)
-    api_key: str = Field(min_length=1)
+    api_key: str = Field(min_length=1, max_length=_API_KEY_MAX)
+
+    @field_validator("model_id")
+    @classmethod
+    def _check_model_id(cls, v: str) -> str:
+        return _validate_model_id(v)
 
 
 class LLMTestResponse(BaseModel):

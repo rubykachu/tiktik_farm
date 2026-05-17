@@ -50,7 +50,7 @@ function buildSchema(existingTokenSet: boolean) {
       },
       {
         message:
-          "Add an AI prompt below, or remove {ai_title} from the caption template.",
+          "Add an AI prompt or remove {ai_title} from the caption template",
         path: ["caption_ai_prompt"],
       }
     )

@@ -12,11 +12,25 @@ import re
 
 _BOT_TOKEN_RE = re.compile(r"bot\d+:[A-Za-z0-9_-]{10,}")
 _API_KEY_KV_RE = re.compile(r"(api_key)\s*=\s*[^\s,;]+", re.IGNORECASE)
+# Catches Authorization: Bearer X, x-api-key: X, "api_key":"X", api-key=X.
+_AUTH_HEADER_RE = re.compile(
+    r"""(?ix)
+    (authorization|x-api-key|api[-_]?key)
+    \s*[:=]\s*
+    "?(?:bearer\s+)?[A-Za-z0-9._\-]+"?
+    """
+)
+# Bare provider-prefixed keys (OpenAI, Anthropic, Google) inside free text.
+_KNOWN_KEY_PREFIX_RE = re.compile(
+    r"\b(sk-ant-[A-Za-z0-9_\-]{16,}|sk-[A-Za-z0-9_\-]{16,}|AIza[A-Za-z0-9_\-]{20,})\b"
+)
 
 
 def scrub_bot_tokens(text: str) -> str:
     text = _BOT_TOKEN_RE.sub("bot***", text)
     text = _API_KEY_KV_RE.sub(r"\1=***", text)
+    text = _AUTH_HEADER_RE.sub(r"\1=***", text)
+    text = _KNOWN_KEY_PREFIX_RE.sub("***", text)
     return text
 
 

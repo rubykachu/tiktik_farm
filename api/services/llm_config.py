@@ -49,18 +49,20 @@ def set_llm_enabled(enabled: bool) -> None:
 def set_default_llm_model(model_id: int) -> None:
     """Atomically set this row's is_default=True and clear all others.
 
-    Raises LookupError if the id does not exist.
+    Wrapped in a single transaction so concurrent writers cannot leave
+    zero or two rows flagged default. Raises LookupError if the id does
+    not exist.
     """
     with Session(_api_db.engine) as s:
-        target = s.get(LLMModel, model_id)
-        if target is None:
-            raise LookupError(f"LLMModel id={model_id} not found")
-        s.exec(
-            update(LLMModel)
-            .where(LLMModel.id != model_id)
-            .values(is_default=False, updated_at=now_utc())
-        )
-        target.is_default = True
-        target.updated_at = now_utc()
-        s.add(target)
-        s.commit()
+        with s.begin():
+            target = s.get(LLMModel, model_id)
+            if target is None:
+                raise LookupError(f"LLMModel id={model_id} not found")
+            s.exec(
+                update(LLMModel)
+                .where(LLMModel.id != model_id)
+                .values(is_default=False, updated_at=now_utc())
+            )
+            target.is_default = True
+            target.updated_at = now_utc()
+            s.add(target)

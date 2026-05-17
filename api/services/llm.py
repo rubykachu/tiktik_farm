@@ -10,14 +10,23 @@ import logging
 
 import litellm
 
+from api.logging import scrub_bot_tokens
 from api.services.secrets import decrypt
 from api.utils.text import truncate
 
 log = logging.getLogger(__name__)
 
-DESCRIPTION_MAX_CHARS = 2000
-DEFAULT_TIMEOUT = 30
-MAX_OUTPUT_TOKENS = 200
+# Local-first product — don't ship usage telemetry, callbacks, or debug
+# strings to litellm's hosted endpoints.
+litellm.telemetry = False
+litellm.drop_params = True
+litellm.suppress_debug_info = True
+litellm.success_callback = []
+litellm.failure_callback = []
+
+DESCRIPTION_MAX_CHARS = 2000  # ~500 input tokens → cheap on Gemini Flash
+DEFAULT_TIMEOUT = 30          # seconds; bigger blows up tick latency
+MAX_OUTPUT_TOKENS = 200       # ~one TikTok caption line
 
 
 class LLMNotConfigured(Exception):
@@ -67,8 +76,15 @@ def rewrite_title(
     return content
 
 
+_TEST_ERROR_MAX_CHARS = 200
+
+
 def test_completion(*, model_id: str, api_key_encrypted: str) -> tuple[bool, str]:
-    """Cheap connectivity probe used by Settings → Test connection."""
+    """Cheap connectivity probe used by Settings → Test connection.
+
+    The returned message is scrubbed and capped — provider error bodies
+    sometimes echo the request including the Authorization header.
+    """
     try:
         api_key = _decrypt_required(api_key_encrypted)
     except LLMNotConfigured as e:
@@ -82,5 +98,6 @@ def test_completion(*, model_id: str, api_key_encrypted: str) -> tuple[bool, str
             timeout=DEFAULT_TIMEOUT,
         )
     except Exception as e:
-        return (False, str(e))
+        safe = scrub_bot_tokens(str(e))[:_TEST_ERROR_MAX_CHARS]
+        return (False, safe or "error")
     return (True, "ok")

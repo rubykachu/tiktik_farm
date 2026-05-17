@@ -151,6 +151,18 @@ def update_pipeline(
     if not row:
         raise HTTPException(status_code=404, detail="pipeline not found")
 
+    # Validate cross-field rules against the post-merge candidate values
+    # BEFORE touching the row. If any validation raises, the row stays clean.
+    candidate_template = (
+        payload.caption_template if payload.caption_template is not None
+        else row.caption_template
+    )
+    candidate_prompt = (
+        payload.caption_ai_prompt if "caption_ai_prompt" in payload.model_fields_set
+        else row.caption_ai_prompt
+    )
+    _validate_ai_title_preconditions(candidate_template, candidate_prompt)
+
     changed = False
     if payload.name is not None:
         row.name = payload.name
@@ -212,9 +224,6 @@ def update_pipeline(
     if "caption_ai_prompt" in payload.model_fields_set:
         row.caption_ai_prompt = payload.caption_ai_prompt or None
         changed = True
-
-    # Cross-field check after merging.
-    _validate_ai_title_preconditions(row.caption_template, row.caption_ai_prompt)
 
     # Telegram secret handling: only update when caller sent non-empty token,
     # or explicitly asked to clear.

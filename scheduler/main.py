@@ -12,7 +12,8 @@ import os
 
 from api import db as _db
 from api.db import init_db
-from api.db_migrations import apply_schema_patches
+from api.db_migrations import apply_indexes, apply_schema_patches, seed_app_settings
+from api.logging import install_global_scrub_filter
 from scheduler import worker
 from tiktok_uploader.Config import Config
 
@@ -22,12 +23,16 @@ def main() -> None:
         level=os.getenv("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+    install_global_scrub_filter()
+
     config_path = os.getenv("TIKTOK_CONFIG_PATH", "./config.txt")
     if os.path.exists(config_path):
         Config.load(config_path)
 
     init_db()
     apply_schema_patches(_db.engine)
+    apply_indexes(_db.engine)
+    seed_app_settings(_db.engine)
     poll = float(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
     worker.loop(poll_interval=poll)
 
