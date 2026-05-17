@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Trash2, RefreshCcw, LogIn, Download, FileJson } from "lucide-react";
+import { toast } from "sonner";
 import { Accounts } from "../api/client";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ImportJsonModal from "../components/ImportJsonModal";
@@ -35,11 +36,11 @@ export default function AccountsPage() {
     mutationFn: (id: number) => Accounts.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] });
-      alert(`Account "${deleteTarget?.username ?? ""}" was deleted.`);
+      toast.success(`Account "${deleteTarget?.username ?? ""}" deleted`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
+      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
       setDeleteTarget(null);
     },
   });

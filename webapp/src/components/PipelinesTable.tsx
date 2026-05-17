@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, Play as RunNow, Pencil, Trash2 } from "lucide-react";
 import { Pipelines, Pipeline } from "../api/pipelines";
+import { toast } from "sonner";
 import ConfirmDialog from "./ConfirmDialog";
 import PipelineRunsExpand from "./PipelineRunsExpand";
 
@@ -50,15 +51,19 @@ export default function PipelinesTable({ onEdit }: Props) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
       qc.invalidateQueries({ queryKey: ["videos"] });
-      alert(`Pipeline "${deleteTarget?.name ?? ""}" and its upload history were deleted.`);
+      toast.success(`Pipeline "${deleteTarget?.name ?? ""}" deleted`, {
+        description: "Pipeline runs and upload history were removed.",
+      });
       setDeleteTarget(null);
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (e?.response?.status === 409 && detail?.code === "PIPELINE_RUNNING") {
-        alert("Pipeline is running. Stop it and wait for the tick to finish before deleting.");
+        toast.error("Pipeline is running", {
+          description: "Stop it and wait for the tick to finish before deleting.",
+        });
       } else {
-        alert(`Delete failed: ${e.message}`);
+        toast.error("Delete failed", { description: e.message });
       }
       setDeleteTarget(null);
     },
@@ -67,19 +72,19 @@ export default function PipelinesTable({ onEdit }: Props) {
   const runNowMut = useMutation({
     mutationFn: (id: number) => Pipelines.runNow(id),
     onSuccess: () => {
-      alert("Queued: pipeline will run on the next tick.");
+      toast.success("Queued", { description: "Pipeline will run on the next tick." });
       qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (detail?.code === "PIPELINE_PAUSED") {
-        alert(detail?.message ?? "Pipeline is paused — resume it first.");
+        toast.error("Pipeline paused", { description: detail?.message ?? "Resume it first." });
       } else if (detail?.code === "PIPELINE_RUNNING") {
-        alert("Pipeline is running. Wait for the tick to finish.");
+        toast.error("Pipeline is running", { description: "Wait for the tick to finish." });
       } else if (detail?.code === "RUN_NOW_QUEUED") {
-        alert("Run-now already queued. Wait for the next tick.");
+        toast.info("Already queued", { description: "Wait for the next tick." });
       } else {
-        alert(`Error: ${e.message}`);
+        toast.error("Error", { description: e.message });
       }
     },
   });

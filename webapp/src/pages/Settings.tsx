@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Star, Trash2, Edit, X, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { Settings as SettingsApi } from "../api/settings";
 import { LLMModels, LLMModel, LLMModelCreate } from "../api/llmModels";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -39,11 +40,11 @@ export default function SettingsPage() {
     mutationFn: (id: number) => LLMModels.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
-      alert(`LLM model "${deleteTarget?.label ?? ""}" was deleted.`);
+      toast.success(`LLM model "${deleteTarget?.label ?? ""}" deleted`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
+      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
       setDeleteTarget(null);
     },
   });

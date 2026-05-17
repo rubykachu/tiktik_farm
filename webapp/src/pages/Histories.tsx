@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { api, Accounts } from "../api/client";
 import { Pipelines, VideoUploadItem } from "../api/pipelines";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -46,10 +47,11 @@ export default function HistoriesPage() {
     mutationFn: (id: number) => api.delete(`/videos/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["videos"] });
+      toast.success("Upload history entry deleted");
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      alert(`Delete failed: ${e?.response?.data?.detail || e.message}`);
+      toast.error("Delete failed", { description: e?.response?.data?.detail || e.message });
       setDeleteTarget(null);
     },
   });

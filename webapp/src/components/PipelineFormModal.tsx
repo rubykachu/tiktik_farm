@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
@@ -387,11 +388,13 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     setTelegramTestSending(true);
     try {
       const r = await Telegram.sendTest(token, chatId);
-      window.alert(r.message);
+      toast.success("Telegram test sent", { description: r.message });
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
         ?.detail;
-      window.alert(formatHttpDetail(d, "Sending test message failed."));
+      toast.error("Sending test message failed", {
+        description: formatHttpDetail(d, "Sending test message failed."),
+      });
     } finally {
       setTelegramTestSending(false);
     }

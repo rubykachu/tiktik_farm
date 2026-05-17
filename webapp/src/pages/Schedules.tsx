@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Schedules } from "../api/client";
 import { Ban, Plus, RotateCw, Trash2 } from "lucide-react";
 import PipelinesTable from "../components/PipelinesTable";
@@ -47,11 +48,11 @@ function SingleShotTab() {
     mutationFn: (id: number) => Schedules.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
-      alert(`Scheduled upload "${deleteTarget?.title ?? ""}" was deleted.`);
+      toast.success(`Scheduled upload "${deleteTarget?.title ?? ""}" deleted`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      alert(`Delete failed: ${e?.response?.data?.detail ?? e.message}`);
+      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
       setDeleteTarget(null);
     },
   });
