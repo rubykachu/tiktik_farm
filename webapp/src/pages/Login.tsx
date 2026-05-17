@@ -22,8 +22,36 @@ export default function LoginPage() {
   const [vncUrl, setVncUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  // Latest sessionId+phase captured in a ref so the unmount/unload cleanup
+  // below can read them without re-subscribing on every state change.
+  const stateRef = useRef<{ sessionId: string | null; phase: Phase }>({
+    sessionId: null,
+    phase: "idle",
+  });
+  stateRef.current = { sessionId, phase };
 
-  useEffect(() => () => esRef.current?.close(), []);
+  // Cancel the noVNC session on unmount (SPA navigation) and on window unload
+  // (tab close / reload). `keepalive` lets the DELETE finish after teardown.
+  // Without this, an abandoned login holds Chromium open for the full 10-min
+  // cookie-poll timeout — wasted CPU/RAM on the VPS.
+  useEffect(() => {
+    const cancelSession = () => {
+      const { sessionId: sid, phase: ph } = stateRef.current;
+      if (sid && !["completed", "failed", "expired"].includes(ph)) {
+        try {
+          fetch(`/api/login/browser/${sid}`, { method: "DELETE", keepalive: true });
+        } catch {
+          // best-effort
+        }
+      }
+    };
+    window.addEventListener("beforeunload", cancelSession);
+    return () => {
+      window.removeEventListener("beforeunload", cancelSession);
+      esRef.current?.close();
+      cancelSession();
+    };
+  }, []);
 
   const onSubmit = async ({ username }: FormValues) => {
     setError(null);

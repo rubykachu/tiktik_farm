@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from datetime import timedelta
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -29,6 +30,12 @@ from sse_starlette.sse import EventSourceResponse
 
 from api.db import get_session, now_utc
 from api.models import Account, LoginSession
+
+# Mirror of `_POLL_TIMEOUT_SECONDS` in novnc/control_server.py — any
+# `LoginSession` row older than this whose status is still non-terminal is
+# considered stale (the noVNC worker has already exited) and ignored by the
+# single-slot guard.
+_NOVNC_POLL_TIMEOUT = timedelta(seconds=600)
 from api.schemas import (
     LoginBrowserCompleteRequest,
     LoginBrowserStartRequest,
@@ -52,6 +59,33 @@ def start_browser_login(
     payload: LoginBrowserStartRequest,
     session: Session = Depends(get_session),
 ):
+    """Single-slot guard: the noVNC container can only drive one Chromium at
+    a time and the VNC stream is shared, so a concurrent login from another
+    user would (a) kill the in-flight session via takeover and (b) leak the
+    second user's password screen into the first user's iframe. We reject
+    overlapping starts at the API layer with a 409 the UI can surface as
+    "another login in progress" — the existing row is returned so the caller
+    can attach to it or cancel it.
+    """
+    cutoff = now_utc() - _NOVNC_POLL_TIMEOUT
+    in_flight = session.exec(
+        select(LoginSession)
+        .where(LoginSession.status.in_(("pending", "active")))
+        .where(LoginSession.started_at >= cutoff)
+        .order_by(LoginSession.started_at.desc())
+    ).first()
+    if in_flight is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Another login is already in progress "
+                f"(account '{in_flight.username}', started "
+                f"{in_flight.started_at.isoformat(timespec='seconds')}). "
+                f"Wait for it to finish, or cancel it before starting a new one."
+            ),
+            headers={"X-Login-In-Progress-Id": in_flight.id},
+        )
+
     sid = uuid.uuid4().hex
     vnc_url = novnc_client.build_vnc_url(sid)
     row = LoginSession(

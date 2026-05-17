@@ -11,7 +11,15 @@ export default defineConfig({
     // Dev only — production nginx proxies /api, /novnc, /websockify (see webapp/nginx.conf).
     proxy: {
       "/api": { target: apiProxy, changeOrigin: true },
-      "/novnc": { target: novncProxy, changeOrigin: true, ws: true },
+      // Strip the /novnc prefix so websockify (which serves /usr/share/novnc
+      // at the root) finds vnc.html. Production nginx achieves the same via
+      // `proxy_pass http://novnc:6080/;` with a trailing slash.
+      "/novnc": {
+        target: novncProxy,
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/novnc/, ""),
+      },
       "/websockify": { target: novncProxy, changeOrigin: true, ws: true },
     },
   },

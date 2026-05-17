@@ -5,9 +5,12 @@ on the Xvfb display, poll for the TikTok sessionid cookie, then POST the
 cookie payload back to the API's callback_url. The API is the only service
 that writes the pickle, keeping this container stateless.
 
-Single-slot queue: only one browser session at a time. A second start call
-while one is active returns 409. This matches the realistic workload (a
-single human logging in).
+Single-slot model: only one browser session at a time. A second `/browser/start`
+takes over — the prior driver is quit and superseded. The previous worker
+thread checks its session_id against `_state.session_id` before mutating any
+state, so a quit-induced exception in the old thread cannot corrupt the new
+session. This matches the realistic workload (a single human retrying a login
+after abandoning the previous tab).
 """
 from __future__ import annotations
 
@@ -66,8 +69,21 @@ class StartRequest(BaseModel):
     callback_url: str
 
 
+def _set_failed(sid: str, msg: str) -> None:
+    """Mark state failed only if this worker still owns the session."""
+    with _state.lock:
+        if _state.session_id == sid:
+            _state.status = "failed"
+            _state.error = msg
+
+
 def _launch_and_watch(sid: str, username: str, callback_url: str) -> None:
-    """Worker thread: drive Chromium, wait for cookies, POST back to API."""
+    """Worker thread: drive Chromium, wait for cookies, POST back to API.
+
+    Every state mutation is guarded by `_state.session_id == sid` so a
+    superseded worker (whose driver was quit by a takeover) cannot stomp the
+    new session's status when its blocking call raises.
+    """
     import undetected_chromedriver as uc  # heavy import → lazy
 
     options = uc.ChromeOptions()
@@ -78,65 +94,82 @@ def _launch_and_watch(sid: str, username: str, callback_url: str) -> None:
     options.binary_location = "/usr/bin/chromium"
 
     try:
-        _state.driver = uc.Chrome(options=options, driver_executable_path="/usr/bin/chromedriver")
-        _state.status = "active"
-        _state.driver.get(_TIKTOK_LOGIN_URL)
+        driver = uc.Chrome(options=options, driver_executable_path="/usr/bin/chromedriver")
     except Exception as e:
         log.exception("failed to start chromium")
-        with _state.lock:
-            _state.status = "failed"
-            _state.error = str(e)
+        _set_failed(sid, str(e))
         return
 
+    with _state.lock:
+        if _state.session_id != sid:
+            # Superseded before we could publish our driver — tear it down.
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            return
+        _state.driver = driver
+        _state.status = "active"
+
     try:
+        driver.get(_TIKTOK_LOGIN_URL)
         cookies = wait_for_session_cookies(
-            _state.driver, poll_interval=2.0, timeout=_POLL_TIMEOUT_SECONDS
+            driver, poll_interval=2.0, timeout=_POLL_TIMEOUT_SECONDS
         )
     except TimeoutError as e:
-        with _state.lock:
-            _state.status = "failed"
-            _state.error = str(e)
+        _set_failed(sid, str(e))
         return
     except Exception as e:
         log.exception("cookie polling errored")
-        with _state.lock:
-            _state.status = "failed"
-            _state.error = str(e)
+        _set_failed(sid, str(e))
         return
 
-    _state.status = "completing"
+    with _state.lock:
+        if _state.session_id != sid:
+            return
+        _state.status = "completing"
+
     try:
         with httpx.Client(timeout=30.0) as client:
             client.post(callback_url, json={"cookies": cookies}).raise_for_status()
         with _state.lock:
-            _state.status = "completed"
+            if _state.session_id == sid:
+                _state.status = "completed"
     except httpx.HTTPError as e:
         log.exception("callback POST failed")
-        with _state.lock:
-            _state.status = "failed"
-            _state.error = f"callback failed: {e}"
+        _set_failed(sid, f"callback failed: {e}")
 
 
 @app.post("/browser/start", status_code=status.HTTP_202_ACCEPTED)
 def browser_start(req: StartRequest):
+    """Takeover semantics: a new start supersedes any in-flight session.
+
+    The previous driver is quit outside the lock (it can block on shutdown);
+    the prior worker thread will observe a session_id mismatch and exit
+    without mutating the new session's state.
+    """
     with _state.lock:
-        if _state.status in ("starting", "active", "completing"):
-            raise HTTPException(
-                status_code=409,
-                detail=f"another login in progress (session {_state.session_id})",
-            )
-        _state.reset()
+        prev_driver = _state.driver
+        _state.driver = None  # detach so the prior worker can't quit it again
         _state.session_id = req.session_id
         _state.username = req.username
         _state.callback_url = req.callback_url
         _state.status = "starting"
+        _state.error = None
         t = threading.Thread(
             target=_launch_and_watch,
             args=(req.session_id, req.username, req.callback_url),
             daemon=True,
         )
         _state.thread = t
-        t.start()
+
+    if prev_driver is not None:
+        try:
+            prev_driver.quit()
+        except Exception:
+            log.warning("prior driver.quit() raised during takeover", exc_info=True)
+
+    t.start()
     return {"session_id": req.session_id, "status": "starting"}
 
 
