@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import logging
 
+# Silence litellm's import-time warnings about missing botocore (Bedrock /
+# SageMaker stream decoders). We don't use AWS providers, so the optional
+# dep is intentionally absent.
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+
 import litellm
 
 from api.logging import scrub_bot_tokens
