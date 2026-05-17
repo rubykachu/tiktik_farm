@@ -212,9 +212,12 @@ function LLMModelModal({
   const [apiBase, setApiBase] = useState(existing?.api_base ?? "");
   const [apiVersion, setApiVersion] = useState(existing?.api_version ?? "");
   const [setDefault, setSetDefault] = useState(!isEdit);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Single feedback channel for both Test and Save. Whichever action
+  // ran most recently owns the chip; switching between them clears the
+  // previous result so the user never sees two stacked messages.
+  const [notice, setNotice] = useState<
+    { ok: boolean; message: string } | null
+  >(null);
 
   const needsEndpoint = modelId.trim().toLowerCase().startsWith("azure/");
 
@@ -230,20 +233,14 @@ function LLMModelModal({
     return e?.message || "Request failed";
   }
 
-  function clearAllErrors() {
-    setSubmitError(null);
-    setTestOk(null);
-    setTestResult(null);
-  }
-
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),
-    onMutate: clearAllErrors,
+    onMutate: () => setNotice(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
     },
-    onError: (e: any) => setSubmitError(formatApiError(e)),
+    onError: (e: any) => setNotice({ ok: false, message: formatApiError(e) }),
   });
 
   const updateMut = useMutation({
@@ -266,12 +263,12 @@ function LLMModelModal({
         api_base: payload.api_base,
         api_version: payload.api_version,
       }),
-    onMutate: clearAllErrors,
+    onMutate: () => setNotice(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
     },
-    onError: (e: any) => setSubmitError(formatApiError(e)),
+    onError: (e: any) => setNotice({ ok: false, message: formatApiError(e) }),
   });
 
   const testMut = useMutation({
@@ -282,15 +279,9 @@ function LLMModelModal({
         apiBase || undefined,
         apiVersion || undefined,
       ),
-    onMutate: clearAllErrors,
-    onSuccess: (r) => {
-      setTestOk(r.ok);
-      setTestResult(r.message);
-    },
-    onError: (e: any) => {
-      setTestOk(false);
-      setTestResult(formatApiError(e));
-    },
+    onMutate: () => setNotice(null),
+    onSuccess: (r) => setNotice({ ok: r.ok, message: r.message }),
+    onError: (e: any) => setNotice({ ok: false, message: formatApiError(e) }),
   });
 
   if (!state) return null;
@@ -301,9 +292,10 @@ function LLMModelModal({
   const canSubmit =
     label.trim() && modelId.trim() && (isEdit || apiKey) && azureReady;
 
-  // Called on every input change. Stale chips (success or error) from
-  // a previous Test/Save no longer reflect the current form state.
-  const resetTest = clearAllErrors;
+  // Editing inputs invalidates any stale Test/Save result.
+  function onFieldChange() {
+    if (notice) setNotice(null);
+  }
 
   function onSave() {
     if (!canSubmit) return;
@@ -360,7 +352,7 @@ function LLMModelModal({
               value={modelId}
               onChange={(e) => {
                 setModelId(e.target.value);
-                resetTest();
+                onFieldChange();
               }}
               placeholder="gemini/gemini-2.0-flash-lite"
             />
@@ -387,7 +379,7 @@ function LLMModelModal({
               value={apiKey}
               onChange={(e) => {
                 setApiKey(e.target.value);
-                resetTest();
+                onFieldChange();
               }}
               placeholder={
                 isEdit ? "Leave empty to keep existing key" : "sk-… or AIza…"
@@ -414,7 +406,7 @@ function LLMModelModal({
                   value={apiBase}
                   onChange={(e) => {
                     setApiBase(e.target.value);
-                    resetTest();
+                    onFieldChange();
                   }}
                   placeholder="https://your-resource.openai.azure.com/"
                 />
@@ -432,7 +424,7 @@ function LLMModelModal({
                   value={apiVersion}
                   onChange={(e) => {
                     setApiVersion(e.target.value);
-                    resetTest();
+                    onFieldChange();
                   }}
                   placeholder="2025-02-01-preview"
                 />
@@ -445,36 +437,19 @@ function LLMModelModal({
             </div>
           )}
 
-          <div className="space-y-2">
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={
-                !modelId.trim() ||
-                !apiKey ||
-                testMut.isPending ||
-                !azureReady
-              }
-              onClick={() => testMut.mutate()}
-            >
-              {testMut.isPending ? "Testing…" : "Test connection"}
-            </button>
-            {testResult && (
-              <div
-                className={
-                  "text-xs break-words rounded-md px-3 py-2 max-h-32 overflow-y-auto " +
-                  (testOk
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : "bg-red-50 text-red-700 border border-red-200")
-                }
-              >
-                <span className="font-medium">
-                  {testOk ? "✓ Success: " : "✗ Failed: "}
-                </span>
-                {testResult}
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={
+              !modelId.trim() ||
+              !apiKey ||
+              testMut.isPending ||
+              !azureReady
+            }
+            onClick={() => testMut.mutate()}
+          >
+            {testMut.isPending ? "Testing…" : "Test connection"}
+          </button>
 
           {!isEdit && (
             <label className="flex items-center gap-2 text-sm">
@@ -486,13 +461,23 @@ function LLMModelModal({
               Set as default
             </label>
           )}
-        </div>
 
-        {submitError && (
-          <div className="text-xs break-words rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-            <span className="font-medium">✗ {submitError}</span>
-          </div>
-        )}
+          {notice && (
+            <div
+              className={
+                "text-xs break-words rounded-md px-3 py-2 max-h-32 overflow-y-auto " +
+                (notice.ok
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-red-50 text-red-700 border border-red-200")
+              }
+            >
+              <span className="font-medium">
+                {notice.ok ? "✓ " : "✗ "}
+              </span>
+              {notice.message}
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-end gap-2 pt-3 border-t">
           <button className="btn-secondary" onClick={onClose}>
