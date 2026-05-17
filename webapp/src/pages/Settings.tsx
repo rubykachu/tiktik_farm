@@ -286,7 +286,7 @@ function LLMModelModal({
     },
     onError: (e: any) => {
       setTestOk(false);
-      setTestResult(e?.response?.data?.detail || e?.message || "Test failed");
+      setTestResult(formatApiError(e));
     },
   });
 
