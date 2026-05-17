@@ -292,9 +292,12 @@ function LLMModelModal({
   const canSubmit =
     label.trim() && modelId.trim() && (isEdit || apiKey) && azureReady;
 
-  // Editing inputs invalidates any stale Test/Save result.
-  function onFieldChange() {
-    if (notice) setNotice(null);
+  // Bind an <input> to a setter and clear any stale Test/Save chip.
+  function bind(setter: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setter(e.target.value);
+      if (notice) setNotice(null);
+    };
   }
 
   function onSave() {
@@ -350,10 +353,7 @@ function LLMModelModal({
             <input
               className="input"
               value={modelId}
-              onChange={(e) => {
-                setModelId(e.target.value);
-                onFieldChange();
-              }}
+              onChange={bind(setModelId)}
               placeholder="gemini/gemini-2.0-flash-lite"
             />
             <p className="text-xs text-slate-500 mt-1">
@@ -377,10 +377,7 @@ function LLMModelModal({
               type="password"
               className="input"
               value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                onFieldChange();
-              }}
+              onChange={bind(setApiKey)}
               placeholder={
                 isEdit ? "Leave empty to keep existing key" : "sk-… or AIza…"
               }
@@ -404,10 +401,7 @@ function LLMModelModal({
                 <input
                   className="input"
                   value={apiBase}
-                  onChange={(e) => {
-                    setApiBase(e.target.value);
-                    onFieldChange();
-                  }}
+                  onChange={bind(setApiBase)}
                   placeholder="https://your-resource.openai.azure.com/"
                 />
                 {needsEndpoint && (
@@ -422,10 +416,7 @@ function LLMModelModal({
                 <input
                   className="input"
                   value={apiVersion}
-                  onChange={(e) => {
-                    setApiVersion(e.target.value);
-                    onFieldChange();
-                  }}
+                  onChange={bind(setApiVersion)}
                   placeholder="2025-02-01-preview"
                 />
                 <p className="text-xs text-slate-500 mt-1">

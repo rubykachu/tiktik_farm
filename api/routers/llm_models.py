@@ -62,8 +62,8 @@ def create_model(payload: LLMModelCreate, session: Session = Depends(get_session
     return _to_read(row)
 
 
-def _resolve_optional(payload_val, current):
-    """Merge a PATCH field over a stored value. None = unchanged, "" = clear."""
+def _merge(payload_val, current):
+    """PATCH field merge. None → unchanged, empty string → clear, else use new."""
     if payload_val is None:
         return current
     return payload_val or None
@@ -79,47 +79,44 @@ def update_model(
     if row is None:
         raise HTTPException(status_code=404, detail="llm model not found")
 
-    # Validate the post-merge candidate against schema invariants BEFORE
-    # mutating row state, so a 422 leaves the stored row untouched.
-    candidate_model_id = payload.model_id if payload.model_id is not None else row.model_id
+    # Compute the candidate row state once. Validate it BEFORE any mutation
+    # so a 422 leaves the stored row untouched, then write only when at
+    # least one field differs.
+    new_label = _merge(payload.label, row.label)
+    new_model_id = _merge(payload.model_id, row.model_id)
     if payload.clear_api_base:
-        candidate_base = None
-        candidate_version = None
+        new_base = None
+        new_version = None
     else:
-        candidate_base = _resolve_optional(payload.api_base, row.api_base)
-        candidate_version = _resolve_optional(payload.api_version, row.api_version)
+        new_base = _merge(payload.api_base, row.api_base)
+        new_version = _merge(payload.api_version, row.api_version)
+
     try:
-        _require_azure_fields(candidate_model_id, candidate_base, candidate_version)
+        _require_azure_fields(new_model_id, new_base, new_version)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    changed = False
-    if payload.label is not None:
-        row.label = payload.label
-        changed = True
-    if payload.model_id is not None:
-        row.model_id = payload.model_id
-        changed = True
-    if payload.api_key:
-        row.api_key_encrypted = secrets.encrypt(payload.api_key)
-        changed = True
-    if payload.clear_api_base:
-        row.api_base = None
-        row.api_version = None
-        changed = True
-    else:
-        if payload.api_base is not None:
-            row.api_base = payload.api_base or None
-            changed = True
-        if payload.api_version is not None:
-            row.api_version = payload.api_version or None
-            changed = True
+    key_changed = bool(payload.api_key)
+    changed = (
+        new_label != row.label
+        or new_model_id != row.model_id
+        or new_base != row.api_base
+        or new_version != row.api_version
+        or key_changed
+    )
+    if not changed:
+        return _to_read(row)
 
-    if changed:
-        row.updated_at = now_utc()
-        session.add(row)
-        session.commit()
-        session.refresh(row)
+    row.label = new_label
+    row.model_id = new_model_id
+    row.api_base = new_base
+    row.api_version = new_version
+    if key_changed:
+        row.api_key_encrypted = secrets.encrypt(payload.api_key)
+    row.updated_at = now_utc()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
     return _to_read(row)
 
 
