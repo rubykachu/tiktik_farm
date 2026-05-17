@@ -1,10 +1,13 @@
 """Composite indexes that SQLModel's metadata.create_all does not gen for us,
 plus lightweight SQLite schema patches for additive columns.
 
-Call `apply_schema_patches(engine)` and `apply_indexes(engine)` at startup AFTER
-`init_db()`. All statements are idempotent so repeated runs are harmless.
+Call `apply_schema_patches(engine)`, `apply_indexes(engine)`, and
+`seed_app_settings(engine)` at startup AFTER `init_db()`. All statements are
+idempotent so repeated runs are harmless.
 """
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 from sqlalchemy.engine import Engine
 
@@ -36,4 +39,30 @@ def apply_schema_patches(engine: Engine) -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE channel_pipelines ADD COLUMN "
                 "upload_delay_minutes INTEGER NOT NULL DEFAULT 0"
+            )
+        if "caption_ai_prompt" not in col_names:
+            conn.exec_driver_sql(
+                "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
+            )
+
+
+def seed_app_settings(engine: Engine) -> None:
+    """Insert default rows into app_settings on first boot. Idempotent."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    defaults = (
+        ("llm.enabled", "true"),
+    )
+    with engine.begin() as conn:
+        # Table may not exist yet on truly fresh installs that skip init_db()
+        # in tests; bail out gracefully in that case.
+        existing = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
+        ).fetchone()
+        if not existing:
+            return
+        for key, value in defaults:
+            conn.exec_driver_sql(
+                "INSERT OR IGNORE INTO app_settings (key, value, updated_at) "
+                "VALUES (?, ?, ?)",
+                (key, value, now_iso),
             )

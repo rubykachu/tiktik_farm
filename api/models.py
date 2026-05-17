@@ -86,6 +86,8 @@ class ChannelPipeline(SQLModel, table=True):
     max_duration_seconds: Optional[int] = Field(default=None)
     upload_delay_minutes: Optional[int] = Field(default=0, ge=0, le=30)
 
+    caption_ai_prompt: Optional[str] = Field(default=None)
+
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)
 
@@ -147,6 +149,35 @@ class VideoUpload(SQLModel, table=True):
     attempt_count: int = Field(default=1)
     error_text: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=now_utc, index=True)
+
+
+# ---------- LLM caption rewrite (Phase 3) -----------------------------------
+
+
+class LLMModel(SQLModel, table=True):
+    """User-managed LLM endpoint entry. `api_key_encrypted` is Fernet ciphertext
+    produced by `api.services.secrets.encrypt`. Only one row at a time is
+    `is_default=True`; the worker reads that row when a pipeline has
+    `caption_ai_prompt` set."""
+    __tablename__ = "llm_models"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label: str = Field(max_length=128)
+    model_id: str = Field(max_length=128)  # litellm "provider/model"
+    api_key_encrypted: str
+    is_default: bool = Field(default=False, index=True)
+
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class AppSetting(SQLModel, table=True):
+    """Key/value store for global flags. Currently: `llm.enabled`."""
+    __tablename__ = "app_settings"
+
+    key: str = Field(primary_key=True, max_length=64)
+    value: str
+    updated_at: datetime = Field(default_factory=now_utc)
 
 
 # ---------- noVNC login sessions --------------------------------------------
