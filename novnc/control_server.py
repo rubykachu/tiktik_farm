@@ -77,6 +77,16 @@ def _set_failed(sid: str, msg: str) -> None:
             _state.error = msg
 
 
+def _is_superseded(sid: str) -> bool:
+    """True if this worker no longer owns the singleton slot — either a
+    takeover bumped session_id or a DELETE called `reset()` (which clears
+    session_id to None). When superseded, Selenium calls raise
+    ConnectionRefusedError / WebDriverException because we deliberately
+    quit the driver; those are not real failures."""
+    with _state.lock:
+        return _state.session_id != sid
+
+
 def _launch_and_watch(sid: str, username: str, callback_url: str) -> None:
     """Worker thread: drive Chromium, wait for cookies, POST back to API.
 
@@ -120,6 +130,12 @@ def _launch_and_watch(sid: str, username: str, callback_url: str) -> None:
         _set_failed(sid, str(e))
         return
     except Exception as e:
+        if _is_superseded(sid):
+            log.info(
+                "worker %s exiting after driver was discarded (%s)",
+                sid[:8], type(e).__name__,
+            )
+            return
         log.exception("cookie polling errored")
         _set_failed(sid, str(e))
         return
