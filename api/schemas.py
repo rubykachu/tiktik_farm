@@ -4,9 +4,11 @@ polluting the ORM layer. These schemas are what appears in `/docs`.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -425,7 +427,56 @@ def _is_azure(model_id: str) -> bool:
     return model_id.lower().startswith("azure/")
 
 
-def _require_azure_fields(model_id: str, api_base: Optional[str], api_version: Optional[str]) -> None:
+# Loopback hostnames that are safe to reach from the API server even over
+# plain http (typical for self-hosted Ollama / vLLM on the same box).
+_LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _validate_api_base(v: Optional[str]) -> Optional[str]:
+    """Reject schemes other than http/https and any URL whose host resolves
+    to a private / loopback / link-local IP, except for explicit loopback
+    hostnames over http (Ollama / vLLM dev endpoints).
+
+    SSRF defence: an attacker who can write api_base can otherwise pivot
+    /llm/test or pipeline runs into the internal network — cloud metadata
+    (169.254.169.254), Docker socket proxies, internal admin UIs.
+    """
+    if v is None or v == "":
+        return v
+    parsed = urlparse(v.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("api_base scheme must be http or https")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("api_base must include a host")
+    is_loopback_name = host in _LOOPBACK_HOSTNAMES
+    # IP literal — classify directly.
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        if ip.is_loopback:
+            if parsed.scheme != "http":
+                # https loopback is fine but unusual; accept it.
+                pass
+            return v
+        if ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise ValueError(
+                "api_base cannot point to a private, loopback, link-local, "
+                "or reserved address"
+            )
+        # Public IP literal — require https.
+        if parsed.scheme != "https":
+            raise ValueError("api_base for a public host must use https")
+        return v
+    # Hostname (FQDN or "localhost") — http only for loopback names.
+    if parsed.scheme == "http" and not is_loopback_name:
+        raise ValueError("api_base for a public host must use https")
+    return v
+
+
+def require_azure_fields(model_id: str, api_base: Optional[str], api_version: Optional[str]) -> None:
     if not _is_azure(model_id):
         return
     if not (api_base and api_base.strip()):
@@ -447,9 +498,14 @@ class LLMModelCreate(BaseModel):
     def _check_model_id(cls, v: str) -> str:
         return _validate_model_id(v)
 
+    @field_validator("api_base")
+    @classmethod
+    def _check_api_base(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_api_base(v)
+
     @model_validator(mode="after")
     def _check_azure_required(self) -> "LLMModelCreate":
-        _require_azure_fields(self.model_id, self.api_base, self.api_version)
+        require_azure_fields(self.model_id, self.api_base, self.api_version)
         return self
 
 
@@ -465,6 +521,11 @@ class LLMModelUpdate(BaseModel):
     @classmethod
     def _check_model_id(cls, v: Optional[str]) -> Optional[str]:
         return None if v is None else _validate_model_id(v)
+
+    @field_validator("api_base")
+    @classmethod
+    def _check_api_base(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_api_base(v)
 
 
 class LLMModelRead(BaseModel):
@@ -498,9 +559,14 @@ class LLMTestRequest(BaseModel):
     def _check_model_id(cls, v: str) -> str:
         return _validate_model_id(v)
 
+    @field_validator("api_base")
+    @classmethod
+    def _check_api_base(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_api_base(v)
+
     @model_validator(mode="after")
     def _check_azure_required(self) -> "LLMTestRequest":
-        _require_azure_fields(self.model_id, self.api_base, self.api_version)
+        require_azure_fields(self.model_id, self.api_base, self.api_version)
         return self
 
 

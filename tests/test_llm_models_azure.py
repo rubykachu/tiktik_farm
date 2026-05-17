@@ -261,3 +261,82 @@ class TestAzureRequiresBothFields:
         kw = mock_test.call_args.kwargs
         assert kw["api_base"] == "https://x.openai.azure.com/"
         assert kw["api_version"] == "2024-08-01-preview"
+
+
+class TestApiBaseSsrfGuard:
+    """The api_base field is fed to litellm which issues an HTTP POST.
+    Without validation an attacker could pivot the API host into the
+    internal network (cloud metadata, Docker socket proxies, etc.)."""
+
+    def _create(self, client, api_base: str):
+        return client.post(
+            "/api/llm-models",
+            json={
+                "label": "X",
+                "model_id": "azure/gpt-5.4",
+                "api_key": "k",
+                "api_base": api_base,
+                "api_version": "2024-08-01-preview",
+            },
+            headers=HEADERS_OK,
+        )
+
+    def _test_endpoint(self, client, api_base: str):
+        return client.post(
+            "/api/settings/llm/test",
+            json={
+                "model_id": "openai/gpt-4o-mini",
+                "api_key": "k",
+                "api_base": api_base,
+            },
+            headers=HEADERS_OK,
+        )
+
+    # Accept
+
+    def test_accept_https_public_host(self, client):
+        r = self._create(client, "https://x.openai.azure.com/")
+        assert r.status_code == 201, r.text
+
+    def test_accept_http_localhost(self, client):
+        # Allow local Ollama / vLLM dev endpoints.
+        r = self._create(client, "http://localhost:11434/v1/")
+        assert r.status_code == 201, r.text
+
+    def test_accept_http_127_0_0_1(self, client):
+        r = self._create(client, "http://127.0.0.1:11434/")
+        assert r.status_code == 201, r.text
+
+    # Reject
+
+    def test_reject_cloud_metadata_link_local(self, client):
+        r = self._create(client, "http://169.254.169.254/latest/meta-data/")
+        assert r.status_code == 422
+        assert "private" in r.text.lower() or "loopback" in r.text.lower() or "link-local" in r.text.lower()
+
+    def test_reject_rfc1918_10(self, client):
+        r = self._create(client, "http://10.0.0.5/v1/")
+        assert r.status_code == 422
+
+    def test_reject_rfc1918_192_168(self, client):
+        r = self._create(client, "http://192.168.1.5/")
+        assert r.status_code == 422
+
+    def test_reject_rfc1918_172(self, client):
+        r = self._create(client, "http://172.20.0.5/")
+        assert r.status_code == 422
+
+    def test_reject_non_http_scheme(self, client):
+        r = self._create(client, "ftp://example.com/")
+        assert r.status_code == 422
+
+    def test_reject_http_public_host(self, client):
+        # Only https allowed for public hosts; plain http reserved for localhost.
+        r = self._create(client, "http://example.com/v1/")
+        assert r.status_code == 422
+
+    def test_reject_at_test_endpoint(self, client):
+        # The SSRF guard must apply on /llm/test too, otherwise an attacker
+        # bypasses by hitting the probe directly without saving the row.
+        r = self._test_endpoint(client, "http://169.254.169.254/")
+        assert r.status_code == 422

@@ -20,17 +20,33 @@ _AUTH_HEADER_RE = re.compile(
     "?(?:bearer\s+)?[A-Za-z0-9._\-]+"?
     """
 )
-# Bare provider-prefixed keys (OpenAI, Anthropic, Google) inside free text.
+# Bare provider-prefixed keys inside free text. Charset includes `.` because
+# OpenAI's project-key format (sk-proj-...) embeds dots between secret
+# segments; without the dot the regex stops at the first segment and the
+# trailing material — which IS the secret — survives.
 _KNOWN_KEY_PREFIX_RE = re.compile(
-    r"\b(sk-ant-[A-Za-z0-9_\-]{16,}|sk-[A-Za-z0-9_\-]{16,}|AIza[A-Za-z0-9_\-]{20,})\b"
+    r"\b("
+    r"sk-ant-[A-Za-z0-9._\-]{16,}"
+    r"|sk-proj-[A-Za-z0-9._\-]{16,}"
+    r"|sk-[A-Za-z0-9._\-]{16,}"
+    r"|AIza[A-Za-z0-9._\-]{20,}"
+    r")\b"
+)
+# JWT shape: eyJ<base64>.eyJ<base64>.<sig>. Header+payload are base64-decodable
+# to subject/issuer, so all three segments must be redacted together. Caught
+# before _LONG_OPAQUE_TOKEN_RE so the substitution preserves the JWT structure
+# in logs ("***.***.*** redacted JWT") rather than three independent ***.
+_JWT_RE = re.compile(
+    r"\beyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\b"
 )
 # Python bytes-literal exposing a credential, e.g. httpx "Illegal header value
 # b'<key>'" when an Azure key reaches the wire and fails header validation.
 _BYTES_LITERAL_OPAQUE_RE = re.compile(r"b'[A-Za-z0-9+/=_\-]{20,}'")
 # Long opaque alphanumeric tokens (≥ 32 chars) inside error free-text. Azure
-# / OpenAI keys, JWTs, and similar credentials all match this shape. False
-# positives (UUIDs ≤ 36 chars) are acceptable in error messages — better to
-# over-scrub than leak a key.
+# / OpenAI keys and similar credentials all match this shape. Collateral:
+# git SHAs (40 hex) and base64 cache keys also get scrubbed — acceptable
+# trade-off in error messages but causes debug noise; tighten if it becomes
+# a problem.
 _LONG_OPAQUE_TOKEN_RE = re.compile(r"\b[A-Za-z0-9+/=_\-]{32,}\b")
 
 
@@ -39,6 +55,7 @@ def scrub_bot_tokens(text: str) -> str:
     text = _API_KEY_KV_RE.sub(r"\1=***", text)
     text = _AUTH_HEADER_RE.sub(r"\1=***", text)
     text = _KNOWN_KEY_PREFIX_RE.sub("***", text)
+    text = _JWT_RE.sub("***.***.***", text)
     text = _BYTES_LITERAL_OPAQUE_RE.sub("b'***'", text)
     text = _LONG_OPAQUE_TOKEN_RE.sub("***", text)
     return text

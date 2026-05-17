@@ -13,7 +13,7 @@ from api.schemas import (
     LLMModelCreate,
     LLMModelRead,
     LLMModelUpdate,
-    _require_azure_fields,
+    require_azure_fields,
 )
 from api.services import secrets
 from api.services.llm_config import set_default_llm_model
@@ -92,7 +92,7 @@ def update_model(
         new_version = _merge(payload.api_version, row.api_version)
 
     try:
-        _require_azure_fields(new_model_id, new_base, new_version)
+        require_azure_fields(new_model_id, new_base, new_version)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

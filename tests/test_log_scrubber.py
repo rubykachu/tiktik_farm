@@ -53,6 +53,30 @@ class TestScrubFunction:
         assert "3UFQDUs5PEXo6GeWAD" not in out
         assert "***" in out
 
+    def test_redacts_openai_project_key_with_dots(self):
+        # New OpenAI project key shape embeds dots: sk-proj-<segment>.<segment>...
+        # Bare form (not wrapped in Authorization:) — only known-prefix regex
+        # can save us. The previous charset stopped at '.' and the trailing
+        # segments (which contain the actual secret) survived.
+        text = "error body: sk-proj-ABCDEFGH1234.IJKLmnopqrst.UVWXYZ0987654321abcdefg returned"
+        out = scrub_bot_tokens(text)
+        assert "sk-proj-ABCDEFGH" not in out
+        assert "IJKLmnopqrst" not in out
+        assert "UVWXYZ0987654321" not in out
+
+    def test_redacts_jwt_three_segments(self):
+        # JWTs are eyJ<base64>.eyJ<base64>.<sig>. Header+payload are base64,
+        # decoding them leaks subject/issuer. All three segments must be redacted.
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+            ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkphbmUifQ"
+            ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
+        text = f"401 unauthorized with token {jwt} echoed"
+        out = scrub_bot_tokens(text)
+        assert "eyJhbGciOi" not in out
+        assert "eyJzdWIi" not in out
+
 
 class TestFilterIntegration:
     def test_filter_redacts_log_record_message(self):
