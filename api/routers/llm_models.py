@@ -22,6 +22,8 @@ def _to_read(row: LLMModel) -> dict:
         "label": row.label,
         "model_id": row.model_id,
         "api_key_masked": secrets.mask(secrets.decrypt(row.api_key_encrypted)),
+        "api_base": row.api_base,
+        "api_version": row.api_version,
         "is_default": row.is_default,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -40,6 +42,8 @@ def create_model(payload: LLMModelCreate, session: Session = Depends(get_session
         label=payload.label,
         model_id=payload.model_id,
         api_key_encrypted=secrets.encrypt(payload.api_key),
+        api_base=payload.api_base or None,
+        api_version=payload.api_version or None,
         is_default=False,
     )
     session.add(row)
@@ -70,10 +74,20 @@ def update_model(
     if payload.model_id is not None:
         row.model_id = payload.model_id
         changed = True
-    # Empty / absent api_key → keep existing.
     if payload.api_key:
         row.api_key_encrypted = secrets.encrypt(payload.api_key)
         changed = True
+    if payload.clear_api_base:
+        row.api_base = None
+        row.api_version = None
+        changed = True
+    else:
+        if payload.api_base is not None:
+            row.api_base = payload.api_base or None
+            changed = True
+        if payload.api_version is not None:
+            row.api_version = payload.api_version or None
+            changed = True
 
     if changed:
         row.updated_at = now_utc()

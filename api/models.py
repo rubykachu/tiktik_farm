@@ -165,6 +165,8 @@ class LLMModel(SQLModel, table=True):
     label: str = Field(max_length=128)
     model_id: str = Field(max_length=128)  # litellm "provider/model"
     api_key_encrypted: str
+    api_base: Optional[str] = Field(default=None, max_length=256)
+    api_version: Optional[str] = Field(default=None, max_length=32)
     is_default: bool = Field(default=False, index=True)
 
     created_at: datetime = Field(default_factory=now_utc)

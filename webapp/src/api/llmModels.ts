@@ -5,6 +5,8 @@ export interface LLMModel {
   label: string;
   model_id: string;
   api_key_masked: string;
+  api_base: string | null;
+  api_version: string | null;
   is_default: boolean;
   created_at: string;
   updated_at: string;
@@ -14,6 +16,8 @@ export interface LLMModelCreate {
   label: string;
   model_id: string;
   api_key: string;
+  api_base?: string;
+  api_version?: string;
   set_default?: boolean;
 }
 
@@ -21,6 +25,9 @@ export interface LLMModelUpdate {
   label?: string;
   model_id?: string;
   api_key?: string;
+  api_base?: string;
+  api_version?: string;
+  clear_api_base?: boolean;
 }
 
 export const LLMModels = {

@@ -44,6 +44,19 @@ def _decrypt_required(api_key_encrypted: str) -> str:
     return plain
 
 
+def _extra_kwargs(
+    api_base: str | None,
+    api_version: str | None,
+) -> dict:
+    """Build optional kwargs for litellm.completion()."""
+    kw: dict = {}
+    if api_base:
+        kw["api_base"] = api_base
+    if api_version:
+        kw["api_version"] = api_version
+    return kw
+
+
 def rewrite_title(
     prompt: str,
     title: str,
@@ -51,6 +64,8 @@ def rewrite_title(
     *,
     model_id: str,
     api_key_encrypted: str,
+    api_base: str | None = None,
+    api_version: str | None = None,
 ) -> str:
     api_key = _decrypt_required(api_key_encrypted)
     user_msg = (
@@ -67,6 +82,7 @@ def rewrite_title(
             ],
             max_tokens=MAX_OUTPUT_TOKENS,
             timeout=DEFAULT_TIMEOUT,
+            **_extra_kwargs(api_base, api_version),
         )
     except Exception as e:
         log.warning("LLM rewrite failed for model %s: %s", model_id, e)
@@ -79,7 +95,13 @@ def rewrite_title(
 _TEST_ERROR_MAX_CHARS = 200
 
 
-def test_completion(*, model_id: str, api_key_encrypted: str) -> tuple[bool, str]:
+def test_completion(
+    *,
+    model_id: str,
+    api_key_encrypted: str,
+    api_base: str | None = None,
+    api_version: str | None = None,
+) -> tuple[bool, str]:
     """Cheap connectivity probe used by Settings → Test connection.
 
     The returned message is scrubbed and capped — provider error bodies
@@ -96,6 +118,7 @@ def test_completion(*, model_id: str, api_key_encrypted: str) -> tuple[bool, str
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=5,
             timeout=DEFAULT_TIMEOUT,
+            **_extra_kwargs(api_base, api_version),
         )
     except Exception as e:
         safe = scrub_bot_tokens(str(e))[:_TEST_ERROR_MAX_CHARS]

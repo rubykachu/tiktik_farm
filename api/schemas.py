@@ -425,6 +425,8 @@ class LLMModelCreate(BaseModel):
     label: str = Field(min_length=1, max_length=128)
     model_id: str = Field(min_length=1, max_length=128)
     api_key: str = Field(min_length=1, max_length=_API_KEY_MAX)
+    api_base: Optional[str] = Field(default=None, max_length=256)
+    api_version: Optional[str] = Field(default=None, max_length=32)
     set_default: bool = False
 
     @field_validator("model_id")
@@ -437,6 +439,9 @@ class LLMModelUpdate(BaseModel):
     label: Optional[str] = Field(default=None, min_length=1, max_length=128)
     model_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     api_key: Optional[str] = Field(default=None, max_length=_API_KEY_MAX)
+    api_base: Optional[str] = Field(default=None, max_length=256)
+    api_version: Optional[str] = Field(default=None, max_length=32)
+    clear_api_base: bool = False
 
     @field_validator("model_id")
     @classmethod
@@ -449,6 +454,8 @@ class LLMModelRead(BaseModel):
     label: str
     model_id: str
     api_key_masked: str
+    api_base: Optional[str]
+    api_version: Optional[str]
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -465,6 +472,8 @@ class SettingsUpdate(BaseModel):
 class LLMTestRequest(BaseModel):
     model_id: str = Field(min_length=1, max_length=128)
     api_key: str = Field(min_length=1, max_length=_API_KEY_MAX)
+    api_base: Optional[str] = Field(default=None, max_length=256)
+    api_version: Optional[str] = Field(default=None, max_length=32)
 
     @field_validator("model_id")
     @classmethod

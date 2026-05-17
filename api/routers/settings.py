@@ -35,5 +35,7 @@ def test_llm(payload: LLMTestRequest):
     ok, msg = llm.test_completion(
         model_id=payload.model_id,
         api_key_encrypted=secrets.encrypt(payload.api_key),
+        api_base=payload.api_base or None,
+        api_version=payload.api_version or None,
     )
     return LLMTestResponse(ok=ok, message=msg)

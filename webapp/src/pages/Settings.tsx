@@ -93,6 +93,7 @@ export default function SettingsPage() {
                 <th className="text-left p-3">Default</th>
                 <th className="text-left p-3">Label</th>
                 <th className="text-left p-3">Model ID</th>
+                <th className="text-left p-3">Endpoint</th>
                 <th className="text-left p-3">API key</th>
                 <th className="p-3 text-right">Actions</th>
               </tr>
@@ -100,12 +101,12 @@ export default function SettingsPage() {
             <tbody className="divide-y divide-slate-100">
               {isLoading && (
                 <tr>
-                  <td className="p-4 text-slate-500" colSpan={5}>Loading…</td>
+                  <td className="p-4 text-slate-500" colSpan={6}>Loading…</td>
                 </tr>
               )}
               {!isLoading && models && models.length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-slate-500" colSpan={5}>
+                  <td className="p-6 text-center text-slate-500" colSpan={6}>
                     No models yet. Add one to enable caption rewriting.
                   </td>
                 </tr>
@@ -131,6 +132,15 @@ export default function SettingsPage() {
                     <code className="text-xs bg-slate-100 px-1 rounded">
                       {m.model_id}
                     </code>
+                  </td>
+                  <td className="p-3 text-slate-500">
+                    {m.api_base ? (
+                      <code className="text-xs bg-slate-100 px-1 rounded break-all">
+                        {m.api_base}
+                      </code>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="p-3 text-slate-500">
                     <code className="text-xs">{m.api_key_masked}</code>
@@ -197,9 +207,13 @@ function LLMModelModal({
   const [label, setLabel] = useState(existing?.label ?? "");
   const [modelId, setModelId] = useState(existing?.model_id ?? "");
   const [apiKey, setApiKey] = useState("");
+  const [apiBase, setApiBase] = useState(existing?.api_base ?? "");
+  const [apiVersion, setApiVersion] = useState(existing?.api_version ?? "");
   const [setDefault, setSetDefault] = useState(!isEdit);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
+
+  const needsEndpoint = modelId.startsWith("azure/");
 
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),
@@ -215,11 +229,16 @@ function LLMModelModal({
       label: string;
       model_id: string;
       api_key: string;
+      api_base: string;
+      api_version: string;
     }) =>
       LLMModels.update(payload.id, {
         label: payload.label,
         model_id: payload.model_id,
         api_key: payload.api_key || undefined,
+        ...(payload.api_base
+          ? { api_base: payload.api_base, api_version: payload.api_version || undefined }
+          : { clear_api_base: true }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
@@ -228,7 +247,13 @@ function LLMModelModal({
   });
 
   const testMut = useMutation({
-    mutationFn: () => SettingsApi.testLLM(modelId, apiKey),
+    mutationFn: () =>
+      SettingsApi.testLLM(
+        modelId,
+        apiKey,
+        apiBase || undefined,
+        apiVersion || undefined,
+      ),
     onSuccess: (r) => {
       setTestOk(r.ok);
       setTestResult(r.message);
@@ -252,12 +277,16 @@ function LLMModelModal({
         label: label.trim(),
         model_id: modelId.trim(),
         api_key: apiKey,
+        api_base: apiBase.trim(),
+        api_version: apiVersion.trim(),
       });
     } else {
       createMut.mutate({
         label: label.trim(),
         model_id: modelId.trim(),
         api_key: apiKey,
+        api_base: apiBase.trim() || undefined,
+        api_version: apiVersion.trim() || undefined,
         set_default: setDefault,
       });
     }
@@ -299,7 +328,8 @@ function LLMModelModal({
             <p className="text-xs text-slate-500 mt-1">
               Format: <code>provider/model</code>. Examples:{" "}
               <code>gemini/gemini-2.0-flash-lite</code>,{" "}
-              <code>openai/gpt-4o-mini</code>, <code>xai/grok-3-mini</code>.{" "}
+              <code>openai/gpt-4o-mini</code>,{" "}
+              <code>azure/my-gpt4o-deployment</code>.{" "}
               <a
                 className="text-brand-600 hover:underline inline-flex items-center gap-0.5"
                 href="https://docs.litellm.ai/docs/providers"
@@ -327,6 +357,45 @@ function LLMModelModal({
               </p>
             )}
           </div>
+
+          {(needsEndpoint || apiBase) && (
+            <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/50 p-3">
+              <p className="text-xs font-medium text-blue-700">
+                {needsEndpoint
+                  ? "Azure endpoint (required for azure/ models)"
+                  : "Custom endpoint (optional)"}
+              </p>
+              <div>
+                <label className="label">API base URL</label>
+                <input
+                  className="input"
+                  value={apiBase}
+                  onChange={(e) => setApiBase(e.target.value)}
+                  placeholder="https://your-resource.openai.azure.com/"
+                />
+                {needsEndpoint && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Root URL only — do NOT include <code>/openai/v1</code> (litellm
+                    adds the path automatically).
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="label">API version</label>
+                <input
+                  className="input"
+                  value={apiVersion}
+                  onChange={(e) => setApiVersion(e.target.value)}
+                  placeholder="2025-02-01-preview"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Leave empty to use litellm default. Common values:{" "}
+                  <code>2025-04-01-preview</code>, <code>2025-02-01-preview</code>,{" "}
+                  <code>2024-08-01-preview</code>.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <button

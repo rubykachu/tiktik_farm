@@ -273,6 +273,8 @@ def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
             description=description,
             model_id=default.model_id,
             api_key_encrypted=default.api_key_encrypted,
+            api_base=default.api_base,
+            api_version=default.api_version,
         )
     except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
         log.warning("LLM rewrite skipped: %s", e)
