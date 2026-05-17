@@ -4,55 +4,68 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { Telegram, TelegramChatItem } from "../api/telegram";
 
 const baseSchema = z.object({
-  name: z.string().min(1, "Bắt buộc").max(128),
-  channel_url: z.string().min(1, "Bắt buộc").url("URL không hợp lệ"),
+  name: z.string().min(1, "Required").max(128),
+  channel_url: z.string().min(1, "Required").url("Invalid URL"),
   interval_value: z.coerce.number().int().min(1),
   interval_unit: z.enum(["minutes", "hours", "days"]),
-  first_fire_at: z.string().min(1, "Bắt buộc"),
+  first_fire_at: z.string().min(1, "Required"),
   fetch_count: z.coerce.number().int().min(1).max(20),
   upload_delay_minutes: z.coerce.number().int().min(0).max(30).default(0),
   max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
-  caption_template: z.string().min(1, "Bắt buộc").max(2200),
+  caption_template: z.string().min(1, "Required").max(2200),
+  caption_ai_prompt: z.string().max(2000).optional().default(""),
   allow_comment: z.coerce.number().min(0).max(1),
   allow_duet: z.coerce.number().min(0).max(1),
   allow_stitch: z.coerce.number().min(0).max(1),
   visibility_type: z.coerce.number().min(0).max(1),
-  account_ids: z.array(z.number()).min(1, "Chọn ít nhất 1 account"),
+  account_ids: z.array(z.number()).min(1, "Choose at least one account"),
   telegram_bot_token: z.string().optional().default(""),
   telegram_chat_id: z
     .string()
     .optional()
     .default("")
     .refine((v) => !v || /^-?\d+$/.test(v), {
-      message: "Chat ID phải là số (vd. -1001234567890)",
+      message: "Chat ID must be numeric (e.g. -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
 });
 
 function buildSchema(existingTokenSet: boolean) {
   return baseSchema
+    .refine((d) => !(d.interval_unit === "minutes" && d.interval_value < 2), {
+      message: "Interval must be ≥ 2 when using minutes",
+      path: ["interval_value"],
+    })
     .refine(
-      (d) => !(d.interval_unit === "minutes" && d.interval_value < 2),
-      { message: "Interval ≥ 2 khi chọn minutes", path: ["interval_value"] }
+      (d) => {
+        // {ai_title} in the template requires a non-empty AI prompt.
+        if (!d.caption_template.includes("{ai_title}")) return true;
+        return !!(d.caption_ai_prompt && d.caption_ai_prompt.trim());
+      },
+      {
+        message:
+          "Add an AI prompt below, or remove {ai_title} from the caption template.",
+        path: ["caption_ai_prompt"],
+      }
     )
     .refine(
       (d) => {
         if (d.clear_bot_token) {
-          // Clearing token → chat_id must also be empty
           return !d.telegram_chat_id;
         }
-        // Token is "present" if user typed one OR existing token is kept
-        const botPresent = !!d.telegram_bot_token || (existingTokenSet && !d.clear_bot_token);
+        const botPresent =
+          !!d.telegram_bot_token || (existingTokenSet && !d.clear_bot_token);
         const chatSet = !!d.telegram_chat_id;
         return botPresent === chatSet;
       },
       {
-        message: "Phải nhập cả 2 hoặc bỏ trống cả 2",
+        message: "Bot token and chat ID must be set together (or both empty)",
         path: ["telegram_bot_token"],
       }
     );
@@ -66,13 +79,13 @@ type Props = {
   onClose: () => void;
 };
 
-/** FastAPI / Pydantic 422: detail may be string or validation error array */
 function formatHttpDetail(detail: unknown, fallback: string): string {
   if (typeof detail === "string" && detail.trim()) return detail;
   if (Array.isArray(detail)) {
     const parts = detail
       .map((e) => {
-        if (e && typeof e === "object" && "msg" in e) return String((e as { msg: string }).msg);
+        if (e && typeof e === "object" && "msg" in e)
+          return String((e as { msg: string }).msg);
         return "";
       })
       .filter(Boolean);
@@ -128,6 +141,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       upload_delay_minutes: 0,
       max_duration_seconds: "" as any,
       caption_template: "{title}",
+      caption_ai_prompt: "",
       allow_comment: 1,
       allow_duet: 0,
       allow_stitch: 0,
@@ -147,7 +161,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         accountIds = JSON.parse(pipeline.account_ids_json);
       } catch {}
 
-      let uploadOpts = { allow_comment: 1, allow_duet: 0, allow_stitch: 0, visibility_type: 0 };
+      let uploadOpts = {
+        allow_comment: 1,
+        allow_duet: 0,
+        allow_stitch: 0,
+        visibility_type: 0,
+      };
       try {
         uploadOpts = { ...uploadOpts, ...JSON.parse(pipeline.upload_options_json) };
       } catch {}
@@ -162,6 +181,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         upload_delay_minutes: pipeline.upload_delay_minutes ?? 0,
         max_duration_seconds: pipeline.max_duration_seconds ?? ("" as any),
         caption_template: pipeline.caption_template,
+        caption_ai_prompt: pipeline.caption_ai_prompt ?? "",
         allow_comment: uploadOpts.allow_comment as 0 | 1,
         allow_duet: uploadOpts.allow_duet as 0 | 1,
         allow_stitch: uploadOpts.allow_stitch as 0 | 1,
@@ -182,6 +202,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         upload_delay_minutes: 0,
         max_duration_seconds: "" as any,
         caption_template: "{title}",
+        caption_ai_prompt: "",
         allow_comment: 1,
         allow_duet: 0,
         allow_stitch: 0,
@@ -233,6 +254,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       data.max_duration_seconds === "" || data.max_duration_seconds === undefined
         ? undefined
         : Number(data.max_duration_seconds);
+    const aiPrompt = (data.caption_ai_prompt || "").trim() || null;
 
     if (isEdit && pipeline) {
       const payload: PipelineUpdate = {
@@ -243,6 +265,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         interval_unit: data.interval_unit,
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
+        caption_ai_prompt: aiPrompt,
         upload_options: {
           allow_comment: data.allow_comment as 0 | 1,
           allow_duet: data.allow_duet as 0 | 1,
@@ -268,6 +291,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         interval_unit: data.interval_unit,
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
+        caption_ai_prompt: aiPrompt ?? undefined,
         upload_options: {
           allow_comment: data.allow_comment as 0 | 1,
           allow_duet: data.allow_duet as 0 | 1,
@@ -285,10 +309,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   }
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [telegramDetectLoading, setTelegramDetectLoading] = useState(false);
-  const [telegramDetectChats, setTelegramDetectChats] = useState<TelegramChatItem[] | null>(
-    null
-  );
+  const [telegramDetectChats, setTelegramDetectChats] = useState<
+    TelegramChatItem[] | null
+  >(null);
   const [telegramDetectErr, setTelegramDetectErr] = useState<string | null>(null);
   const [telegramTestSending, setTelegramTestSending] = useState(false);
 
@@ -298,6 +323,19 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
+  const captionTemplate = watch("caption_template");
+  const captionAiPrompt = watch("caption_ai_prompt");
+
+  // Auto-open AI section if the user already has a prompt or the template uses {ai_title}.
+  useEffect(() => {
+    if (
+      open &&
+      ((captionAiPrompt && captionAiPrompt.trim()) ||
+        (captionTemplate && captionTemplate.includes("{ai_title}")))
+    ) {
+      setAiSectionOpen(true);
+    }
+  }, [open, pipeline?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) {
@@ -305,6 +343,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setTelegramDetectErr(null);
       setTelegramDetectLoading(false);
       setTelegramTestSending(false);
+      setAdvancedOpen(false);
+      setAiSectionOpen(false);
     }
   }, [open]);
 
@@ -317,9 +357,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const repeatHint = useMemo(() => {
     const n = Number(intervalValue);
     if (!Number.isFinite(n) || n < 1) return null;
-    const unitVi =
-      intervalUnit === "minutes" ? "phút" : intervalUnit === "days" ? "ngày" : "giờ";
-    return `Pipeline chạy lặp mỗi ${n} ${unitVi} kể từ mốc này, liên tục khi trạng thái active (scheduler tăng next fire sau mỗi lần chạy).`;
+    const unitLabel =
+      intervalUnit === "minutes" ? "minutes" : intervalUnit === "days" ? "days" : "hours";
+    return `Pipeline runs every ${n} ${unitLabel} from this anchor while active.`;
   }, [intervalValue, intervalUnit]);
 
   async function handleTelegramDetect() {
@@ -334,7 +374,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setTelegramDetectChats(null);
       const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
         ?.detail;
-      setTelegramDetectErr(formatHttpDetail(d, "Không phát hiện được. Thử lại sau."));
+      setTelegramDetectErr(formatHttpDetail(d, "Detection failed. Try again later."));
     } finally {
       setTelegramDetectLoading(false);
     }
@@ -351,7 +391,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data
         ?.detail;
-      window.alert(formatHttpDetail(d, "Gửi tin test thất bại."));
+      window.alert(formatHttpDetail(d, "Sending test message failed."));
     } finally {
       setTelegramTestSending(false);
     }
@@ -364,7 +404,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8">
       <div
-        className="rounded-lg bg-white shadow-xl w-full max-w-lg p-6 space-y-5"
+        className="rounded-lg bg-white shadow-xl w-full max-w-4xl p-6 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -377,7 +417,10 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
           </button>
         </div>
 
-        <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+        <form
+          className="grid lg:grid-cols-2 gap-x-6 gap-y-5"
+          onSubmit={(e) => e.preventDefault()}
+        >
           {/* Basic */}
           <fieldset className="space-y-3">
             <legend className="text-sm font-medium text-slate-700">Basic</legend>
@@ -399,7 +442,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               )}
               {isEdit && (
                 <p className="text-xs text-slate-400 mt-1">
-                  Channel URL không đổi được sau khi tạo.
+                  Channel URL cannot change after creation.
                 </p>
               )}
             </div>
@@ -410,7 +453,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             <legend className="text-sm font-medium text-slate-700">Trigger</legend>
             <div className="flex gap-3 items-end">
               <div className="flex-1">
-                <label className="label">Lặp mỗi</label>
+                <label className="label">Every</label>
                 <input
                   type="number"
                   className="input"
@@ -419,7 +462,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 />
               </div>
               <div className="flex-1">
-                <label className="label">Đơn vị</label>
+                <label className="label">Unit</label>
                 <select className="input" {...register("interval_unit")}>
                   <option value="minutes">minutes</option>
                   <option value="hours">hours</option>
@@ -431,7 +474,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="field-error">{errors.interval_value.message}</p>
             )}
             <div>
-              <label className="label">Bắt đầu từ</label>
+              <label className="label">Starting from</label>
               <input
                 type="datetime-local"
                 className="input"
@@ -442,8 +485,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               )}
               {isEdit && (
                 <p className="text-xs text-slate-400 mt-1">
-                  Khi pipeline đang active, scheduler sẽ đặt lần chạy kế tiếp không sớm hơn mốc này
-                  (và không sớm hơn thời điểm hiện tại).
+                  While the pipeline is active, the scheduler will not fire earlier
+                  than this anchor (or earlier than now).
                 </p>
               )}
             </div>
@@ -453,7 +496,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
           <fieldset className="space-y-3">
             <legend className="text-sm font-medium text-slate-700">Content</legend>
             <div>
-              <label className="label">Số video mỗi lần (1-20)</label>
+              <label className="label">Videos per run (1-20)</label>
               <input
                 type="number"
                 className="input"
@@ -466,7 +509,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               )}
             </div>
             <div>
-              <label className="label">Nghỉ giữa upload</label>
+              <label className="label">Rest between uploads (minutes)</label>
               <input
                 type="number"
                 className="input"
@@ -475,23 +518,25 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 {...register("upload_delay_minutes")}
               />
               <p className="text-xs text-slate-400 mt-1">
-                Phút nghỉ giữa mỗi lần upload video (0 = không nghỉ). Giúp tránh bị TikTok phát hiện spam.
+                Minutes to wait between uploads (0 = no wait). Helps avoid spam
+                detection by TikTok.
               </p>
               {errors.upload_delay_minutes && (
                 <p className="field-error">{errors.upload_delay_minutes.message}</p>
               )}
             </div>
             <div>
-              <label className="label">Max duration (giây) — optional</label>
+              <label className="label">Max duration (seconds, optional)</label>
               <input
                 type="number"
                 className="input"
                 min={1}
                 {...register("max_duration_seconds")}
-                placeholder="Bỏ trống = không giới hạn"
+                placeholder="Leave empty for no limit"
               />
               <p className="text-xs text-slate-400 mt-1">
-                Nếu set, yt-dlp tự skip video dài quá 3×N và trim 0..N giây.
+                When set, yt-dlp skips videos longer than 3× this value and trims
+                the rest to the first N seconds.
               </p>
             </div>
           </fieldset>
@@ -510,26 +555,24 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <p className="field-error">{errors.caption_template.message}</p>
               )}
               <p className="text-xs text-slate-400 mt-1">
-                Biến hỗ trợ:{" "}
-                <code className="bg-slate-100 px-1 rounded">{"title"}</code>,{" "}
-                <code className="bg-slate-100 px-1 rounded">{"title_hashtag"}</code>,{" "}
-                <code className="bg-slate-100 px-1 rounded">{"now"}</code>
+                Variables:{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{title}"}</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{title_hashtag}"}</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{now}"}</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code>
               </p>
             </div>
-          </fieldset>
 
-          {/* Advanced (collapsible) */}
-          <fieldset>
             <button
               type="button"
               className="flex items-center gap-1 text-sm font-medium text-slate-700"
               onClick={() => setAdvancedOpen(!advancedOpen)}
             >
               {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              Advanced
+              Advanced flags
             </button>
             {advancedOpen && (
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" value={1} {...register("allow_comment")} defaultChecked />
                   Allow comment
@@ -550,8 +593,43 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             )}
           </fieldset>
 
-          {/* Accounts */}
-          <fieldset className="space-y-2">
+          {/* AI rewrite (optional, full-width) */}
+          <fieldset className="lg:col-span-2 space-y-3">
+            <button
+              type="button"
+              className="flex items-center gap-1 text-sm font-medium text-slate-700"
+              onClick={() => setAiSectionOpen(!aiSectionOpen)}
+            >
+              {aiSectionOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              AI caption rewrite (optional)
+            </button>
+            {aiSectionOpen && (
+              <div className="space-y-2">
+                <label className="label">Prompt</label>
+                <textarea
+                  className="input min-h-[80px]"
+                  maxLength={2000}
+                  {...register("caption_ai_prompt")}
+                  placeholder="Rewrite the title in a clickbait style for TikTok."
+                />
+                {errors.caption_ai_prompt && (
+                  <p className="field-error">{errors.caption_ai_prompt.message}</p>
+                )}
+                <p className="text-xs text-slate-500">
+                  The output is available as{" "}
+                  <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> in
+                  the caption template. Configure the default model in{" "}
+                  <Link to="/settings" className="text-brand-600 hover:underline">
+                    Settings
+                  </Link>
+                  .
+                </p>
+              </div>
+            )}
+          </fieldset>
+
+          {/* Accounts (full-width) */}
+          <fieldset className="lg:col-span-2 space-y-2">
             <legend className="text-sm font-medium text-slate-700">
               Accounts{" "}
               <span className="text-slate-400 font-normal">
@@ -560,10 +638,10 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </legend>
             {validAccounts.length === 0 && (
               <p className="text-xs text-amber-600">
-                Không có account nào có session hợp lệ. Import cookie trước.
+                No accounts with a valid session. Import a cookie first.
               </p>
             )}
-            <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
+            <div className="max-h-40 overflow-y-auto border rounded p-2 grid grid-cols-2 gap-1">
               {validAccounts.map((a) => (
                 <label key={a.id} className="flex items-center gap-2 text-sm">
                   <input
@@ -594,85 +672,87 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             )}
           </fieldset>
 
-          {/* Telegram (optional) */}
-          <fieldset className="space-y-3">
+          {/* Telegram (optional, full-width) */}
+          <fieldset className="lg:col-span-2 space-y-3">
             <legend className="text-sm font-medium text-slate-700">
               Telegram <span className="text-slate-400 font-normal">(optional)</span>
             </legend>
-            <div>
-              <label className="label">Bot token</label>
-              <div className="flex gap-2 items-stretch">
-                <input
-                  type="password"
-                  className="input flex-1 min-w-0"
-                  {...register("telegram_bot_token")}
-                  placeholder={
-                    isEdit && pipeline?.telegram_bot_token_set
-                      ? "••• (đã cấu hình)"
-                      : "123456:ABC-DEF..."
-                  }
-                  disabled={clearBotToken}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
-                  disabled={
-                    clearBotToken ||
-                    telegramDetectLoading ||
-                    !String(telegramBotToken || "").trim()
-                  }
-                  onClick={() => {
-                    void handleTelegramDetect();
-                  }}
-                >
-                  {telegramDetectLoading ? "Đang tải..." : "Tự động phát hiện"}
-                </button>
+            <div className="grid lg:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Bot token</label>
+                <div className="flex gap-2 items-stretch">
+                  <input
+                    type="password"
+                    className="input flex-1 min-w-0"
+                    {...register("telegram_bot_token")}
+                    placeholder={
+                      isEdit && pipeline?.telegram_bot_token_set
+                        ? "••• (configured)"
+                        : "123456:ABC-DEF..."
+                    }
+                    disabled={clearBotToken}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                    disabled={
+                      clearBotToken ||
+                      telegramDetectLoading ||
+                      !String(telegramBotToken || "").trim()
+                    }
+                    onClick={() => {
+                      void handleTelegramDetect();
+                    }}
+                  >
+                    {telegramDetectLoading ? "Loading…" : "Auto-detect"}
+                  </button>
+                </div>
+                {isEdit &&
+                  pipeline?.telegram_bot_token_set &&
+                  !String(telegramBotToken || "").trim() && (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Re-enter the bot token to use this feature.
+                    </p>
+                  )}
               </div>
-              {isEdit &&
-                pipeline?.telegram_bot_token_set &&
-                !String(telegramBotToken || "").trim() && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Nhập lại Bot Token để sử dụng tính năng này
-                  </p>
+              <div>
+                <label className="label">Chat ID</label>
+                <div className="flex gap-2 items-stretch">
+                  <input
+                    className="input flex-1 min-w-0"
+                    {...register("telegram_chat_id")}
+                    placeholder="-1001234567890"
+                    inputMode="numeric"
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                    disabled={
+                      telegramTestSending ||
+                      clearBotToken ||
+                      !String(telegramBotToken || "").trim() ||
+                      !String(telegramChatId || "").trim()
+                    }
+                    onClick={() => {
+                      void handleTelegramTest();
+                    }}
+                  >
+                    {telegramTestSending ? "Sending…" : "Send test"}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Numeric only (private channels usually start with{" "}
+                  <code className="bg-slate-100 px-1 rounded">-100…</code>). Add the
+                  bot as a channel admin.
+                </p>
+                {errors.telegram_chat_id && (
+                  <p className="field-error">{errors.telegram_chat_id.message}</p>
                 )}
-            </div>
-            <div>
-              <label className="label">Chat ID</label>
-              <div className="flex gap-2 items-stretch">
-                <input
-                  className="input flex-1 min-w-0"
-                  {...register("telegram_chat_id")}
-                  placeholder="-1001234567890"
-                  inputMode="numeric"
-                />
-                <button
-                  type="button"
-                  className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
-                  disabled={
-                    telegramTestSending ||
-                    clearBotToken ||
-                    !String(telegramBotToken || "").trim() ||
-                    !String(telegramChatId || "").trim()
-                  }
-                  onClick={() => {
-                    void handleTelegramTest();
-                  }}
-                >
-                  {telegramTestSending ? "Đang gửi..." : "Gửi tin test"}
-                </button>
               </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Chỉ nhập số (kênh riêng thường dạng{" "}
-                <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot
-                làm admin kênh
-              </p>
-              {errors.telegram_chat_id && (
-                <p className="field-error">{errors.telegram_chat_id.message}</p>
-              )}
             </div>
             {telegramDetectChats && telegramDetectChats.length > 0 && (
               <div>
-                <label className="label">Chọn kênh phát hiện được</label>
+                <label className="label">Pick a detected chat</label>
                 <select
                   className="input"
                   key={telegramDetectChats.map((c) => c.id).join(",")}
@@ -684,7 +764,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     }
                   }}
                 >
-                  <option value="">— Chọn —</option>
+                  <option value="">— Select —</option>
                   {telegramDetectChats.map((c) => (
                     <option key={c.id} value={String(c.id)}>
                       {`${c.title} (${c.type}) — ${c.id}`}
@@ -697,8 +777,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               telegramDetectChats.length === 0 &&
               !telegramDetectLoading && (
                 <p className="text-sm text-amber-700">
-                  Không tìm thấy channel. Hãy thêm bot làm admin vào channel và gửi
-                  ít nhất 1 tin nhắn.
+                  No channels found. Add the bot as a channel admin and send at
+                  least one message.
                 </p>
               )}
             {telegramDetectErr && (
@@ -707,7 +787,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">
                 <input type="checkbox" {...register("clear_bot_token")} />
-                Xóa bot token
+                Remove bot token
               </label>
             )}
             {errors.telegram_bot_token && (
@@ -716,7 +796,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
           </fieldset>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-3 border-t">
+          <div className="lg:col-span-2 flex justify-end gap-2 pt-3 border-t">
             <button type="button" className="btn-secondary" onClick={onClose}>
               Cancel
             </button>
