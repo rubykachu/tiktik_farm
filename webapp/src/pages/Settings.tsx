@@ -254,6 +254,10 @@ function LLMModelModal({
         apiBase || undefined,
         apiVersion || undefined,
       ),
+    onMutate: () => {
+      setTestOk(null);
+      setTestResult(null);
+    },
     onSuccess: (r) => {
       setTestOk(r.ok);
       setTestResult(r.message);
@@ -267,7 +271,15 @@ function LLMModelModal({
   if (!state) return null;
 
   const busy = createMut.isPending || updateMut.isPending;
-  const canSubmit = label.trim() && modelId.trim() && (isEdit || apiKey);
+  const azureReady =
+    !needsEndpoint || (apiBase.trim() && apiVersion.trim());
+  const canSubmit =
+    label.trim() && modelId.trim() && (isEdit || apiKey) && azureReady;
+
+  function resetTest() {
+    setTestOk(null);
+    setTestResult(null);
+  }
 
   function onSave() {
     if (!canSubmit) return;
@@ -322,7 +334,10 @@ function LLMModelModal({
             <input
               className="input"
               value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
+              onChange={(e) => {
+                setModelId(e.target.value);
+                resetTest();
+              }}
               placeholder="gemini/gemini-2.0-flash-lite"
             />
             <p className="text-xs text-slate-500 mt-1">
@@ -346,7 +361,10 @@ function LLMModelModal({
               type="password"
               className="input"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                resetTest();
+              }}
               placeholder={
                 isEdit ? "Leave empty to keep existing key" : "sk-… or AIza…"
               }
@@ -370,7 +388,10 @@ function LLMModelModal({
                 <input
                   className="input"
                   value={apiBase}
-                  onChange={(e) => setApiBase(e.target.value)}
+                  onChange={(e) => {
+                    setApiBase(e.target.value);
+                    resetTest();
+                  }}
                   placeholder="https://your-resource.openai.azure.com/"
                 />
                 {needsEndpoint && (
@@ -385,7 +406,10 @@ function LLMModelModal({
                 <input
                   className="input"
                   value={apiVersion}
-                  onChange={(e) => setApiVersion(e.target.value)}
+                  onChange={(e) => {
+                    setApiVersion(e.target.value);
+                    resetTest();
+                  }}
                   placeholder="2025-02-01-preview"
                 />
                 <p className="text-xs text-slate-500 mt-1">
@@ -401,7 +425,12 @@ function LLMModelModal({
             <button
               type="button"
               className="btn-secondary"
-              disabled={!modelId.trim() || !apiKey || testMut.isPending}
+              disabled={
+                !modelId.trim() ||
+                !apiKey ||
+                testMut.isPending ||
+                !azureReady
+              }
               onClick={() => testMut.mutate()}
             >
               {testMut.isPending ? "Testing…" : "Test connection"}

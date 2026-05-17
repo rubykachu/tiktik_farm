@@ -49,17 +49,23 @@ def apply_schema_patches(engine: Engine) -> None:
                 "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
             )
 
-        # Azure support: api_base + api_version on llm_models
-        llm_rows = conn.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
-        llm_cols = {row[1] for row in llm_rows}
-        if "api_base" not in llm_cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE llm_models ADD COLUMN api_base TEXT"
-            )
-        if "api_version" not in llm_cols:
-            conn.exec_driver_sql(
-                "ALTER TABLE llm_models ADD COLUMN api_version TEXT"
-            )
+        # Azure support: api_base + api_version on llm_models. Guard against
+        # a legacy DB that predates the table (init_db not called yet in some
+        # test paths).
+        has_llm_models = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='llm_models'"
+        ).fetchone()
+        if has_llm_models:
+            llm_rows = conn.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
+            llm_cols = {row[1] for row in llm_rows}
+            if "api_base" not in llm_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE llm_models ADD COLUMN api_base TEXT"
+                )
+            if "api_version" not in llm_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE llm_models ADD COLUMN api_version TEXT"
+                )
 
 
 def seed_app_settings(engine: Engine) -> None:

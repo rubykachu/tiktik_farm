@@ -421,6 +421,19 @@ def _validate_model_id(v: str) -> str:
     return v
 
 
+def _is_azure(model_id: str) -> bool:
+    return model_id.lower().startswith("azure/")
+
+
+def _require_azure_fields(model_id: str, api_base: Optional[str], api_version: Optional[str]) -> None:
+    if not _is_azure(model_id):
+        return
+    if not (api_base and api_base.strip()):
+        raise ValueError("api_base is required when provider is azure")
+    if not (api_version and api_version.strip()):
+        raise ValueError("api_version is required when provider is azure")
+
+
 class LLMModelCreate(BaseModel):
     label: str = Field(min_length=1, max_length=128)
     model_id: str = Field(min_length=1, max_length=128)
@@ -433,6 +446,11 @@ class LLMModelCreate(BaseModel):
     @classmethod
     def _check_model_id(cls, v: str) -> str:
         return _validate_model_id(v)
+
+    @model_validator(mode="after")
+    def _check_azure_required(self) -> "LLMModelCreate":
+        _require_azure_fields(self.model_id, self.api_base, self.api_version)
+        return self
 
 
 class LLMModelUpdate(BaseModel):
@@ -479,6 +497,11 @@ class LLMTestRequest(BaseModel):
     @classmethod
     def _check_model_id(cls, v: str) -> str:
         return _validate_model_id(v)
+
+    @model_validator(mode="after")
+    def _check_azure_required(self) -> "LLMTestRequest":
+        _require_azure_fields(self.model_id, self.api_base, self.api_version)
+        return self
 
 
 class LLMTestResponse(BaseModel):
