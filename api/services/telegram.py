@@ -19,7 +19,7 @@ _ALLOWED_HOST = "api.telegram.org"
 _GROUP_LIKE_TYPES = frozenset({"group", "supergroup", "channel"})
 
 TELEGRAM_TEST_MESSAGE = (
-    "🔔 Test từ TikTok Uploader — cấu hình Telegram hoạt động!"
+    "🔔 Test from TikTok Uploader — Telegram is configured correctly!"
 )
 
 

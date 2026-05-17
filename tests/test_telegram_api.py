@@ -153,7 +153,7 @@ class TestTestEndpoint:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["ok"] is True
-        assert "thành công" in body["message"]
+        assert "successfully" in body["message"]
         mock_send.assert_called_once()
         a0, a1, a2 = mock_send.call_args[0]
         assert a0 == VALID_TOKEN

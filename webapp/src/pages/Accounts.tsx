@@ -153,11 +153,11 @@ export default function AccountsPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Xóa account "${deleteTarget?.username ?? ""}"?`}
+        title={`Delete account "${deleteTarget?.username ?? ""}"?`}
         body={
           <p>
-            Account và cookie file sẽ bị xóa. Các schedule liên quan cũng bị xóa.
-            Hành động không thể hoàn tác.
+            The account and its cookie file will be removed. Related schedules
+            will also be deleted. This action cannot be undone.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}

@@ -275,7 +275,7 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
             status_code=409,
             detail={
                 "code": "PIPELINE_PAUSED",
-                "message": "Pipeline đang tạm dừng. Bấm Resume rồi chạy lại.",
+                "message": "Pipeline is paused. Resume it before running.",
             },
         )
 
@@ -285,7 +285,7 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
             status_code=409,
             detail={
                 "code": "PIPELINE_RUNNING",
-                "message": "Pipeline đang chạy. Đợi tick xong.",
+                "message": "Pipeline is running. Wait for the tick to finish.",
             },
         )
 
@@ -294,7 +294,7 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
             status_code=409,
             detail={
                 "code": "RUN_NOW_QUEUED",
-                "message": "Đã xếp Run now, chờ tick tới.",
+                "message": "Run-now already queued. Wait for the next tick.",
             },
         )
 
@@ -302,7 +302,7 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
     row.updated_at = now_utc()
     session.add(row)
     session.commit()
-    return {"ok": True, "message": "Đã xếp lịch chạy ngay"}
+    return {"ok": True, "message": "Queued: pipeline will run on the next tick."}
 
 
 # ─── Drill-down: runs + videos ──────────────────────────────────────────────

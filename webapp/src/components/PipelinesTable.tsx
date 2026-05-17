@@ -54,9 +54,9 @@ export default function PipelinesTable({ onEdit }: Props) {
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (e?.response?.status === 409 && detail?.code === "PIPELINE_RUNNING") {
-        alert("Pipeline đang chạy. Stop và đợi tick xong trước khi xóa.");
+        alert("Pipeline is running. Stop it and wait for the tick to finish before deleting.");
       } else {
-        alert(`Xóa lỗi: ${e.message}`);
+        alert(`Delete failed: ${e.message}`);
       }
       setDeleteTarget(null);
     },
@@ -65,19 +65,19 @@ export default function PipelinesTable({ onEdit }: Props) {
   const runNowMut = useMutation({
     mutationFn: (id: number) => Pipelines.runNow(id),
     onSuccess: () => {
-      alert("Đã xếp lịch chạy ngay");
+      alert("Queued: pipeline will run on the next tick.");
       qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (detail?.code === "PIPELINE_PAUSED") {
-        alert(detail?.message ?? "Pipeline đang paused — bấm Resume trước.");
+        alert(detail?.message ?? "Pipeline is paused — resume it first.");
       } else if (detail?.code === "PIPELINE_RUNNING") {
-        alert("Pipeline đang chạy, đợi xong.");
+        alert("Pipeline is running. Wait for the tick to finish.");
       } else if (detail?.code === "RUN_NOW_QUEUED") {
-        alert("Đã xếp Run now, chờ tick tới.");
+        alert("Run-now already queued. Wait for the next tick.");
       } else {
-        alert(`Lỗi: ${e.message}`);
+        alert(`Error: ${e.message}`);
       }
     },
   });
@@ -97,8 +97,8 @@ export default function PipelinesTable({ onEdit }: Props) {
     <>
       {activeCount > 5 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Bạn đang chạy {activeCount} pipeline. Hiệu suất xử lý có thể chậm.
-          Cân nhắc Pause bớt.
+          {activeCount} pipelines are running. Throughput may slow down.
+          Consider pausing some.
         </div>
       )}
 
@@ -126,7 +126,7 @@ export default function PipelinesTable({ onEdit }: Props) {
             {!isLoading && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={7}>
-                  Chưa có pipeline.
+                  No pipelines yet.
                 </td>
               </tr>
             )}
@@ -165,8 +165,8 @@ export default function PipelinesTable({ onEdit }: Props) {
                       }
                       if (locked) {
                         return (
-                          <span className="text-xs text-slate-500" title="Worker đang xử lý tick">
-                            Đang chạy…
+                          <span className="text-xs text-slate-500" title="Worker is processing this tick">
+                            Running…
                           </span>
                         );
                       }
@@ -177,7 +177,7 @@ export default function PipelinesTable({ onEdit }: Props) {
                               type="button"
                               disabled
                               className="text-xs text-slate-400 cursor-not-allowed"
-                              title="Scheduler sẽ chạy ở tick tiếp theo"
+                              title="Scheduler will run on the next tick"
                             >
                               Queued…
                             </button>
@@ -195,7 +195,7 @@ export default function PipelinesTable({ onEdit }: Props) {
                           <button
                             className="text-xs text-slate-600"
                             onClick={() => runNowMut.mutate(p.id)}
-                            title="Chạy một tick ngay"
+                            title="Run one tick immediately"
                           >
                             <RunNow size={14} className="inline" /> Run now
                           </button>
@@ -242,11 +242,12 @@ export default function PipelinesTable({ onEdit }: Props) {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Xóa pipeline "${deleteTarget?.name ?? ""}"?`}
+        title={`Delete pipeline "${deleteTarget?.name ?? ""}"?`}
         body={
           <p>
-            PipelineRun history bị xóa theo. VideoUpload (upload history) giữ
-            lại. Nếu pipeline đang chạy, request sẽ trả 409 — phải Stop trước.
+            Pipeline run history is removed with the pipeline. Upload history
+            (VideoUpload) stays. If the pipeline is currently running, the
+            request returns 409 — stop it first.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}

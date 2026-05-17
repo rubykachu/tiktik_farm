@@ -28,7 +28,7 @@ def telegram_detect_chats(body: TelegramDetectChatsRequest):
     except TelegramApiError:
         raise HTTPException(
             status_code=502,
-            detail="Không gọi được Telegram API. Thử lại sau.",
+            detail="Cannot reach the Telegram API. Try again later.",
         )
     return TelegramDetectChatsResponse(chats=rows)
 
@@ -43,10 +43,10 @@ def telegram_test(body: TelegramTestRequest):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Không gửi được tin nhắn. Kiểm tra token và quyền bot trong kênh/nhóm."
+                "Could not send the message. Check the bot token and its permissions in the channel/group."
             ),
         )
     return TelegramTestResponse(
         ok=True,
-        message="Tin nhắn test đã gửi thành công",
+        message="Test message sent successfully",
     )

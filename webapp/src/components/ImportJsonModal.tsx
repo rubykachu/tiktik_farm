@@ -35,7 +35,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       const f = accepted[0];
       if (!f) return;
       if (f.size > MAX_FILE_BYTES) {
-        setError(`File quá lớn (>${Math.round(MAX_FILE_BYTES / 1024)}KB).`);
+        setError(`File too large (>${Math.round(MAX_FILE_BYTES / 1024)}KB).`);
         return;
       }
       setError(null);
@@ -54,12 +54,12 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       const status = e?.response?.status;
       if (status === 409 && typeof detail === "object" && detail.code === "ACCOUNT_EXISTS") {
         setError(
-          "Account đã tồn tại. Bật 'Thay thế' và import lại nếu muốn ghi đè.",
+          "Account already exists. Tick 'Replace' and import again to overwrite.",
         );
       } else if (status === 403) {
-        setError("Yêu cầu bị chặn (Origin invalid). Reload webapp.");
+        setError("Request blocked (invalid Origin). Reload the webapp.");
       } else {
-        setError(typeof detail === "string" ? detail : `Lỗi: ${e.message}`);
+        setError(typeof detail === "string" ? detail : `Error: ${e.message}`);
       }
     },
   });
@@ -107,7 +107,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             </span>
           ) : (
             <span className="text-slate-500">
-              Kéo-thả file Cookie-Editor JSON, hoặc click để chọn.
+              Drag and drop a Cookie-Editor JSON file, or click to select.
             </span>
           )}
         </div>
@@ -121,10 +121,10 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             className="input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="vd: lmbk37"
+            placeholder="e.g. lmbk37"
           />
           <p className="text-xs text-slate-500">
-            Chỉ chấp nhận chữ, số, dấu chấm, gạch dưới. Tối đa 32 ký tự.
+            Letters, numbers, dots, and underscores only. Up to 32 characters.
           </p>
         </div>
 
@@ -134,7 +134,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             checked={replace}
             onChange={(e) => setReplace(e.target.checked)}
           />
-          Thay thế nếu username đã tồn tại
+          Replace if the username already exists
         </label>
 
         {error && (
@@ -145,7 +145,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
 
         <div className="flex justify-end gap-2 pt-2">
           <button className="btn-secondary" onClick={onClose}>
-            Hủy
+            Cancel
           </button>
           <button
             className="btn-primary"
@@ -153,7 +153,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             onClick={() => mut.mutate()}
           >
             <Upload size={14} />
-            {mut.isPending ? "Đang import..." : "Import"}
+            {mut.isPending ? "Importing…" : "Import"}
           </button>
         </div>
       </div>
