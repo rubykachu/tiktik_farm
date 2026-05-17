@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Star, Trash2, Edit, X, ExternalLink } from "lucide-react";
 import { Settings as SettingsApi } from "../api/settings";
@@ -156,7 +156,11 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <LLMModelModal state={editState} onClose={() => setEditState(null)} />
+      <LLMModelModal
+        key={editState?.mode === "edit" ? `edit-${editState.model.id}` : "create"}
+        state={editState}
+        onClose={() => setEditState(null)}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -176,17 +180,8 @@ export default function SettingsPage() {
 }
 
 // ─── Add / Edit model modal ─────────────────────────────────────────────────
-
-function useResetOnKey(key: string, fn: () => void) {
-  const last = useRef<string | null>(null);
-  useEffect(() => {
-    if (last.current !== key) {
-      last.current = key;
-      fn();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-}
+// Parent forces a fresh mount per target via the `key` prop, so component
+// state initializers are enough to reset between open/close transitions.
 
 function LLMModelModal({
   state,
@@ -205,16 +200,6 @@ function LLMModelModal({
   const [setDefault, setSetDefault] = useState(!isEdit);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
-
-  const key = state ? (isEdit ? `edit-${existing!.id}` : "create") : "closed";
-  useResetOnKey(key, () => {
-    setLabel(existing?.label ?? "");
-    setModelId(existing?.model_id ?? "");
-    setApiKey("");
-    setSetDefault(!isEdit);
-    setTestResult(null);
-    setTestOk(null);
-  });
 
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),

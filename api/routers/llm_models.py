@@ -48,10 +48,9 @@ def create_model(payload: LLMModelCreate, session: Session = Depends(get_session
 
     if payload.set_default:
         set_default_llm_model(row.id)  # type: ignore[arg-type]
-        session.expire_all()
-        row = session.get(LLMModel, row.id)  # type: ignore[assignment]
+        session.refresh(row)
 
-    return _to_read(row)  # type: ignore[arg-type]
+    return _to_read(row)
 
 
 @router.patch("/{model_id}", response_model=LLMModelRead)
@@ -90,9 +89,11 @@ def set_default(model_id: int, session: Session = Depends(get_session)):
         set_default_llm_model(model_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="llm model not found")
-    session.expire_all()
     row = session.get(LLMModel, model_id)
-    return _to_read(row)  # type: ignore[arg-type]
+    if row is None:
+        raise HTTPException(status_code=404, detail="llm model not found")
+    session.refresh(row)
+    return _to_read(row)
 
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
