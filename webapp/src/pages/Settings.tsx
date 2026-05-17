@@ -230,9 +230,15 @@ function LLMModelModal({
     return e?.message || "Request failed";
   }
 
+  function clearAllErrors() {
+    setSubmitError(null);
+    setTestOk(null);
+    setTestResult(null);
+  }
+
   const createMut = useMutation({
     mutationFn: (payload: LLMModelCreate) => LLMModels.create(payload),
-    onMutate: () => setSubmitError(null),
+    onMutate: clearAllErrors,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
@@ -260,7 +266,7 @@ function LLMModelModal({
         api_base: payload.api_base,
         api_version: payload.api_version,
       }),
-    onMutate: () => setSubmitError(null),
+    onMutate: clearAllErrors,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
       onClose();
@@ -276,10 +282,7 @@ function LLMModelModal({
         apiBase || undefined,
         apiVersion || undefined,
       ),
-    onMutate: () => {
-      setTestOk(null);
-      setTestResult(null);
-    },
+    onMutate: clearAllErrors,
     onSuccess: (r) => {
       setTestOk(r.ok);
       setTestResult(r.message);
@@ -298,10 +301,9 @@ function LLMModelModal({
   const canSubmit =
     label.trim() && modelId.trim() && (isEdit || apiKey) && azureReady;
 
-  function resetTest() {
-    setTestOk(null);
-    setTestResult(null);
-  }
+  // Called on every input change. Stale chips (success or error) from
+  // a previous Test/Save no longer reflect the current form state.
+  const resetTest = clearAllErrors;
 
   function onSave() {
     if (!canSubmit) return;
