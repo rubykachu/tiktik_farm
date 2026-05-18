@@ -4,6 +4,7 @@ export interface Pipeline {
   id: number;
   name: string;
   channel_url: string;
+  source_type: "youtube" | "douyin";
   fetch_count: number;
   interval_value: number;
   interval_unit: "minutes" | "hours" | "days";
@@ -16,6 +17,7 @@ export interface Pipeline {
   max_duration_seconds: number | null;
   upload_delay_minutes: number;
   caption_ai_prompt: string | null;
+  douyin_cookie_id: number | null;
   telegram_bot_token_set: boolean;
   telegram_chat_id: string | null;
   run_now_requested_at: string | null;
@@ -27,6 +29,8 @@ export interface Pipeline {
 export interface PipelineCreate {
   name: string;
   channel_url: string;
+  source_type?: "youtube" | "douyin";
+  douyin_cookie_id?: number | null;
   fetch_count: number;
   interval_value: number;
   interval_unit: "minutes" | "hours" | "days";
@@ -49,6 +53,7 @@ export interface PipelineCreate {
 export interface PipelineUpdate {
   name?: string;
   state?: "active" | "paused";
+  douyin_cookie_id?: number | null;
   fetch_count?: number;
   interval_value?: number;
   interval_unit?: "minutes" | "hours" | "days";

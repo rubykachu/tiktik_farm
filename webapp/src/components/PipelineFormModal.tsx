@@ -8,11 +8,14 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
+import { DouyinCookies } from "../api/douyin_cookies";
 import { Telegram, TelegramChatItem } from "../api/telegram";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Required").max(128),
-  channel_url: z.string().min(1, "Required").url("Invalid URL"),
+  source_type: z.enum(["youtube", "douyin"]).default("youtube"),
+  douyin_cookie_id: z.number().nullable().optional(),
+  channel_url: z.string().min(1, "Required"),
   interval_value: z.coerce.number().int().min(1),
   interval_unit: z.enum(["minutes", "hours", "days"]),
   first_fire_at: z.string().min(1, "Required"),
@@ -39,6 +42,14 @@ const baseSchema = z.object({
 
 function buildSchema(existingTokenSet: boolean) {
   return baseSchema
+    .refine(
+      (d) => d.source_type !== "douyin" || !!d.douyin_cookie_id,
+      { message: "Select a Douyin cookie", path: ["douyin_cookie_id"] }
+    )
+    .refine(
+      (d) => d.source_type !== "youtube" || d.channel_url.startsWith("http"),
+      { message: "Invalid URL", path: ["channel_url"] }
+    )
     .refine((d) => !(d.interval_unit === "minutes" && d.interval_value < 2), {
       message: "Interval must be ≥ 2 when using minutes",
       path: ["interval_value"],
@@ -118,6 +129,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
   const validAccounts = accounts?.filter((a) => a.has_valid_session) ?? [];
 
+  const { data: douyinCookies } = useQuery({
+    queryKey: ["douyin-cookies"],
+    queryFn: DouyinCookies.list,
+    enabled: open,
+  });
+
   const tokenSet = pipeline?.telegram_bot_token_set ?? false;
   const schema = useMemo(() => buildSchema(tokenSet), [tokenSet]);
 
@@ -134,6 +151,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     resolver: zodResolver(schema),
     defaultValues: {
       name: "",
+      source_type: "youtube" as "youtube" | "douyin",
+      douyin_cookie_id: null,
       channel_url: "",
       interval_value: 6,
       interval_unit: "hours",
@@ -174,6 +193,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
       reset({
         name: pipeline.name,
+        source_type: (pipeline.source_type ?? "youtube") as "youtube" | "douyin",
+        douyin_cookie_id: pipeline.douyin_cookie_id ?? null,
         channel_url: pipeline.channel_url,
         interval_value: pipeline.interval_value,
         interval_unit: pipeline.interval_unit,
@@ -195,6 +216,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     } else {
       reset({
         name: "",
+        source_type: "youtube",
+        douyin_cookie_id: null,
         channel_url: "",
         interval_value: 6,
         interval_unit: "hours",
@@ -261,6 +284,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       const payload: PipelineUpdate = {
         name: data.name,
         state: saveState,
+        douyin_cookie_id: data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined,
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
         interval_unit: data.interval_unit,
@@ -286,6 +310,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     } else {
       const payload: PipelineCreate = {
         name: data.name,
+        source_type: data.source_type,
+        douyin_cookie_id: data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined,
         channel_url: data.channel_url,
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
@@ -319,6 +345,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const [telegramTestSending, setTelegramTestSending] = useState(false);
 
   const selectedAccounts = watch("account_ids");
+  const sourceType = watch("source_type");
   const clearBotToken = watch("clear_bot_token");
   const intervalValue = watch("interval_value");
   const intervalUnit = watch("interval_unit");
@@ -432,12 +459,55 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <input className="input" {...register("name")} placeholder="My pipeline" />
               {errors.name && <p className="field-error">{errors.name.message}</p>}
             </div>
+            {!isEdit && (
+              <div>
+                <label className="label">Source type</label>
+                <select className="input" {...register("source_type")}>
+                  <option value="youtube">YouTube</option>
+                  <option value="douyin">Douyin</option>
+                </select>
+              </div>
+            )}
+            {sourceType === "douyin" && (
+              <div>
+                <label className="label">Douyin cookie</label>
+                <select
+                  className="input"
+                  {...register("douyin_cookie_id", { valueAsNumber: true })}
+                >
+                  <option value="">— Select cookie —</option>
+                  {douyinCookies?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.douyin_cookie_id && (
+                  <p className="field-error">{errors.douyin_cookie_id.message}</p>
+                )}
+                {(!douyinCookies || douyinCookies.length === 0) && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    No Douyin cookies yet. Add one in{" "}
+                    <Link to="/accounts" className="text-brand-600 hover:underline">
+                      Accounts → Douyin Cookies
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
+            )}
             <div>
-              <label className="label">Channel URL</label>
+              <label className="label">
+                {sourceType === "douyin" ? "Douyin creator URL" : "Channel URL"}
+              </label>
               <input
                 className="input"
                 {...register("channel_url")}
-                placeholder="https://youtube.com/@channel/videos"
+                placeholder={
+                  sourceType === "douyin"
+                    ? "https://www.douyin.com/user/MS4wLjAB..."
+                    : "https://youtube.com/@channel/videos"
+                }
                 disabled={isEdit}
               />
               {errors.channel_url && (
