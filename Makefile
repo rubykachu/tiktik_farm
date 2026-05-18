@@ -119,6 +119,12 @@ webapp-fresh:  ## Wipe node_modules in the webapp container and reinstall (use i
 	$(COMPOSE) exec webapp sh -c "rm -rf /app/node_modules /app/.vite && npm install"
 	$(COMPOSE) restart webapp
 
+# ─── Vendor ────────────────────────────────────────────────────────────────
+
+.PHONY: douyin-update
+douyin-update:  ## Pull latest douyin-downloader into vendor/ (backs up current first)
+	bash scripts/update-douyin-vendor.sh
+
 # ─── Testing ───────────────────────────────────────────────────────────────
 
 .PHONY: test
