@@ -8,6 +8,7 @@
 #   - You changed code in api/ or scheduler/ only        -> make restart
 #   - You changed code in webapp/ (mounted dev volume)   -> nothing (Vite HMR)
 #   - You changed requirements.txt or tiktok_uploader/   -> make rebuild-base
+#   - You ran `make douyin-update` (vendor changed)       -> make rebuild-base
 #   - You added a service or changed Dockerfile         -> make rebuild
 #   - You think Docker has gone insane                   -> make nuke && make up
 #
@@ -185,6 +186,7 @@ help:  ## Show this help (default target)
 	@printf "\n$(YELLOW)Common recipes:$(RESET)\n"
 	@printf "  Unsure / shipped a feature -> make deploy  (build + recreate; always picks up new code)\n"
 	@printf "  Edited requirements.txt    -> make deploy  (or make rebuild-base && make up)\n"
+	@printf "  Updated Douyin vendor      -> make douyin-update && make rebuild-base && make up\n"
 	@printf "  Edited api/*.py (dev)      -> uvicorn --reload (or make restart)\n"
 	@printf "  Edited scheduler/*.py      -> make restart  (no auto-reload)\n"
 	@printf "  Edited webapp/*.tsx (dev)  -> (nothing — Vite HMR)\n"

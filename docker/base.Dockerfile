@@ -38,6 +38,10 @@ RUN pip install -r /app/requirements.txt \
         "sse-starlette>=2.0" "prompt_toolkit>=3.0" \
         "pytest>=8" "pytest-asyncio>=0.23" "pytest-cov>=5" "freezegun>=1.4"
 
+# Vendor: douyin-downloader (Douyin source support — subprocess called by api/services/douyin_channel.py)
+COPY vendor/douyin-downloader /app/vendor/douyin-downloader
+RUN pip install -r /app/vendor/douyin-downloader/requirements.txt
+
 # Copy the tiktok_uploader package and its Node signing subprocess.
 COPY tiktok_uploader /app/tiktok_uploader
 COPY config.txt /app/config.txt
