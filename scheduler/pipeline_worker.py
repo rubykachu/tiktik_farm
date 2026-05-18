@@ -21,7 +21,8 @@ from sqlmodel import Session, select
 import api.db as _api_db
 from api.db import now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
-from api.services import llm, tiktok_adapter, telegram, youtube_channel
+from api.services import douyin_channel, llm, tiktok_adapter, telegram, youtube_channel
+from api.models import DouyinCookie
 from api.services.caption import render_caption, template_uses_ai_title
 from api.services.llm_config import get_default_llm_model, is_llm_enabled
 from api.utils.text import truncate
@@ -282,6 +283,231 @@ def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
     return rewritten or title
 
 
+def _load_douyin_cookie(pipeline: ChannelPipeline) -> Optional[dict]:
+    """Return decrypted cookie dict or None if cookie row is missing."""
+    if not pipeline.douyin_cookie_id:
+        return None
+    with Session(_api_db.engine) as s:
+        row = s.get(DouyinCookie, pipeline.douyin_cookie_id)
+        if not row:
+            return None
+    from api.services import secrets
+    import json as _json
+    return _json.loads(secrets.decrypt(row.cookie_json_encrypted))
+
+
+def _load_douyin_dedupe(session: Session, account_id: int, aweme_id: str) -> str:
+    rows = session.exec(
+        select(VideoUpload).where(
+            VideoUpload.account_id == account_id,
+            VideoUpload.douyin_aweme_id == aweme_id,
+        )
+    ).all()
+    if any(r.status == "succeeded" for r in rows):
+        return "skipped_dup"
+    if sum(1 for r in rows if r.status == "failed") >= MAX_UPLOAD_ATTEMPTS:
+        return "skipped_exhausted"
+    return "upload"
+
+
+def _record_douyin_upload(
+    *,
+    run_id: int,
+    pipeline_id: int,
+    account_id: int,
+    aweme_id: str,
+    status: str,
+    tiktok_video_id: Optional[str] = None,
+    tiktok_url: Optional[str] = None,
+    rendered_caption: Optional[str] = None,
+    attempt_count: int = 1,
+    error_text: Optional[str] = None,
+) -> None:
+    row = VideoUpload(
+        pipeline_id=pipeline_id,
+        run_id=run_id,
+        account_id=account_id,
+        youtube_video_id="",
+        youtube_url="",
+        douyin_aweme_id=aweme_id,
+        status=status,
+        tiktok_video_id=tiktok_video_id,
+        tiktok_url=tiktok_url,
+        rendered_caption=rendered_caption,
+        attempt_count=attempt_count,
+        error_text=error_text,
+    )
+    with Session(_api_db.engine) as s:
+        s.add(row)
+        s.commit()
+
+
+def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id: int) -> None:
+    """Download from Douyin creator and upload each video per account.
+
+    Mutates the PipelineRun row (via _finalize_run) on completion or error.
+    """
+    cookie_dict = _load_douyin_cookie(pipeline)
+    if cookie_dict is None:
+        _finalize_run(
+            run_id,
+            error_text=f"douyin_cookie_id={pipeline.douyin_cookie_id} not found — update cookie",
+        )
+        return
+
+    output_dir = tempfile.mkdtemp(prefix=f"douyin_{pipeline.id}_")
+    db_path = os.path.join(output_dir, "douyin_dl.db")
+
+    try:
+        try:
+            videos = douyin_channel.download_creator_posts(
+                creator_url=pipeline.channel_url,
+                fetch_count=pipeline.fetch_count,
+                cookie_dict=cookie_dict,
+                output_dir=output_dir,
+                db_path=db_path,
+                max_duration_seconds=pipeline.max_duration_seconds,
+            )
+        except Exception as e:
+            log.error("Douyin download failed for pipeline %d: %s", pipeline.id, e)
+            _finalize_run(run_id, error_text=f"download failed: {e}")
+            return
+
+        pulled_count = len(videos)
+        uploaded_count = 0
+        skipped_dup_count = 0
+        skipped_exhausted_count = 0
+        failed_count = 0
+        upload_details: list[str] = []
+        fail_details: list[str] = []
+
+        account_ids: list[int] = json.loads(pipeline.account_ids_json)
+        upload_opts: dict = json.loads(pipeline.upload_options_json)
+
+        use_ai_title = bool(
+            pipeline.caption_ai_prompt
+            and template_uses_ai_title(pipeline.caption_template)
+        )
+        ai_title_by_aweme: dict[str, str] = {}
+
+        for video in videos:
+            aweme_id = video.aweme_id
+            all_skipped_or_done = True
+
+            for account_id in account_ids:
+                with Session(_api_db.engine) as s:
+                    action = _load_douyin_dedupe(s, account_id, aweme_id)
+
+                if action == "skipped_dup":
+                    skipped_dup_count += 1
+                    continue
+                elif action == "skipped_exhausted":
+                    skipped_exhausted_count += 1
+                    continue
+
+                all_skipped_or_done = False
+
+                with Session(_api_db.engine) as s:
+                    acct = s.get(Account, account_id)
+                    if not acct:
+                        failed_count += 1
+                        fail_details.append(f"- aweme {aweme_id} [account_id={account_id}]: missing")
+                        continue
+                    username = acct.username
+
+                ai_title = video.title
+                if use_ai_title:
+                    if aweme_id in ai_title_by_aweme:
+                        ai_title = ai_title_by_aweme[aweme_id]
+                    else:
+                        rewritten = _rewrite_with_llm(
+                            pipeline.caption_ai_prompt or "",
+                            video.title,
+                            video.description,
+                        )
+                        if rewritten and rewritten != video.title:
+                            ai_title_by_aweme[aweme_id] = rewritten
+                            ai_title = rewritten
+
+                caption = render_caption(
+                    pipeline.caption_template,
+                    title=video.title,
+                    ai_title=ai_title,
+                )
+
+                with Session(_api_db.engine) as s:
+                    existing_failed = s.exec(
+                        select(VideoUpload).where(
+                            VideoUpload.account_id == account_id,
+                            VideoUpload.douyin_aweme_id == aweme_id,
+                            VideoUpload.status == "failed",
+                        )
+                    ).all()
+                    attempt_count = len(existing_failed) + 1
+
+                try:
+                    ok, tiktok_id, tiktok_url = tiktok_adapter.upload_from_options(
+                        username, video.file_path, caption, upload_opts
+                    )
+                except Exception as e:
+                    ok, tiktok_id, tiktok_url = False, None, None
+                    error_msg = str(e)[:500]
+                    log.error("Upload exception for aweme %s@%s: %s", aweme_id, username, e)
+                else:
+                    error_msg = None if ok else "upload returned false"
+
+                _record_douyin_upload(
+                    run_id=run_id,
+                    pipeline_id=pipeline.id,  # type: ignore[arg-type]
+                    account_id=account_id,
+                    aweme_id=aweme_id,
+                    status="succeeded" if ok else "failed",
+                    tiktok_video_id=tiktok_id,
+                    tiktok_url=tiktok_url,
+                    rendered_caption=caption,
+                    attempt_count=attempt_count,
+                    error_text=error_msg,
+                )
+
+                if ok:
+                    uploaded_count += 1
+                    upload_details.append(f"- aweme:{aweme_id} -> {tiktok_url or '?'} [{username}]")
+                else:
+                    failed_count += 1
+                    fail_details.append(f"- aweme:{aweme_id} [{username}]: {truncate(error_msg or '', 120, suffix='')}")
+
+            douyin_channel.cleanup_aweme_files(output_dir, aweme_id)
+
+        summary_parts = [f"Pulled: {pulled_count}", f"Uploaded: {uploaded_count}"]
+        if skipped_dup_count:
+            summary_parts.append(f"Skipped (dup): {skipped_dup_count}")
+        if skipped_exhausted_count:
+            summary_parts.append(f"Skipped (exhausted): {skipped_exhausted_count}")
+        if failed_count:
+            summary_parts.append(f"Failed: {failed_count}")
+
+        summary_text = "\n".join(summary_parts)
+        if upload_details:
+            summary_text += "\n\nUploaded:\n" + "\n".join(upload_details)
+        if fail_details:
+            summary_text += "\n\nFailed:\n" + "\n".join(fail_details)
+
+        summary_text = truncate(summary_text, SUMMARY_MAX, suffix="\n…(truncated)")
+
+        _finalize_run(
+            run_id,
+            pulled_count=pulled_count,
+            uploaded_count=uploaded_count,
+            skipped_dup_count=skipped_dup_count,
+            skipped_exhausted_count=skipped_exhausted_count,
+            failed_count=failed_count,
+            summary_text=summary_text,
+        )
+    finally:
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir, ignore_errors=True)
+
+
 def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     """Execute one pipeline tick. Returns the finalized PipelineRun."""
     now = now_utc()
@@ -296,6 +522,11 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         s.commit()
         s.refresh(run)
         run_id = run.id
+
+    # Route Douyin pipelines to pass 3
+    if pipeline.source_type == "douyin":
+        _run_douyin_pipeline(pipeline, trigger_reason, run_id)
+        return _get_run(run_id)
 
     # Disk check
     if not _check_disk_space():
