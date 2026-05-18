@@ -60,11 +60,27 @@ class ScheduledUpload(SQLModel, table=True):
 
 # ---------- channel pipelines (Phase 1) -------------------------------------
 
+class DouyinCookie(SQLModel, table=True):
+    """Douyin browser cookie stored encrypted at rest.
+
+    cookie_json_encrypted is Fernet ciphertext (same key as LLM API keys).
+    GET endpoints must never return cookie_json_encrypted.
+    """
+    __tablename__ = "douyin_cookies"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=128)
+    cookie_json_encrypted: str
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
 class ChannelPipeline(SQLModel, table=True):
     """Recurring YouTube-channel → TikTok auto-upload pipeline.
 
     Coexists with ScheduledUpload (single-shot). Worker pass 2 polls this
     table for active rows whose next_fire_at is due.
+    Phase 4: source_type="douyin" pipelines processed in pass 3.
     """
     __tablename__ = "channel_pipelines"
 
@@ -72,6 +88,8 @@ class ChannelPipeline(SQLModel, table=True):
     name: str = Field(max_length=128)
     channel_url: str
     fetch_count: int  # top-N video per tick, 1..20 enforced at API layer.
+    source_type: str = Field(default="youtube", max_length=16)  # "youtube" | "douyin"
+    douyin_cookie_id: Optional[int] = Field(default=None)  # no FK — app layer handles missing
 
     interval_value: int  # ≥1 (≥2 when unit=minutes), enforced at API layer.
     interval_unit: str = Field(max_length=8)  # 'minutes' | 'hours' | 'days'
@@ -141,6 +159,7 @@ class VideoUpload(SQLModel, table=True):
     youtube_video_id: str = Field(max_length=64)
     youtube_url: str
     youtube_title: Optional[str] = Field(default=None, max_length=500)
+    douyin_aweme_id: Optional[str] = Field(default=None, max_length=64)
 
     tiktok_video_id: Optional[str] = Field(default=None, max_length=64)
     tiktok_url: Optional[str] = Field(default=None)

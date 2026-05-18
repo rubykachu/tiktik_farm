@@ -37,17 +37,42 @@ def apply_indexes(engine: Engine) -> None:
 def apply_schema_patches(engine: Engine) -> None:
     """Add columns SQLModel `create_all` will not add to existing SQLite tables."""
     with engine.begin() as conn:
-        rows = conn.exec_driver_sql("PRAGMA table_info(channel_pipelines)").fetchall()
-        col_names = {row[1] for row in rows}
-        if "upload_delay_minutes" not in col_names:
-            conn.exec_driver_sql(
-                "ALTER TABLE channel_pipelines ADD COLUMN "
-                "upload_delay_minutes INTEGER NOT NULL DEFAULT 0"
-            )
-        if "caption_ai_prompt" not in col_names:
-            conn.exec_driver_sql(
-                "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
-            )
+        has_pipelines = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='channel_pipelines'"
+        ).fetchone()
+        if has_pipelines:
+            rows = conn.exec_driver_sql("PRAGMA table_info(channel_pipelines)").fetchall()
+            col_names = {row[1] for row in rows}
+            if "upload_delay_minutes" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN "
+                    "upload_delay_minutes INTEGER NOT NULL DEFAULT 0"
+                )
+            if "caption_ai_prompt" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
+                )
+            if "source_type" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN "
+                    "source_type TEXT NOT NULL DEFAULT 'youtube'"
+                )
+            if "douyin_cookie_id" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN douyin_cookie_id INTEGER"
+                )
+
+        # video_uploads: douyin_aweme_id for Phase 4
+        has_video_uploads = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='video_uploads'"
+        ).fetchone()
+        if has_video_uploads:
+            vu_rows = conn.exec_driver_sql("PRAGMA table_info(video_uploads)").fetchall()
+            vu_cols = {row[1] for row in vu_rows}
+            if "douyin_aweme_id" not in vu_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE video_uploads ADD COLUMN douyin_aweme_id TEXT"
+                )
 
         # Azure support: api_base + api_version on llm_models. Guard against
         # a legacy DB that predates the table (init_db not called yet in some
