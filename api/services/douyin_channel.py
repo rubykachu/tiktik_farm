@@ -93,16 +93,15 @@ def _scan_output_dir(output_dir: str) -> list[DownloadedVideo]:
             log.warning("Cannot read %s: %s", data_path, e)
             continue
 
-        duration_ms = data.get("video", {}).get("duration", 0)
+        duration_ms = data.get("video", {}).get("duration") or 0
         duration_seconds = int(duration_ms) // 1000
-        title = data.get("desc", "")
-        description = data.get("desc", "")
+        desc = data.get("desc", "")
 
         videos.append(DownloadedVideo(
             aweme_id=aweme_id,
             file_path=mp4_path,
-            title=title,
-            description=description,
+            title=desc,
+            description=desc,
             duration_seconds=duration_seconds,
         ))
     return videos

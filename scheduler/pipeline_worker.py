@@ -357,20 +357,21 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
     db_path = os.path.join(output_dir, "douyin_dl.db")
 
     try:
-        try:
-            videos = douyin_channel.download_creator_posts(
-                creator_url=pipeline.channel_url,
-                fetch_count=pipeline.fetch_count,
-                cookie_dict=cookie_dict,
-                output_dir=output_dir,
-                db_path=db_path,
-                max_duration_seconds=pipeline.max_duration_seconds,
-            )
-        except Exception as e:
-            log.error("Douyin download failed for pipeline %d: %s", pipeline.id, e)
-            _finalize_run(run_id, error_text=f"download failed: {e}")
-            return
+        videos = douyin_channel.download_creator_posts(
+            creator_url=pipeline.channel_url,
+            fetch_count=pipeline.fetch_count,
+            cookie_dict=cookie_dict,
+            output_dir=output_dir,
+            db_path=db_path,
+            max_duration_seconds=pipeline.max_duration_seconds,
+        )
+    except Exception as e:
+        log.error("Douyin download failed for pipeline %d: %s", pipeline.id, e)
+        _finalize_run(run_id, error_text=f"download failed: {e}")
+        shutil.rmtree(output_dir, ignore_errors=True)
+        return
 
+    try:
         pulled_count = len(videos)
         uploaded_count = 0
         skipped_dup_count = 0
