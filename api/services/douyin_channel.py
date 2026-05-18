@@ -140,11 +140,15 @@ def download_creator_posts(
             yaml.dump(config, f, allow_unicode=True)
 
         vendor_run = os.path.abspath(_VENDOR_RUN)
-        result = subprocess.run(
-            [sys.executable, vendor_run, "-c", config_path],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, vendor_run, "-c", config_path],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            raise DouyinDownloadError("douyin-downloader timed out after 600 s")
         if result.returncode != 0:
             log.warning("douyin-downloader exited %d: %s", result.returncode, result.stderr[:500])
     finally:

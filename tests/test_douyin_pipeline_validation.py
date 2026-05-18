@@ -183,3 +183,22 @@ class TestDouyinPipelineUpdate:
             f"/api/pipelines/{pid}", json={"douyin_cookie_id": cookie_id}
         )
         assert patch_resp.status_code == 422
+
+    def test_patch_douyin_cookie_id_null_returns_422(self, client):
+        """Sending douyin_cookie_id=null on a Douyin pipeline must be rejected."""
+        account_id = _make_account(client)
+        cookie_id = _make_douyin_cookie(client)
+        payload = _base_payload(
+            account_id,
+            source_type="douyin",
+            douyin_cookie_id=cookie_id,
+            channel_url="https://www.douyin.com/user/MS4wLjAB",
+        )
+        create_resp = client.post("/api/pipelines", json=payload)
+        assert create_resp.status_code == 201
+        pid = create_resp.json()["id"]
+
+        patch_resp = client.patch(
+            f"/api/pipelines/{pid}", json={"douyin_cookie_id": None}
+        )
+        assert patch_resp.status_code == 422

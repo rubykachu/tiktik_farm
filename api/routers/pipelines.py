@@ -229,11 +229,16 @@ def update_pipeline(
     if "caption_ai_prompt" in payload.model_fields_set:
         row.caption_ai_prompt = payload.caption_ai_prompt or None
         changed = True
-    if "douyin_cookie_id" in payload.model_fields_set and payload.douyin_cookie_id is not None:
+    if "douyin_cookie_id" in payload.model_fields_set:
         if row.source_type != "douyin":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="douyin_cookie_id can only be set on douyin pipelines",
+            )
+        if payload.douyin_cookie_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="douyin_cookie_id cannot be null on a douyin pipeline",
             )
         row.douyin_cookie_id = payload.douyin_cookie_id
         changed = True
@@ -405,6 +410,7 @@ def list_run_videos(
             "youtube_video_id": v.youtube_video_id,
             "youtube_url": v.youtube_url,
             "youtube_title": v.youtube_title,
+            "douyin_aweme_id": v.douyin_aweme_id,
             "tiktok_video_id": v.tiktok_video_id,
             "tiktok_url": v.tiktok_url,
             "rendered_caption": v.rendered_caption,

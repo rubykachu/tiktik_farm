@@ -20,6 +20,17 @@ _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 _CHAT_ID_RE = re.compile(r"^-?\d+$")
 
 
+# ---------- douyin cookies ---------------------------------------------------
+
+class DouyinCookieRead(BaseModel):
+    id: int
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ---------- accounts ---------------------------------------------------------
 
 class AccountRead(BaseModel):

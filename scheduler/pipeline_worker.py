@@ -20,9 +20,9 @@ from sqlmodel import Session, select
 
 import api.db as _api_db
 from api.db import now_utc
-from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
+from api.models import Account, ChannelPipeline, DouyinCookie, PipelineRun, VideoUpload
 from api.services import douyin_channel, llm, tiktok_adapter, telegram, youtube_channel
-from api.models import DouyinCookie
+from api.services import secrets
 from api.services.caption import render_caption, template_uses_ai_title
 from api.services.llm_config import get_default_llm_model, is_llm_enabled
 from api.utils.text import truncate
@@ -291,9 +291,7 @@ def _load_douyin_cookie(pipeline: ChannelPipeline) -> Optional[dict]:
         row = s.get(DouyinCookie, pipeline.douyin_cookie_id)
         if not row:
             return None
-    from api.services import secrets
-    import json as _json
-    return _json.loads(secrets.decrypt(row.cookie_json_encrypted))
+    return json.loads(secrets.decrypt(row.cookie_json_encrypted))
 
 
 def _load_douyin_dedupe(session: Session, account_id: int, aweme_id: str) -> str:
@@ -392,7 +390,6 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
 
         for video in videos:
             aweme_id = video.aweme_id
-            all_skipped_or_done = True
 
             for account_id in account_ids:
                 with Session(_api_db.engine) as s:
@@ -404,8 +401,6 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                 elif action == "skipped_exhausted":
                     skipped_exhausted_count += 1
                     continue
-
-                all_skipped_or_done = False
 
                 with Session(_api_db.engine) as s:
                     acct = s.get(Account, account_id)
@@ -523,14 +518,14 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         s.refresh(run)
         run_id = run.id
 
+    # Disk check applies to both YouTube and Douyin (both write to /tmp)
+    if not _check_disk_space():
+        _finalize_run(run_id, error_text="low_disk")
+        return _get_run(run_id)
+
     # Route Douyin pipelines to pass 3
     if pipeline.source_type == "douyin":
         _run_douyin_pipeline(pipeline, trigger_reason, run_id)
-        return _get_run(run_id)
-
-    # Disk check
-    if not _check_disk_space():
-        _finalize_run(run_id, error_text="low_disk")
         return _get_run(run_id)
 
     # List top-N videos

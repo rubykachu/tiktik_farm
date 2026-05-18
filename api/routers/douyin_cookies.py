@@ -11,11 +11,11 @@ import json
 from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
 from api.models import DouyinCookie
+from api.schemas import DouyinCookieRead
 from api.services import secrets
 from api.services.douyin_cookie_import import (
     DouyinCookieImportError,
@@ -23,15 +23,6 @@ from api.services.douyin_cookie_import import (
 )
 
 router = APIRouter(prefix="/api/douyin-cookies", tags=["douyin-cookies"])
-
-
-class DouyinCookieRead(BaseModel):
-    id: int
-    name: str
-    created_at: object
-    updated_at: object
-
-    model_config = {"from_attributes": True}
 
 
 def _parse_upload(file: UploadFile) -> str:

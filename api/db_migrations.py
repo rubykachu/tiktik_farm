@@ -21,6 +21,9 @@ _COMPOSITE_INDEXES = (
     # /videos timeline filter by account.
     "CREATE INDEX IF NOT EXISTS ix_video_upload_account_created "
     "ON video_uploads (account_id, created_at DESC)",
+    # Douyin dedup lookup: "already succeeded/failed for (account, aweme)?"
+    "CREATE INDEX IF NOT EXISTS ix_video_upload_account_aweme "
+    "ON video_uploads (account_id, douyin_aweme_id)",
     # At-most-one default LLM model. SQLite partial index lets two writers
     # race set-default without ending up with two default rows.
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_llm_models_one_default "
