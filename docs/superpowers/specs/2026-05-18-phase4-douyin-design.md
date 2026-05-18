@@ -57,14 +57,50 @@ webapp:
 ## 1. Vendor Integration
 
 ```
-vendor/douyin-downloader/   (git submodule → jiji262/douyin-downloader main)
+vendor/douyin-downloader/   (git clone — không phải submodule, không có git remote)
 ```
 
-- Thêm vào `.gitmodules`, commit submodule pointer.
+**Clone lần đầu:**
+```bash
+git clone https://github.com/jiji262/douyin-downloader vendor/douyin-downloader
+git -C vendor/douyin-downloader remote remove origin   # xóa remote — bảo mật dự án
+```
+
 - Không sửa bất kỳ file nào bên trong `vendor/douyin-downloader/`.
-- Khi có bug: `git submodule update --remote vendor/douyin-downloader` → commit pointer mới.
-- Makefile target: `make douyin-update` = lệnh trên.
-- Requirements: `vendor/douyin-downloader/requirements.txt` cần được cài trong Docker image (thêm vào `Dockerfile` của `api` + `scheduler`).
+- Commit toàn bộ `vendor/douyin-downloader/` vào repo (không dùng submodule).
+- `.gitignore` của project KHÔNG ignore `vendor/douyin-downloader/`.
+
+**Khi cần cập nhật (bug fix upstream):**
+```bash
+make douyin-update
+```
+Script `scripts/update-douyin-vendor.sh`:
+```bash
+#!/usr/bin/env bash
+set -e
+VENDOR="vendor/douyin-downloader"
+BACKUP_BRANCH="backup/douyin-vendor-$(date +%Y%m%d-%H%M%S)"
+
+# Backup trạng thái hiện tại
+git checkout -b "$BACKUP_BRANCH"
+git add "$VENDOR" && git commit -m "chore(vendor): backup douyin-downloader before update"
+
+# Fetch + merge từ upstream (thêm remote tạm, xóa ngay sau)
+git -C "$VENDOR" init          # đảm bảo là git repo (nếu bị mất .git)
+git -C "$VENDOR" remote add upstream https://github.com/jiji262/douyin-downloader
+git -C "$VENDOR" fetch upstream main
+git -C "$VENDOR" merge upstream/main --no-edit
+git -C "$VENDOR" remote remove upstream
+
+# Quay lại branch gốc, commit vendor mới
+ORIG_BRANCH=$(git rev-parse --abbrev-ref HEAD | tail -1)   # nhánh trước checkout
+git checkout -
+git add "$VENDOR"
+git commit -m "chore(vendor): update douyin-downloader from upstream"
+echo "Done. Backup: $BACKUP_BRANCH"
+```
+
+- Requirements: `vendor/douyin-downloader/requirements.txt` cài trong Docker image (thêm vào `Dockerfile` của `api` + `scheduler`).
 
 ---
 
@@ -74,11 +110,11 @@ vendor/douyin-downloader/   (git submodule → jiji262/douyin-downloader main)
 
 ```sql
 CREATE TABLE douyin_cookies (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL,           -- label do user đặt, ví dụ "Account chính"
-    cookie_json TEXT NOT NULL,           -- JSON dict: {msToken, ttwid, odin_tt, ...}
-    created_at  DATETIME NOT NULL,
-    updated_at  DATETIME NOT NULL
+    id                   INTEGER PRIMARY KEY,
+    name                 TEXT NOT NULL,     -- label do user đặt, ví dụ "Account chính"
+    cookie_json_encrypted TEXT NOT NULL,   -- Fernet ciphertext (api.services.secrets)
+    created_at           DATETIME NOT NULL,
+    updated_at           DATETIME NOT NULL
 );
 ```
 
@@ -88,10 +124,15 @@ class DouyinCookie(SQLModel, table=True):
     __tablename__ = "douyin_cookies"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=128)
-    cookie_json: str                     # JSON blob
+    cookie_json_encrypted: str             # Fernet ciphertext, cùng key với LLM API keys
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 ```
+
+**Encryption pattern** (dùng lại `api.services.secrets`):
+- Lưu: `secrets.encrypt(json.dumps(cookie_dict))` → `cookie_json_encrypted`
+- Đọc: `json.loads(secrets.decrypt(row.cookie_json_encrypted))`
+- API `GET /api/douyin-cookies` KHÔNG trả `cookie_json_encrypted` — chỉ trả `id, name, created_at`.
 
 ### 2b. Migration: `channel_pipelines`
 
@@ -100,7 +141,9 @@ Thêm 2 column nullable (migration additive, không breaking):
 | Column | Type | Default | Ghi chú |
 |---|---|---|---|
 | `source_type` | TEXT | `"youtube"` | `"youtube"` hoặc `"douyin"` |
-| `douyin_cookie_id` | INT nullable | NULL | FK → `douyin_cookies.id`, SET NULL on delete |
+| `douyin_cookie_id` | INT nullable | NULL | **Không FK constraint** — chỉ lưu reference ID |
+
+> **Không dùng FK constraint** cho `douyin_cookie_id`: khi cookie bị xóa, pipeline giữ nguyên (không cascade, không SET NULL tự động). Application layer xử lý: nếu `douyin_cookie_id` trỏ tới cookie không tồn tại → hiển thị cảnh báo "Cookie không còn tồn tại" trong UI, pipeline tạm dừng cho đến khi user chọn cookie mới.
 
 > `max_duration_seconds` **đã tồn tại** trong model `ChannelPipeline` (Optional[int], default=None) — không cần migration. Áp dụng cho cả YouTube (service layer) lẫn Douyin (post-download check).
 
@@ -151,7 +194,7 @@ Reuse pattern của `cookie_import.py` (size limit, JSON parse, error handling) 
 GET    /api/douyin-cookies          — list tất cả (id, name, created_at — không trả cookie_json)
 POST   /api/douyin-cookies          — upload Cookie-Editor JSON + name → tạo mới
 PUT    /api/douyin-cookies/{id}     — re-upload cookie file (cập nhật cookie_json)
-DELETE /api/douyin-cookies/{id}     — xóa (fail nếu còn pipeline đang dùng → 409)
+DELETE /api/douyin-cookies/{id}     — xóa (cho phép xóa dù pipeline vẫn reference ID này)
 ```
 
 ### UI: Tab "Douyin Cookies" trong `/accounts`
@@ -160,7 +203,7 @@ DELETE /api/douyin-cookies/{id}     — xóa (fail nếu còn pipeline đang dù
 - Table: Name | Ngày tạo | Actions (Cập nhật cookie / Xóa).
 - Button "Thêm cookie": mở modal → nhập Name + upload file JSON.
 - Modal "Cập nhật cookie": chỉ upload file JSON mới (name giữ nguyên).
-- Xóa: confirm dialog, báo lỗi nếu đang dùng bởi pipeline.
+- Xóa: confirm dialog (cảnh báo "Pipeline đang dùng cookie này sẽ không chạy được cho đến khi chọn cookie mới"), cho phép xóa.
 
 ---
 
