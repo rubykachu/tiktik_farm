@@ -39,6 +39,8 @@ def _to_read(row: ChannelPipeline) -> dict:
         "id": row.id,
         "name": row.name,
         "channel_url": row.channel_url,
+        "source_type": row.source_type,
+        "douyin_cookie_id": row.douyin_cookie_id,
         "fetch_count": row.fetch_count,
         "interval_value": row.interval_value,
         "interval_unit": row.interval_unit,
@@ -121,6 +123,8 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
     row = ChannelPipeline(
         name=payload.name,
         channel_url=payload.channel_url,
+        source_type=payload.source_type,
+        douyin_cookie_id=payload.douyin_cookie_id,
         fetch_count=payload.fetch_count,
         interval_value=payload.interval_value,
         interval_unit=payload.interval_unit,
@@ -224,6 +228,14 @@ def update_pipeline(
         changed = True
     if "caption_ai_prompt" in payload.model_fields_set:
         row.caption_ai_prompt = payload.caption_ai_prompt or None
+        changed = True
+    if "douyin_cookie_id" in payload.model_fields_set and payload.douyin_cookie_id is not None:
+        if row.source_type != "douyin":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="douyin_cookie_id can only be set on douyin pipelines",
+            )
+        row.douyin_cookie_id = payload.douyin_cookie_id
         changed = True
 
     # Telegram secret handling: only update when caller sent non-empty token,

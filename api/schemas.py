@@ -203,6 +203,8 @@ class PipelineUploadOptions(BaseModel):
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     channel_url: str
+    source_type: Literal["youtube", "douyin"] = "youtube"
+    douyin_cookie_id: Optional[int] = None
     fetch_count: int = Field(ge=1, le=20)
     interval_value: int = Field(ge=1)
     interval_unit: Literal["minutes", "hours", "days"]
@@ -216,12 +218,19 @@ class PipelineCreate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
-    @field_validator("channel_url")
-    @classmethod
-    def _validate_channel_url(cls, v: str) -> str:
-        if not is_youtube_channel_url(v):
+    @model_validator(mode="after")
+    def _validate_channel_url(self):
+        if self.source_type == "youtube" and not is_youtube_channel_url(self.channel_url):
             raise ValueError("channel_url must point to a YouTube domain")
-        return v
+        return self
+
+    @model_validator(mode="after")
+    def _validate_source_cookie(self):
+        if self.source_type == "douyin" and not self.douyin_cookie_id:
+            raise ValueError("douyin_cookie_id is required when source_type=douyin")
+        if self.source_type == "youtube" and self.douyin_cookie_id:
+            raise ValueError("douyin_cookie_id must be null when source_type=youtube")
+        return self
 
     @field_validator("caption_template")
     @classmethod
@@ -270,6 +279,7 @@ class PipelineCreate(BaseModel):
 class PipelineUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     state: Optional[Literal["active", "paused"]] = None
+    douyin_cookie_id: Optional[int] = None
     fetch_count: Optional[int] = Field(default=None, ge=1, le=20)
     interval_value: Optional[int] = Field(default=None, ge=1)
     interval_unit: Optional[Literal["minutes", "hours", "days"]] = None
@@ -333,6 +343,8 @@ class PipelineRead(BaseModel):
     id: int
     name: str
     channel_url: str
+    source_type: str = "youtube"
+    douyin_cookie_id: Optional[int] = None
     fetch_count: int
     interval_value: int
     interval_unit: str
