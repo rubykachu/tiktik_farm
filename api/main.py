@@ -17,6 +17,7 @@ from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import (
     accounts,
+    douyin_cookies,
     llm_models,
     login,
     pipelines,
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(telegram.router)
     app.include_router(settings.router)
     app.include_router(llm_models.router)
+    app.include_router(douyin_cookies.router)
     return app
 
 
