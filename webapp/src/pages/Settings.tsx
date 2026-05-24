@@ -18,7 +18,7 @@ export default function SettingsPage() {
     queryKey: ["settings"],
     queryFn: SettingsApi.get,
   });
-  const { data: models, isLoading } = useQuery({
+  const { data: models, isLoading, isError } = useQuery({
     queryKey: ["llm-models"],
     queryFn: LLMModels.list,
   });
@@ -110,7 +110,12 @@ export default function SettingsPage() {
                   <td className="p-4 text-slate-500" colSpan={6}>Loading…</td>
                 </tr>
               )}
-              {!isLoading && models && models.length === 0 && (
+              {isError && (
+                <tr>
+                  <td className="p-4 text-center text-red-400" colSpan={6}>Failed to load. Check API connection.</td>
+                </tr>
+              )}
+              {!isLoading && !isError && models && models.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-slate-500" colSpan={6}>
                     No models yet. Add one to enable caption rewriting.

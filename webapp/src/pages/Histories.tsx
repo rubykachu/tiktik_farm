@@ -32,7 +32,7 @@ export default function HistoriesPage() {
     queryFn: Pipelines.list,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["videos", accountFilter, statusFilter, pipelineFilter],
     queryFn: () =>
       fetchVideos({
@@ -123,7 +123,12 @@ export default function HistoriesPage() {
                 <td className="p-4 text-slate-500" colSpan={8}>Loading…</td>
               </tr>
             )}
-            {!isLoading && data && data.length === 0 && (
+            {isError && (
+              <tr>
+                <td className="p-4 text-center text-red-400" colSpan={8}>Failed to load. Check API connection.</td>
+              </tr>
+            )}
+            {!isLoading && !isError && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={8}>
                   No upload history yet.

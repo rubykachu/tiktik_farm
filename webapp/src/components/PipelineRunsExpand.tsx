@@ -8,7 +8,7 @@ import { statusBadge } from "../utils/statusBadge";
 type Props = { pipelineId: number };
 
 function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["run-videos", pipelineId, runId],
     queryFn: () => Pipelines.listRunVideos(pipelineId, runId),
   });
@@ -27,6 +27,7 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
   }, [accounts]);
 
   if (isLoading) return <div className="p-2 text-xs text-slate-400">Loading videos…</div>;
+  if (isError) return <div className="p-2 text-xs text-red-400">Failed to load videos.</div>;
   if (!data?.length) return <div className="p-2 text-xs text-slate-400">No videos.</div>;
 
   return (
@@ -76,7 +77,7 @@ const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at)
 export default function PipelineRunsExpand({ pipelineId }: Props) {
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["pipeline-runs", pipelineId],
     queryFn: () => Pipelines.listRuns(pipelineId),
     refetchInterval: (query) => {
@@ -86,6 +87,7 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
   });
 
   if (isLoading) return <div className="p-3 text-xs text-slate-400">Loading runs…</div>;
+  if (isError) return <div className="p-3 text-xs text-red-400">Failed to load runs.</div>;
   if (!data?.length) return <div className="p-3 text-xs text-slate-400">No runs yet.</div>;
 
   return (

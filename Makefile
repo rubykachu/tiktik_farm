@@ -160,6 +160,19 @@ shell-webapp:  ## Shell into the webapp (Node) container
 clean: down  ## Stop containers + remove dangling images
 	docker image prune -f
 
+.PHONY: clean-db
+clean-db:  ## Delete SQLite DB file (data/tiktok.db). DB recreates on next API start. Confirm with EXTRA=yes.
+ifneq ($(EXTRA),yes)
+	@printf "$(YELLOW)This deletes all DB data. Re-run with EXTRA=yes if you mean it.$(RESET)\n"
+	@exit 1
+endif
+	@printf "$(YELLOW)Deleting data/tiktok.db and data/douyin_tmp…$(RESET)\n"
+	rm -f data/tiktok.db
+	rm -rf data/douyin_tmp
+	@printf "$(YELLOW)Restarting API to recreate DB…$(RESET)\n"
+	$(COMPOSE) restart api scheduler
+	@printf "$(GREEN)Done. DB recreated.$(RESET)\n"
+
 .PHONY: nuke
 nuke:  ## Stop everything, drop project containers + images. Keeps named volumes.
 	@printf "$(YELLOW)Removing project containers + images…$(RESET)\n"

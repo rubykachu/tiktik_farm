@@ -29,7 +29,7 @@ function accountCount(p: Pipeline): number {
 
 export default function PipelinesTable({ onEdit }: Props) {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["pipelines"],
     queryFn: Pipelines.list,
     refetchInterval: 5000,
@@ -130,7 +130,14 @@ export default function PipelinesTable({ onEdit }: Props) {
                 </td>
               </tr>
             )}
-            {!isLoading && data && data.length === 0 && (
+            {isError && (
+              <tr>
+                <td className="p-4 text-center text-red-400" colSpan={7}>
+                  Failed to load. Check API connection.
+                </td>
+              </tr>
+            )}
+            {!isLoading && !isError && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={7}>
                   No pipelines yet.

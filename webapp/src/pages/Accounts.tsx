@@ -17,13 +17,13 @@ export default function AccountsPage() {
   const [tab, setTab] = useState<"tiktok" | "douyin">("tiktok");
 
   // TikTok tab state
-  const { data, isLoading } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
+  const { data, isLoading, isError } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
 
   // Douyin tab state
-  const { data: cookies, isLoading: cookiesLoading } = useQuery({
+  const { data: cookies, isLoading: cookiesLoading, isError: cookiesError } = useQuery({
     queryKey: ["douyin-cookies"],
     queryFn: DouyinCookies.list,
   });
@@ -163,7 +163,14 @@ export default function AccountsPage() {
                     </td>
                   </tr>
                 )}
-                {!isLoading && data && data.length === 0 && (
+                {isError && (
+                  <tr>
+                    <td className="p-4 text-center text-red-400" colSpan={5}>
+                      Failed to load. Check API connection.
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && !isError && data && data.length === 0 && (
                   <tr>
                     <td className="p-6 text-center text-slate-500" colSpan={5}>
                       No accounts yet. Use "Add via browser" or "Import from disk".
@@ -229,7 +236,14 @@ export default function AccountsPage() {
                   </td>
                 </tr>
               )}
-              {!cookiesLoading && cookies && cookies.length === 0 && (
+              {cookiesError && (
+                <tr>
+                  <td className="p-4 text-center text-red-400" colSpan={3}>
+                    Failed to load. Check API connection.
+                  </td>
+                </tr>
+              )}
+              {!cookiesLoading && !cookiesError && cookies && cookies.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-slate-500" colSpan={3}>
                     No cookies yet. Click "Add Cookie" to import a Cookie-Editor JSON file.
@@ -279,8 +293,7 @@ export default function AccountsPage() {
         title={`Delete account "${deleteTarget?.username ?? ""}"?`}
         body={
           <p>
-            The account and its cookie file will be removed. Related schedules
-            will also be deleted. This action cannot be undone.
+            The account and its cookie file will be removed. This action cannot be undone.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}
