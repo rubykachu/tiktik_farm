@@ -24,10 +24,7 @@ export interface VideoFile {
 
 export const Accounts = {
   list: () => api.get<Account[]>("/accounts").then(r => r.data),
-  create: (username: string, display_name?: string) =>
-    api.post<Account>("/accounts", { username, display_name }).then(r => r.data),
   remove: (id: number) => api.delete(`/accounts/${id}`),
-  importFromDisk: () => api.post<Account[]>("/accounts/import-from-disk").then(r => r.data),
   importJson: (file: File, username: string, replace: boolean) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -47,10 +44,3 @@ export const Videos = {
   list: () => api.get<VideoFile[]>("/videos").then(r => r.data),
 };
 
-export const Login = {
-  start: (username: string) =>
-    api.post<{ session_id: string; vnc_url: string }>("/login/browser/start", { username }).then(r => r.data),
-  get: (id: string) => api.get(`/login/browser/${id}`).then(r => r.data),
-  cancel: (id: string) => api.delete(`/login/browser/${id}`),
-  eventStreamUrl: (id: string) => `/api/login/browser/${id}/events`,
-};

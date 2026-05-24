@@ -22,7 +22,6 @@ services:
       - /app/node_modules
     environment:
       - VITE_DEV_API_PROXY=http://api:8000
-      - VITE_DEV_NOVNC_PROXY=http://novnc:6080
     ports: !override
       - "127.0.0.1:3000:5173"
     command:

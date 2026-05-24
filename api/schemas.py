@@ -85,36 +85,6 @@ class VideoFileInfo(BaseModel):
     modified_at: datetime
 
 
-# ---------- login (noVNC) ----------------------------------------------------
-
-class LoginBrowserStartRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.\-]+$")
-
-
-class LoginBrowserStartResponse(BaseModel):
-    session_id: str
-    vnc_url: str
-
-
-class LoginBrowserCompleteRequest(BaseModel):
-    """Payload the noVNC control server POSTs back to the API when it detects
-    the sessionid cookie. The API is responsible for writing the pickle and
-    updating the account row — noVNC stays stateless."""
-    cookies: list[dict]
-
-
-class LoginSessionRead(BaseModel):
-    id: str
-    username: str
-    status: str
-    vnc_url: Optional[str]
-    error: Optional[str]
-    started_at: datetime
-    completed_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
-
 # ---------- shared helpers ---------------------------------------------------
 
 # Mirrors tiktok_uploader/Video.py:75 domain list as a single regex.

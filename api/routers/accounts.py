@@ -1,7 +1,5 @@
 """CRUD on TikTok accounts. An account is a logical pairing of a username and
-a pickled cookie file in CookiesDir. Creating an account here does NOT log in
-— it registers a pickle that already exists (from CLI login or a prior noVNC
-flow). Use /api/login/browser/* for the in-browser login flow.
+a pickled cookie file in CookiesDir. Accounts are added via JSON cookie import.
 """
 from __future__ import annotations
 
@@ -162,24 +160,3 @@ async def import_json_cookie(
     return acct
 
 
-@router.post("/import-from-disk", response_model=List[AccountRead])
-def import_from_disk(session: Session = Depends(get_session)):
-    """Scan CookiesDir for cookie files not yet in the DB and register them.
-    Preserves the CLI-first workflow — users who log in with `python cli.py
-    login -n foo` can click one button in the UI and see their account."""
-    imported: list[Account] = []
-    existing = {a.username for a in session.exec(select(Account)).all()}
-    for username in cookie_store.list_usernames_on_disk():
-        if username in existing:
-            continue
-        acct = Account(
-            username=username,
-            cookie_path=cookie_store.cookie_file_path(username),
-            has_valid_session=cookie_store.has_valid_session(username),
-        )
-        session.add(acct)
-        imported.append(acct)
-    session.commit()
-    for a in imported:
-        session.refresh(a)
-    return imported

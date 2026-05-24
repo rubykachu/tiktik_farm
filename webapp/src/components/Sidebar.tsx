@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Users, Calendar, History, LogIn, Settings as SettingsIcon } from "lucide-react";
+import { Users, Calendar, History, Settings as SettingsIcon } from "lucide-react";
 import clsx from "clsx";
 
 const items = [
@@ -7,7 +7,6 @@ const items = [
   { to: "/schedules", label: "Schedules", icon: Calendar },
   { to: "/histories", label: "Histories", icon: History },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
-  { to: "/login", label: "Browser login", icon: LogIn },
 ];
 
 export default function Sidebar() {

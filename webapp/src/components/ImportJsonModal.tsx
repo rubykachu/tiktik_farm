@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { useDropzone } from "react-dropzone";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Accounts } from "../api/client";
 
 type Props = {
@@ -9,42 +8,29 @@ type Props = {
   onClose: () => void;
 };
 
-const MAX_FILE_BYTES = 256 * 1024;
 const USERNAME_RE = /^[A-Za-z0-9_.]{1,32}$/;
 
 export default function ImportJsonModal({ open, onClose }: Props) {
   const qc = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
+  const [text, setText] = useState("");
   const [username, setUsername] = useState("");
   const [replace, setReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setFile(null);
+      setText("");
       setUsername("");
       setReplace(false);
       setError(null);
     }
   }, [open]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: { "application/json": [".json"] },
-    maxFiles: 1,
-    onDrop: (accepted) => {
-      const f = accepted[0];
-      if (!f) return;
-      if (f.size > MAX_FILE_BYTES) {
-        setError(`File too large (>${Math.round(MAX_FILE_BYTES / 1024)}KB).`);
-        return;
-      }
-      setError(null);
-      setFile(f);
-    },
-  });
-
   const mut = useMutation({
-    mutationFn: () => Accounts.importJson(file!, username, replace),
+    mutationFn: () => {
+      const file = new File([text], "cookie.json", { type: "application/json" });
+      return Accounts.importJson(file, username, replace);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] });
       onClose();
@@ -53,9 +39,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       const detail = e?.response?.data?.detail;
       const status = e?.response?.status;
       if (status === 409 && typeof detail === "object" && detail.code === "ACCOUNT_EXISTS") {
-        setError(
-          "Account already exists. Tick 'Replace' and import again to overwrite.",
-        );
+        setError("Account already exists. Tick 'Replace' and import again to overwrite.");
       } else if (status === 403) {
         setError("Request blocked (invalid Origin). Reload the webapp.");
       } else {
@@ -64,8 +48,18 @@ export default function ImportJsonModal({ open, onClose }: Props) {
     },
   });
 
-  const submitDisabled =
-    !file || !USERNAME_RE.test(username) || mut.isPending;
+  function handleSubmit() {
+    try {
+      JSON.parse(text);
+    } catch {
+      setError("Invalid JSON. Check your paste and try again.");
+      return;
+    }
+    setError(null);
+    mut.mutate();
+  }
+
+  const submitDisabled = !text.trim() || !USERNAME_RE.test(username) || mut.isPending;
 
   if (!open) return null;
 
@@ -82,40 +76,23 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">Import JSON Cookie</h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600"
-            aria-label="close"
-          >
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="close">
             <X size={18} />
           </button>
         </div>
 
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded p-4 text-center cursor-pointer text-sm ${
-            isDragActive
-              ? "border-brand-500 bg-brand-50"
-              : "border-slate-300 hover:border-slate-400"
-          }`}
-        >
-          <input {...getInputProps()} />
-          {file ? (
-            <span className="text-slate-700">
-              <Upload size={14} className="inline mr-1" />
-              {file.name} ({Math.round(file.size / 1024)} KB)
-            </span>
-          ) : (
-            <span className="text-slate-500">
-              Drag and drop a Cookie-Editor JSON file, or click to select.
-            </span>
-          )}
+        <div className="space-y-1">
+          <label className="text-xs uppercase tracking-wide text-slate-500">Cookie JSON</label>
+          <textarea
+            className="input min-h-[120px] font-mono text-xs"
+            value={text}
+            onChange={(e) => { setText(e.target.value); setError(null); }}
+            placeholder="Paste Cookie-Editor JSON here…"
+          />
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">
-            Username
-          </label>
+          <label className="text-xs uppercase tracking-wide text-slate-500">Username</label>
           <input
             type="text"
             className="input"
@@ -124,16 +101,12 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             placeholder="e.g. lmbk37"
           />
           <p className="text-xs text-slate-500">
-            Letters, numbers, dots, and underscores only. Up to 32 characters.
+            Letters, numbers, dots, underscores only. Up to 32 characters.
           </p>
         </div>
 
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={replace}
-            onChange={(e) => setReplace(e.target.checked)}
-          />
+          <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
           Replace if the username already exists
         </label>
 
@@ -144,15 +117,8 @@ export default function ImportJsonModal({ open, onClose }: Props) {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button className="btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn-primary"
-            disabled={submitDisabled}
-            onClick={() => mut.mutate()}
-          >
-            <Upload size={14} />
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" disabled={submitDisabled} onClick={handleSubmit}>
             {mut.isPending ? "Importing…" : "Import"}
           </button>
         </div>

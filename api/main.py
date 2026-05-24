@@ -19,7 +19,6 @@ from api.routers import (
     accounts,
     douyin_cookies,
     llm_models,
-    login,
     pipelines,
     settings,
     telegram,
@@ -75,7 +74,6 @@ def create_app() -> FastAPI:
 
     app.include_router(accounts.router)
     app.include_router(videos.router)
-    app.include_router(login.router)
     app.include_router(pipelines.router)
     app.include_router(telegram.router)
     app.include_router(settings.router)

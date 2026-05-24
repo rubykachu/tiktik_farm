@@ -168,19 +168,3 @@ class AppSetting(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=64)
     value: str
     updated_at: datetime = Field(default_factory=now_utc)
-
-
-# ---------- noVNC login sessions --------------------------------------------
-
-class LoginSession(SQLModel, table=True):
-    __tablename__ = "login_sessions"
-
-    id: str = Field(primary_key=True, max_length=64)  # uuid
-    username: str = Field(index=True, max_length=128)
-    # pending → active → completed|failed|expired
-    status: str = Field(default="pending", max_length=16)
-    vnc_url: Optional[str] = Field(default=None)
-    error: Optional[str] = Field(default=None)
-
-    started_at: datetime = Field(default_factory=now_utc)
-    completed_at: Optional[datetime] = Field(default=None)
