@@ -19,6 +19,8 @@ import yaml
 
 log = logging.getLogger(__name__)
 
+_SUBPROCESS_TIMEOUT = 3600  # 1 hour — long videos (5K compilations) can take 20-30 min
+
 _VENDOR_RUN = os.path.join(
     os.path.dirname(__file__), "..", "..", "vendor", "douyin-downloader", "run.py"
 )
@@ -153,10 +155,10 @@ def download_creator_posts(
                 [sys.executable, vendor_run, "-c", config_path],
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
-            raise DouyinDownloadError("douyin-downloader timed out after 600 s")
+            raise DouyinDownloadError(f"douyin-downloader timed out after {_SUBPROCESS_TIMEOUT} s")
         if result.returncode != 0:
             log.warning("douyin-downloader exited %d: %s", result.returncode, result.stderr[:500])
     finally:
