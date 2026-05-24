@@ -65,6 +65,8 @@ def _build_config(
         "avatar": False,
         "json": True,
         "folderstyle": False,
+        "author_dir": "sec_uid",
+        "filename_template": "{date}_{id}",
         "browser_fallback": {"enabled": False},
         "progress": {"quiet_logs": False},
         "cookies": {
