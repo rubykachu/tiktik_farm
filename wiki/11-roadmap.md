@@ -2,22 +2,19 @@
 
 [← Index](README.md) | [← 10-known-bugs](10-known-bugs.md)
 
-## Hiện trạng (sau Phase 1 implementation)
+## Hiện trạng (sau Phase 4 implementation)
 
-✅ Core upload pipeline (local file + YouTube URL single)
-✅ Schedule **Single-shot** (YouTube only, `ScheduledUpload`)
 ✅ **Channel pipeline** lặp: YouTube → TikTok, dedupe, `VideoUpload` history, drill-down API/UI
-✅ Caption template (`{title}`, `{title_hashtag}`, `{now}`), Telegram tùy chọn (summary theo tick)
-✅ Trang `/schedules` hai tab; `/videos` = DB `VideoUpload` (chủ yếu pipeline)
-✅ Import JSON Cookie (`/api/accounts/import-json`), modal confirm delete nhiều chỗ
-✅ Worker hai pass + CAS lock/heartbeat/orphan reaper
-✅ noVNC browser login
+✅ **Channel pipeline** lặp: Douyin → TikTok, DouyinCookie, douyin-downloader subprocess
+✅ Caption template (`{title}`, `{title_hashtag}`, `{now}`, `{ai_title}`), Telegram tùy chọn (summary theo tick)
+✅ Trang `/schedules` (Pipelines); `/videos` = DB `VideoUpload` (từ pipeline)
+✅ Import JSON Cookie (paste hoặc upload, `/api/accounts/import-json`), modal confirm delete
+✅ Worker CAS lock/heartbeat/orphan reaper → `pipeline_tick()`
 ✅ Multi-account local single-user
 ✅ Docker stack production-ready (smoke test pass)
 ✅ 4 bug upstream đã fix
 ✅ Security baseline tối thiểu: Origin check mutating, validation URL/caption/Telegram, log scrub token
-
-**Còn gap so với “full upload history”**: `VideoUpload` **không** ghi cho upload thủ công / single-shot — chỉ pipeline. Phase 2 có thể mở rộng bảng hoặc ghi thêm nguồn.
+✅ LLM caption rewrite (litellm, Gemini/OpenAI/Grok/Azure)
 
 ## Phase 2 — Port nghiệp vụ v1
 
@@ -64,15 +61,6 @@ Scheduler picks:
 - `/pipelines` page — hiển thị từng account + nút "Run now" + lịch sử pipeline run
 - `/config/{username}` page — override defaults (sliders cho filter, input cho date_filter, channel URL)
 
-## Phase 2a — Mở rộng lịch sử upload (đã có một phần)
-
-Phase 1 đã có bảng **`VideoUpload`** cho pipeline. Phase 2a còn lại:
-
-- Ghi lịch sử cho **manual upload** và/hoặc **ScheduledUpload** (cùng schema hoặc bảng liên quan).
-- Thống nhất hiển thị `/videos` cho mọi nguồn.
-
-Sơ đồ cũ `upload_history` có thể gộp concept với `VideoUpload` thay vì tạo bảng trùng.
-
 ## Phase 2b — Playlist support
 
 Hiện tại YouTube URL chỉ 1 video. Phase 2b:
@@ -87,7 +75,7 @@ POST /api/uploads/youtube-playlist
   "stagger_minutes": 30
 }
 → yt-dlp --flat-playlist extract video list
-→ for each video, INSERT ScheduledUpload với scheduled_for = now + (i * stagger_minutes)
+→ for each video, enqueue pipeline tick với scheduled_for = now + (i * stagger_minutes)
 → return [job_ids]
 ```
 
@@ -106,7 +94,7 @@ CREATE TABLE tenant (
 );
 
 ALTER TABLE accounts ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
-ALTER TABLE scheduled_uploads ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
+ALTER TABLE channel_pipelines ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
 ALTER TABLE video_uploads ADD COLUMN tenant_id INTEGER REFERENCES tenant(id);
 ```
 
@@ -139,22 +127,12 @@ Cung cấp:
 - Tự host proxy (Squid + residential IP sub) — phức tạp
 - Mua từ Bright Data / Smartproxy / Oxylabs
 
-### noVNC concurrency
-
-Hiện tại single-slot serial. SaaS cần nhiều người login đồng thời:
-
-- **Option A**: Multiple Xvfb display per container — phức tạp lock display
-- **Option B**: Dedicated worker pod per login session — Kubernetes job
-- **Option C**: Queue + estimated wait time — UX kém nhưng đơn giản
-
-Đề xuất bắt đầu C, scale dần B khi tải tăng.
-
 ### Rate limit
 
 Per-tenant:
 - Max N upload/giờ (TikTok khuyến nghị ≤5/account/giờ)
 - Max M account per plan
-- Max K schedule pending per plan
+- Max K pipeline active per plan
 
 Implement qua middleware FastAPI + Redis counter.
 
@@ -170,7 +148,6 @@ Khi traffic vượt single-server:
 
 - SQLite → PostgreSQL (hiện SQLite WAL đủ ~100 concurrent users)
 - Stateless API + scheduler (đã sẵn, chỉ cần DB external)
-- noVNC → K8s job dynamic spawn
 - Object storage cho video (S3-compat) thay file local
 - CDN cho webapp bundle
 
@@ -185,14 +162,12 @@ Khi traffic vượt single-server:
 
 | Phase | Estimate | Mục tiêu |
 |---|---|---|
-| 2a — Upload history | 1 week | UI `/history`, wire tiktok_post_id |
 | 2 — Pipeline nghiệp vụ | 2-3 weeks | Port v1 downloader/filter, UI `/pipelines` |
 | 2b — Playlist | 3 days | Endpoint + UI tab |
 | 3 — Multi-tenant schema + auth | 2 weeks | DB migrate, JWT, basic isolation |
 | 3 — Proxy pool | 1 week | Schema + per-account assign |
 | 3 — Billing | 1 week | Stripe webhook + UI plan management |
 | 4 — Postgres migrate | 3 days | Pin sqlalchemy URL, test |
-| 4 — K8s noVNC | 2 weeks | Convert compose → manifest |
 
 Tổng ~3 tháng cho MVP SaaS từ phase 1 hiện tại.
 

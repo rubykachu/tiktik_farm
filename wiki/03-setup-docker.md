@@ -24,7 +24,7 @@ Chạy trong thư mục `v2/`. Gõ `make` hoặc `make help` để xem đầy đ
 | `make down` | Stop + xóa container (giữ volume + image). |
 | `make restart` | Chỉ kick lại `api` + `scheduler` (không rebuild — **không** lấy code bake trong image mới). |
 | `make recreate` | Tạo lại container từ image **hiện có** (vẫn không build). |
-| `make rebuild-base` | `requirements.txt` hoặc `tiktok_uploader/` đổi — rebuild base + api/scheduler/novnc. |
+| `make rebuild-base` | `requirements.txt` hoặc `tiktok_uploader/` đổi — rebuild base + api/scheduler. |
 | `make rebuild` | Full `build --no-cache` (chậm nhất). |
 | `make deploy-prod` | Giống `deploy` nhưng **không** merge `docker-compose.override.yml` (nginx static, không Vite). |
 | `make logs` / `make logs-api` | Tail log. |
@@ -48,12 +48,11 @@ docker compose build
 # hoặc: make deploy   # khuyên dùng — gồm cả recreate
 ```
 
-Build mất ~10-15 phút trên VPS 2-core, ~5 phút trên M4. 5 images sinh ra:
+Build mất ~10-15 phút trên VPS 2-core, ~5 phút trên M4. 4 images sinh ra:
 
 - `tiktok-base:latest`
 - `tiktok-api:latest`
 - `tiktok-scheduler:latest`
-- `tiktok-novnc:latest`
 - `tiktok-webapp:latest`
 
 ## Up / Down
@@ -79,7 +78,6 @@ Sau khi up:
 | http://127.0.0.1:8000/docs | Swagger UI (FastAPI auto-doc) |
 | http://127.0.0.1:8000/openapi.json | Schema raw |
 
-`6080` + `7900` của noVNC chỉ tồn tại trong compose network — webapp nginx proxy ra `/novnc/`.
 
 ## Workflow update code
 
@@ -126,8 +124,8 @@ Chỉ data (cookie, video) trong `./data/` — không cần rebuild: `docker com
 ./.venv/bin/python scripts/migrate-json-cookie-editor.py \
     <src_dir> ./data/CookiesDir
 
-# 2. Import file mới vào DB qua UI hoặc curl
-curl -X POST http://127.0.0.1:8000/api/accounts/import-from-disk
+# 2. Import cookie vào DB qua UI /accounts → "Add Cookie TikTok"
+#    (paste JSON hoặc upload file)
 
 # 3. (Optional) thả video local sẵn vào dir cho CLI dùng
 cp my_video.mp4 ./data/VideosDirPath/

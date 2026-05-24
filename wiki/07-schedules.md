@@ -1,63 +1,16 @@
-# 07 — Lịch đăng: Single-shot & Pipeline (Phase 1)
+# 07 — Lịch & Pipeline (Phase 1+4)
 
 [← Index](README.md) | [← 06-upload](06-upload.md)
 
-Trang **`/schedules`** có **hai tab**:
+Trang **`/schedules`** hiển thị bảng **Pipelines**.
 
-| Tab | Entity DB | Mục đích |
-|-----|-----------|----------|
-| **Single-shot** | `ScheduledUpload` | Một job YouTube URL, một thời điểm cụ thể trong tương lai (như trước Phase 1). |
-| **Pipelines** | `ChannelPipeline` + `PipelineRun` + `VideoUpload` | Lặp theo khoảng thời gian: quét top-N video mới từ URL kênh/playlist YouTube, dedupe, upload lên một hoặc nhiều TikTok account **tuần tự**. |
-
-Scheduler (`scheduler/worker.py`) mỗi vòng **30 giây**:
-
-1. **Pass 1** — `reclaim_stale` → `claim_next_due` → `run_one` → `finalize` cho `ScheduledUpload` (không đổi).
-2. **Pass 2** — nếu pass 1 không có việc: `pipeline_tick()` (`scheduler/pipeline_worker.py`).
+Scheduler (`scheduler/worker.py`) mỗi vòng **30 giây** gọi `pipeline_tick()` (`scheduler/pipeline_worker.py`).
 
 ---
 
-## Tab Single-shot
+## Pipeline — khái niệm `ChannelPipeline`
 
-### Tính năng
-
-Lên lịch upload **một YouTube URL** vào **một** thời điểm tương lai.
-
-### Giới hạn
-
-- **Chỉ YouTube URL**. Local file không schedule được vì file drag&drop không persist.
-- TikTok: thời gian trong khoảng **15 phút → 10 ngày** từ now (`900s ≤ schedule ≤ 864000s`).
-- Visibility `private` (=1) **không** schedule được.
-
-### UI
-
-Tab **Single-shot**: bảng lịch như cũ; xóa lịch có **modal xác nhận**.
-
-### API (ví dụ)
-
-Mọi request **đổi dữ liệu** từ `curl` cần header `Origin: http://127.0.0.1:3000` (middleware Phase 1).
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/schedules \
-  -H "Origin: http://127.0.0.1:3000" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
-```
-
-Lifecycle, huỷ, retry: giữ nguyên như tài liệu cũ (`pending` → `running` → `succeeded` / `failed`).
-
-### DB (`scheduled_uploads`)
-
-| Field | Ghi chú |
-|-------|---------|
-| `scheduled_for` | UTC, index |
-| `heartbeat_at` | Heartbeat thread 30s khi `running` |
-| `attempts` | Tối đa 3 lần claim |
-
----
-
-## Tab Pipelines — khái niệm `ChannelPipeline`
-
-**Pipeline** = cấu hình tự động: **URL kênh** → downloader lấy **fetch_count** video mới nhất mỗi “tick” → upload lên **tất cả** `account_ids` đã chọn (lần lượt).
+**Pipeline** = cấu hình tự động: **URL kênh** → downloader lấy **fetch_count** video mới nhất mỗi "tick" → upload lên **tất cả** `account_ids` đã chọn (lần lượt).
 
 Pipeline hỗ trợ 2 nguồn qua trường `source_type`:
 
@@ -78,7 +31,7 @@ Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
 ### Lặp lại & thời điểm bắn
 
 - `first_fire_at` / `next_fire_at` (UTC). Khi **scheduled** tick xong, advance:  
-  `next_fire_at = max(prev_next + interval, now + interval)` — tránh “bão tick” sau downtime dài.
+  `next_fire_at = max(prev_next + interval, now + interval)` — tránh "bão tick" sau downtime dài.
 - **Run now** (`POST .../run-now`): **không** lùi/tiến `next_fire_at`; chỉ xử lý cờ `run_now_requested_at`.
 - **Pause**: `state=paused` — worker **không** claim. **Resume**: `state=active`, `next_fire_at=now`. Resume **không** bypass `lock_until`.
 
@@ -126,7 +79,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 - Worker chỉ gọi `sendMessage` với `chat_id` + text — **không** hỗ trợ `message_thread_id` (forum topic); thông báo pipeline không nhắm vào topic con trong nhóm forum.
 - Cần **cả** `telegram_bot_token` + `telegram_chat_id` hoặc **cả hai trống** (validate ở API).
 - Token **không** xuất hiện trong GET list/detail — chỉ `telegram_bot_token_set: bool`. PATCH: token rỗng/không gửi → giữ cũ; xóa token: `clear_bot_token: true`.
-- Sau **mỗi** tick (kể cả 0 video), gửi **một** tin nhắn plaintext (không `parse_mode`) tóm tắt số liệu: tên pipeline, giờ bắt đầu (HH:mm VN), Pulled / Uploaded / Skipped / Failed, và dòng Error nếu `PipelineRun.error_text`. Chi tiết từng URL nằm trong **`summary_text`** trên DB / UI drill-down, không nhất thiết lặp đủ trong Telegram (triển khai hiện tại ưu tiên gọn).
+- Sau **mỗi** tick (kể cả 0 video), gửi **một** tin nhắn plaintext (không `parse_mode`) tóm tắt số liệu: tên pipeline, giờ bắt đầu (HH:mm VN), Pulled / Uploaded / Skipped / Failed, và dòng Error nếu `PipelineRun.error_text`.
 - Gửi lỗi Telegram **không** làm fail tick.
 
 ---
@@ -150,34 +103,29 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 
 ## UI Pipelines
 
-- **+ New pipeline** / **Edit** modal: Basic, Trigger (interval + datetime bắt đầu), Content (`fetch_count`, **Nghỉ giữa upload** (`upload_delay_minutes`), `max_duration_seconds`), Caption, Advanced (collapsible), Accounts (multi-select session hợp lệ), Telegram.
+- **+ New pipeline** / **Edit** modal: Basic, Trigger (interval + thời gian bắt đầu — chỉ hiện time picker khi interval unit là `days`), Content (`fetch_count`, **Nghỉ giữa upload** (`upload_delay_minutes`), `max_duration_seconds`), Caption, Advanced (collapsible), Accounts (multi-select session hợp lệ), Telegram.
 - Bảng: Run now, Stop/Resume, Edit, Delete (modal).
 - **Drill-down**: mở hàng pipeline → lazy load `runs`; mở hàng run → video con. Poll ~5s khi có run chưa `finished_at`.
 
 ---
 
-## Scheduler internals (cập nhật)
+## Scheduler internals
 
 `scheduler/worker.py`:
 
 ```python
 def tick() -> bool:
-    # Pass 1 — single-shot
-    with Session(engine) as s:
-        reclaim_stale(s)
-        claimed = claim_next_due(s)
-    if claimed:
-        hb = Heartbeat(claimed.id)
-        hb.start()
-        try:
-            ok, msg = run_one(claimed)
-        finally:
-            hb.stop()
-        finalize(claimed.id, ok, msg)
-        return True
-
-    # Pass 2 — pipeline
     return pipeline_tick()
+
+def loop(poll_interval: float = 30.0) -> None:
+    reap_orphans()
+    while True:
+        try:
+            busy = tick()
+        except Exception:
+            busy = False
+        if not busy:
+            time.sleep(poll_interval)
 ```
 
 `loop` gọi `reap_orphans()` **một lần** khi khởi động, sau đó `tick()` + `sleep(30)` khi idle.
