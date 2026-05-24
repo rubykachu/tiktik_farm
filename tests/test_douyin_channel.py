@@ -21,16 +21,22 @@ COOKIE_DICT = {
 }
 
 
-def _write_aweme_files(output_dir: str, aweme_id: str, duration_ms: int, with_mp4: bool = True):
-    """Write fake _data.json (and optionally .mp4) for an aweme in output_dir."""
+def _write_aweme_files(output_dir: str, aweme_id: str, duration_ms: int, with_mp4: bool = True,
+                       subdir: str | None = None):
+    """Write fake _data.json (and optionally .mp4) for an aweme.
+
+    subdir: if given, write into output_dir/subdir/ (mimics vendor's creator folder layout).
+    """
+    target = Path(output_dir, subdir) if subdir else Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
     data = {
         "aweme_id": aweme_id,
         "desc": f"title of {aweme_id}",
         "video": {"duration": duration_ms},
     }
-    Path(output_dir, f"{aweme_id}_data.json").write_text(json.dumps(data))
+    (target / f"{aweme_id}_data.json").write_text(json.dumps(data))
     if with_mp4:
-        Path(output_dir, f"{aweme_id}.mp4").write_bytes(b"fake_mp4")
+        (target / f"{aweme_id}.mp4").write_bytes(b"fake_mp4")
 
 
 class TestDownloadCreatorPosts:
@@ -123,6 +129,29 @@ class TestDownloadCreatorPosts:
 
         assert len(written_configs) == 1
         assert not os.path.exists(written_configs[0])
+
+
+    def test_vendor_subdirectory_layout(self, tmp_path):
+        """Vendor writes to {output_dir}/{creator}/post/ — must still be found."""
+        from api.services.douyin_channel import download_creator_posts, DownloadedVideo
+
+        def fake_run(*args, **kwargs):
+            _write_aweme_files(str(tmp_path), "7634909977655774474", 100_000,
+                               subdir="煎饼果仔/post")
+            return MagicMock(returncode=0)
+
+        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+            result = download_creator_posts(
+                creator_url="https://www.douyin.com/user/MS4wLjAB",
+                fetch_count=3,
+                cookie_dict=COOKIE_DICT,
+                output_dir=str(tmp_path),
+                db_path=str(tmp_path / "douyin_dl.db"),
+            )
+
+        assert len(result) == 1
+        assert result[0].aweme_id == "7634909977655774474"
+        assert result[0].duration_seconds == 100
 
 
 class TestCleanupAwemeFiles:

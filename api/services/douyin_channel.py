@@ -76,21 +76,28 @@ def _build_config(
 
 
 def _scan_output_dir(output_dir: str) -> list[DownloadedVideo]:
-    """Scan output_dir for *_data.json files and return DownloadedVideo for each
-    that has a matching .mp4 file."""
+    """Scan output_dir (recursively) for *_data.json files and return DownloadedVideo
+    for each that has a matching .mp4 file.
+
+    Vendor writes to {output_dir}/{creator_name}/post/ subdirectories, so recursive
+    glob is required. aweme_id is read from JSON content, not the filename.
+    """
     videos = []
-    for data_path in glob.glob(os.path.join(output_dir, "*_data.json")):
-        filename = os.path.basename(data_path)
-        aweme_id = filename[: -len("_data.json")]
-        mp4_path = os.path.join(output_dir, f"{aweme_id}.mp4")
+    for data_path in glob.glob(os.path.join(output_dir, "**", "*_data.json"), recursive=True):
+        mp4_path = data_path[: -len("_data.json")] + ".mp4"
         if not os.path.exists(mp4_path):
-            log.debug("Skipping %s — no .mp4 found (image-note?)", aweme_id)
+            log.debug("Skipping %s — no .mp4 found (image-note?)", data_path)
             continue
         try:
             with open(data_path) as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
             log.warning("Cannot read %s: %s", data_path, e)
+            continue
+
+        aweme_id = str(data.get("aweme_id", ""))
+        if not aweme_id:
+            log.warning("No aweme_id in %s, skipping", data_path)
             continue
 
         duration_ms = data.get("video", {}).get("duration") or 0
@@ -108,8 +115,10 @@ def _scan_output_dir(output_dir: str) -> list[DownloadedVideo]:
 
 
 def cleanup_aweme_files(output_dir: str, aweme_id: str) -> None:
-    """Delete all files belonging to an aweme (mp4, jpg, json, mp3)."""
-    for path in glob.glob(os.path.join(output_dir, f"{aweme_id}*")):
+    """Delete files belonging to an aweme. Uses recursive glob since vendor
+    writes to subdirectories. The whole output_dir is removed after the run
+    anyway — this is just early per-video cleanup to free disk during long runs."""
+    for path in glob.glob(os.path.join(output_dir, "**", f"*{aweme_id}*"), recursive=True):
         try:
             os.unlink(path)
         except OSError as e:
