@@ -137,6 +137,7 @@ class PipelineRun(SQLModel, table=True):
     failed_count: int = Field(default=0)
     summary_text: str = Field(default="")
     error_text: Optional[str] = Field(default=None)
+    status_text: Optional[str] = Field(default=None)
 
 
 class VideoUpload(SQLModel, table=True):

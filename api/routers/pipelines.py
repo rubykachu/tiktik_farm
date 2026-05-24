@@ -377,6 +377,7 @@ def list_runs(
             "failed_count": r.failed_count,
             "summary_text": r.summary_text,
             "error_text": r.error_text,
+            "status_text": r.status_text,
         }
         for r in rows
     ]

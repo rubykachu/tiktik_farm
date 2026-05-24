@@ -358,6 +358,7 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
     output_dir = tempfile.mkdtemp(prefix=f"{pipeline.id}_", dir=base_tmp)
     db_path = os.path.join(output_dir, "douyin_dl.db")
 
+    _update_run_status(run_id, f"Downloading (up to {pipeline.fetch_count} videos)…")
     try:
         videos = douyin_channel.download_creator_posts(
             creator_url=pipeline.channel_url,
@@ -391,7 +392,9 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
         )
         ai_title_by_aweme: dict[str, str] = {}
 
-        for video in videos:
+        _update_run_status(run_id, f"Downloaded {pulled_count} videos, uploading…")
+
+        for vi, video in enumerate(videos):
             aweme_id = video.aweme_id
 
             for account_id in account_ids:
@@ -418,6 +421,7 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                     if aweme_id in ai_title_by_aweme:
                         ai_title = ai_title_by_aweme[aweme_id]
                     else:
+                        _update_run_status(run_id, f"Analyzing with LLM ({vi + 1}/{pulled_count})…")
                         rewritten = _rewrite_with_llm(
                             pipeline.caption_ai_prompt or "",
                             video.title,
@@ -427,6 +431,10 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                             ai_title_by_aweme[aweme_id] = rewritten
                             ai_title = rewritten
 
+                _update_run_status(
+                    run_id,
+                    f"Uploading video {vi + 1}/{pulled_count} → @{username}…",
+                )
                 caption = render_caption(
                     pipeline.caption_template,
                     title=video.title,
@@ -532,6 +540,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         return _get_run(run_id)
 
     # List top-N videos
+    _update_run_status(run_id, f"Fetching video list (up to {pipeline.fetch_count})…")
     try:
         videos = youtube_channel.list_top_n(pipeline.channel_url, pipeline.fetch_count)
     except Exception as e:
@@ -627,6 +636,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     if video_id in ai_title_by_video:
                         ai_title = ai_title_by_video[video_id]
                     else:
+                        _update_run_status(run_id, f"Analyzing with LLM ({vi + 1}/{pulled_count})…")
                         rewritten = _rewrite_with_llm(
                             pipeline.caption_ai_prompt or "",
                             video_title,
@@ -638,6 +648,10 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                             ai_title_by_video[video_id] = rewritten
                             ai_title = rewritten
 
+                _update_run_status(
+                    run_id,
+                    f"Uploading video {vi + 1}/{pulled_count} → @{username}…",
+                )
                 # Render caption
                 caption = render_caption(
                     pipeline.caption_template,
@@ -774,12 +788,23 @@ def _record_upload(
         s.commit()
 
 
+def _update_run_status(run_id: int, status_text: str) -> None:
+    with Session(_api_db.engine) as s:
+        run = s.get(PipelineRun, run_id)
+        if not run:
+            return
+        run.status_text = status_text
+        s.add(run)
+        s.commit()
+
+
 def _finalize_run(run_id: int, **kwargs) -> None:
     with Session(_api_db.engine) as s:
         run = s.get(PipelineRun, run_id)
         if not run:
             return
         run.finished_at = now_utc()
+        run.status_text = None
         for k, v in kwargs.items():
             setattr(run, k, v)
         s.add(run)

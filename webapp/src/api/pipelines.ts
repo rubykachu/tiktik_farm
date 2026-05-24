@@ -82,6 +82,7 @@ export interface PipelineRunItem {
   failed_count: number;
   summary_text: string;
   error_text: string | null;
+  status_text: string | null;
 }
 
 export interface VideoUploadItem {

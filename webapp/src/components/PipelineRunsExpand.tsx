@@ -130,6 +130,8 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
                     ) : (
                       <span className="chip bg-emerald-100 text-emerald-700 text-[10px]">done</span>
                     )
+                  ) : r.status_text ? (
+                    <span className="text-[10px] text-blue-700 italic">{r.status_text}</span>
                   ) : (
                     <span className="chip bg-blue-100 text-blue-700 text-[10px]">running</span>
                   )}

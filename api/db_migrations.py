@@ -65,6 +65,17 @@ def apply_schema_patches(engine: Engine) -> None:
                     "ALTER TABLE channel_pipelines ADD COLUMN douyin_cookie_id INTEGER"
                 )
 
+        has_pipeline_runs = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"
+        ).fetchone()
+        if has_pipeline_runs:
+            pr_rows = conn.exec_driver_sql("PRAGMA table_info(pipeline_runs)").fetchall()
+            pr_cols = {row[1] for row in pr_rows}
+            if "status_text" not in pr_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE pipeline_runs ADD COLUMN status_text TEXT"
+                )
+
         # video_uploads: douyin_aweme_id for Phase 4
         has_video_uploads = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='video_uploads'"
