@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import Sidebar from "./components/Sidebar";
 import AccountsPage from "./pages/Accounts";
-import UploadPage from "./pages/Upload";
 import SchedulesPage from "./pages/Schedules";
 import LoginPage from "./pages/Login";
 import HistoriesPage from "./pages/Histories";
@@ -17,7 +16,6 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/accounts" replace />} />
           <Route path="/accounts" element={<AccountsPage />} />
-          <Route path="/upload" element={<UploadPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login/:sessionId" element={<LoginPage />} />

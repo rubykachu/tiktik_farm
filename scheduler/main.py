@@ -1,9 +1,8 @@
 """Scheduler service entrypoint.
 
 Runs inside its own container (see scheduler/Dockerfile). Reads the same
-SQLite DB as the API, picks up due ScheduledUpload rows, and executes uploads
-through the shared tiktok_uploader package. Serial by design
-(SCHEDULER_CONCURRENCY=1 in env).
+SQLite DB as the API, polls for due ChannelPipeline rows, and delegates
+execution to pipeline_worker. Serial by design (SCHEDULER_CONCURRENCY=1 in env).
 """
 from __future__ import annotations
 

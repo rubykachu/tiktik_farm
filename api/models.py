@@ -26,38 +26,6 @@ class Account(SQLModel, table=True):
     last_used_at: Optional[datetime] = Field(default=None)
 
 
-# ---------- scheduled uploads -----------------------------------------------
-
-class ScheduledUpload(SQLModel, table=True):
-    __tablename__ = "scheduled_uploads"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    account_id: int = Field(foreign_key="accounts.id", index=True)
-
-    # 'local' = source_ref is an absolute file path on the shared volume.
-    # 'youtube' = source_ref is a YouTube URL that the worker will resolve
-    # via yt-dlp at run time.
-    source_type: str = Field(max_length=16)
-    source_ref: str
-    title: str = Field(max_length=2200)
-
-    # Mirror of CLI upload flags so the worker can call upload_video with the
-    # same signature. Stored as a JSON string for schema simplicity.
-    options_json: str = Field(default="{}")
-
-    scheduled_for: datetime = Field(index=True)
-
-    # pending → running → succeeded|failed|cancelled
-    status: str = Field(default="pending", index=True, max_length=16)
-
-    result_text: Optional[str] = Field(default=None)
-    attempts: int = Field(default=0)
-    heartbeat_at: Optional[datetime] = Field(default=None)
-
-    created_at: datetime = Field(default_factory=now_utc)
-    updated_at: datetime = Field(default_factory=now_utc)
-
-
 # ---------- channel pipelines (Phase 1) -------------------------------------
 
 class DouyinCookie(SQLModel, table=True):
@@ -76,11 +44,10 @@ class DouyinCookie(SQLModel, table=True):
 
 
 class ChannelPipeline(SQLModel, table=True):
-    """Recurring YouTube-channel → TikTok auto-upload pipeline.
+    """Recurring channel → TikTok auto-upload pipeline.
 
-    Coexists with ScheduledUpload (single-shot). Worker pass 2 polls this
-    table for active rows whose next_fire_at is due.
-    Phase 4: source_type="douyin" pipelines processed in pass 3.
+    Worker polls this table for active rows whose next_fire_at is due.
+    source_type is 'youtube' or 'douyin'.
     """
     __tablename__ = "channel_pipelines"
 

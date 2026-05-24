@@ -21,10 +21,8 @@ from api.routers import (
     llm_models,
     login,
     pipelines,
-    schedules,
     settings,
     telegram,
-    uploads,
     videos,
 )
 from tiktok_uploader.Config import Config
@@ -42,11 +40,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="TiktokAutoUploader API",
         version="1.0.0",
-        description=(
-            "REST API for managing TikTok accounts, uploading videos "
-            "(local file or YouTube URL), and scheduling uploads. "
-            "Backs the React web UI; the legacy CLI also remains supported."
-        ),
+        description="REST API for managing TikTok accounts and recurring channel pipelines.",
     )
 
     # Local-first tool — webapp and api are on the same compose network and
@@ -81,8 +75,6 @@ def create_app() -> FastAPI:
 
     app.include_router(accounts.router)
     app.include_router(videos.router)
-    app.include_router(uploads.router)
-    app.include_router(schedules.router)
     app.include_router(login.router)
     app.include_router(pipelines.router)
     app.include_router(telegram.router)

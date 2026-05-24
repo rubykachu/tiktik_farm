@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Literal, Optional
 from urllib.parse import urlparse
 
@@ -75,97 +75,6 @@ class AccountCreate(BaseModel):
 
 class AccountUpdate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=128)
-
-
-# ---------- uploads (immediate) ---------------------------------------------
-
-class UploadOptions(BaseModel):
-    """Mirrors CLI upload flags. All optional with sensible defaults."""
-    allow_comment: Literal[0, 1] = 1
-    allow_duet: Literal[0, 1] = 0
-    allow_stitch: Literal[0, 1] = 0
-    visibility_type: Literal[0, 1] = 0  # 0=public, 1=private
-    brand_organic_type: Literal[0, 1] = 0
-    branded_content_type: Literal[0, 1] = 0
-    ai_label: Literal[0, 1] = 0
-    proxy: str = ""
-
-
-class UploadYouTubeRequest(BaseModel):
-    username: str
-    title: str = Field(min_length=1, max_length=2200)
-    youtube_url: str
-    options: UploadOptions = Field(default_factory=UploadOptions)
-
-    @field_validator("youtube_url")
-    @classmethod
-    def _youtube(cls, v: str) -> str:
-        if not is_youtube_url(v):
-            raise ValueError("youtube_url must be a valid YouTube URL")
-        return v
-
-
-class UploadResponse(BaseModel):
-    ok: bool
-    message: str
-
-
-# ---------- schedules --------------------------------------------------------
-
-class ScheduledUploadCreate(BaseModel):
-    username: str
-    title: str = Field(min_length=1, max_length=2200)
-    source_type: Literal["local", "youtube"]
-    source_ref: str  # absolute path (local) or YouTube URL
-    scheduled_for: datetime  # ISO-8601; must have tzinfo
-    options: UploadOptions = Field(default_factory=UploadOptions)
-
-    @model_validator(mode="after")
-    def _validate(self) -> "ScheduledUploadCreate":
-        # Normalize to UTC
-        if self.scheduled_for.tzinfo is None:
-            raise ValueError("scheduled_for must include timezone info")
-        if self.scheduled_for <= datetime.now(timezone.utc):
-            raise ValueError("scheduled_for must be in the future")
-        if self.source_type == "youtube" and not is_youtube_url(self.source_ref):
-            raise ValueError("source_ref must be a valid YouTube URL when source_type='youtube'")
-        if self.options.visibility_type == 1:
-            # Mirrors tiktok.py:77 — TikTok rejects scheduled private posts
-            raise ValueError("private videos (visibility_type=1) cannot be scheduled")
-        return self
-
-
-class ScheduledUploadUpdate(BaseModel):
-    scheduled_for: Optional[datetime] = None
-    title: Optional[str] = Field(default=None, max_length=2200)
-    status: Optional[Literal["pending", "cancelled"]] = None  # only safe transitions
-
-    @model_validator(mode="after")
-    def _validate(self) -> "ScheduledUploadUpdate":
-        if self.scheduled_for is not None:
-            if self.scheduled_for.tzinfo is None:
-                raise ValueError("scheduled_for must include timezone info")
-            if self.scheduled_for <= datetime.now(timezone.utc):
-                raise ValueError("scheduled_for must be in the future")
-        return self
-
-
-class ScheduledUploadRead(BaseModel):
-    id: int
-    account_id: int
-    source_type: str
-    source_ref: str
-    title: str
-    options_json: str
-    scheduled_for: datetime
-    status: str
-    result_text: Optional[str]
-    attempts: int
-    heartbeat_at: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 # ---------- videos / browse --------------------------------------------------

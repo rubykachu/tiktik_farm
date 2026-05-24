@@ -16,22 +16,6 @@ export interface Account {
   last_used_at: string | null;
 }
 
-export interface Schedule {
-  id: number;
-  account_id: number;
-  source_type: "local" | "youtube";
-  source_ref: string;
-  title: string;
-  options_json: string;
-  scheduled_for: string;
-  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
-  result_text: string | null;
-  attempts: number;
-  heartbeat_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface VideoFile {
   name: string;
   size_bytes: number;
@@ -59,27 +43,8 @@ export const Accounts = {
     api.patch<Account>(`/accounts/${id}`, { display_name }).then(r => r.data),
 };
 
-export const Schedules = {
-  list: () => api.get<Schedule[]>("/schedules").then(r => r.data),
-  create: (payload: unknown) => api.post<Schedule>("/schedules", payload).then(r => r.data),
-  cancel: (id: number) =>
-    api.patch<Schedule>(`/schedules/${id}`, { status: "cancelled" }).then(r => r.data),
-  remove: (id: number) => api.delete(`/schedules/${id}`),
-  retry: (id: number) =>
-    api.patch<Schedule>(`/schedules/${id}`, { status: "pending" }).then(r => r.data),
-};
-
 export const Videos = {
   list: () => api.get<VideoFile[]>("/videos").then(r => r.data),
-};
-
-export const Uploads = {
-  file: (fd: FormData) =>
-    api.post<{ ok: boolean; message: string }>("/uploads/file", fd, {
-      headers: { "Content-Type": "multipart/form-data" },
-    }).then(r => r.data),
-  youtube: (payload: unknown) =>
-    api.post<{ ok: boolean; message: string }>("/uploads/youtube", payload).then(r => r.data),
 };
 
 export const Login = {

@@ -18,7 +18,7 @@ const baseSchema = z.object({
   channel_url: z.string().min(1, "Required"),
   interval_value: z.coerce.number().int().min(1),
   interval_unit: z.enum(["minutes", "hours", "days"]),
-  first_fire_at: z.string().min(1, "Required"),
+  first_fire_at: z.string().optional().default(""),
   fetch_count: z.coerce.number().int().min(1).max(20),
   upload_delay_minutes: z.coerce.number().int().min(0).max(30).default(0),
   max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -71,6 +71,10 @@ function buildSchema(existingTokenSet: boolean) {
       path: ["interval_value"],
     })
     .refine(
+      (d) => d.interval_unit !== "days" || /^\d{2}:\d{2}$/.test(d.first_fire_at ?? ""),
+      { message: "Enter a daily run time (HH:MM)", path: ["first_fire_at"] }
+    )
+    .refine(
       (d) => {
         // {ai_title} in the template requires a non-empty AI prompt.
         if (!d.caption_template.includes("{ai_title}")) return true;
@@ -122,15 +126,25 @@ function formatHttpDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-function toLocalDatetime(iso?: string): string {
-  if (!iso) {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
-  }
-  const d = new Date(iso);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
+function toLocalTime(iso?: string): string {
+  const d = iso ? new Date(iso) : new Date();
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+}
+
+function getTimezoneLabel(): string {
+  const offset = -new Date().getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const h = Math.floor(Math.abs(offset) / 60).toString().padStart(2, "0");
+  const m = (Math.abs(offset) % 60).toString().padStart(2, "0");
+  return `GMT${sign}${h}:${m}`;
+}
+
+function timeToNextOccurrence(timeStr: string): Date {
+  const [h, m] = timeStr.split(":").map(Number);
+  const next = new Date();
+  next.setHours(h, m, 0, 0);
+  if (next <= new Date()) next.setDate(next.getDate() + 1);
+  return next;
 }
 
 export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
@@ -162,9 +176,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     reset,
     setError,
     getValues,
-    formState: { errors },
+    trigger,
+    formState: { errors, touchedFields },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
+    mode: "onBlur",
     defaultValues: {
       name: "",
       source_type: "youtube" as "youtube" | "douyin",
@@ -172,7 +188,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       channel_url: "",
       interval_value: 6,
       interval_unit: "hours",
-      first_fire_at: toLocalDatetime(),
+      first_fire_at: "",
       fetch_count: 1,
       upload_delay_minutes: 0,
       max_duration_seconds: "" as any,
@@ -214,7 +230,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         channel_url: pipeline.channel_url,
         interval_value: pipeline.interval_value,
         interval_unit: pipeline.interval_unit,
-        first_fire_at: toLocalDatetime(pipeline.first_fire_at),
+        first_fire_at: pipeline.interval_unit === "days" ? toLocalTime(pipeline.first_fire_at) : "",
         fetch_count: pipeline.fetch_count,
         upload_delay_minutes: pipeline.upload_delay_minutes ?? 0,
         max_duration_seconds: pipeline.max_duration_seconds ?? ("" as any),
@@ -237,7 +253,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         channel_url: "",
         interval_value: 6,
         interval_unit: "hours",
-        first_fire_at: toLocalDatetime(),
+        first_fire_at: "",
         fetch_count: 1,
         upload_delay_minutes: 0,
         max_duration_seconds: "" as any,
@@ -290,7 +306,10 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   }
 
   function onSubmit(data: FormData, saveState: "active" | "paused") {
-    const firstFireAt = new Date(data.first_fire_at).toISOString();
+    const firstFireAt =
+      data.interval_unit === "days" && data.first_fire_at
+        ? timeToNextOccurrence(data.first_fire_at).toISOString()
+        : new Date().toISOString();
     const maxDur =
       data.max_duration_seconds === "" || data.max_duration_seconds === undefined
         ? undefined
@@ -401,6 +420,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setValue("douyin_cookie_id", pipeline.douyin_cookie_id);
     }
   }, [douyinCookies, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-validate URL when source type changes (domain rules differ per type)
+  useEffect(() => {
+    if (open && touchedFields.channel_url) trigger("channel_url");
+  }, [sourceType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -566,23 +590,25 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {errors.interval_value && (
               <p className="field-error">{errors.interval_value.message}</p>
             )}
-            <div>
-              <label className="label">Starting from</label>
-              <input
-                type="datetime-local"
-                className="input"
-                {...register("first_fire_at")}
-              />
-              {repeatHint && (
-                <p className="text-xs text-slate-500 mt-1">{repeatHint}</p>
-              )}
-              {isEdit && (
+            {intervalUnit === "days" && (
+              <div>
+                <label className="label">Run daily at ({getTimezoneLabel()})</label>
+                <input
+                  type="time"
+                  className="input"
+                  {...register("first_fire_at")}
+                />
+                {errors.first_fire_at && (
+                  <p className="field-error">{errors.first_fire_at.message}</p>
+                )}
                 <p className="text-xs text-slate-400 mt-1">
-                  While the pipeline is active, the scheduler will not fire earlier
-                  than this anchor (or earlier than now).
+                  If this time has already passed today, the first run will be tomorrow.
                 </p>
-              )}
-            </div>
+              </div>
+            )}
+            {repeatHint && (
+              <p className="text-xs text-slate-500 mt-1">{repeatHint}</p>
+            )}
           </fieldset>
 
           {/* Content */}

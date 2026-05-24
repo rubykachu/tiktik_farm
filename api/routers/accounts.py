@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
-from api.models import Account, ScheduledUpload
+from api.models import Account
 from api.schemas import AccountCreate, AccountRead, AccountUpdate
 from api.services import cookie_import, cookie_store
 from api.services.safe_path import safe_join_under, validate_username
@@ -83,18 +83,6 @@ def delete_account(account_id: int, session: Session = Depends(get_session)):
     acct = session.get(Account, account_id)
     if not acct:
         raise HTTPException(status_code=404, detail="account not found")
-    # Cascade: remove dependent ScheduledUpload rows first to satisfy the FK.
-    # SQLite's PRAGMA foreign_keys=ON is set on every connection (see db.py),
-    # and the FK has no ON DELETE CASCADE, so we have to clean up manually.
-    # Running schedules are unusual but possible — we delete them too; the
-    # scheduler treats a missing account as a hard failure on next poll.
-    dependents = session.exec(
-        select(ScheduledUpload).where(ScheduledUpload.account_id == account_id)
-    ).all()
-    for row in dependents:
-        session.delete(row)
-    if dependents:
-        session.flush()
     # Delete DB row first — if cookie deletion fails afterwards the user can
     # still re-import. The reverse is harder to recover from.
     username = acct.username

@@ -1,7 +1,7 @@
-"""Pipeline worker — pass 2 of the scheduler tick.
+"""Pipeline worker — recurring channel pipeline execution.
 
 Handles: orphan reaper, claim, LockHeartbeat, run_pipeline, advance/clear,
-and Telegram summary. Complements the single-shot pass in worker.py.
+and Telegram summary.
 """
 from __future__ import annotations
 
