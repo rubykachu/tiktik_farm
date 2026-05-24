@@ -46,13 +46,19 @@
 
 ```
 v2/data/
-├── tiktok.db                  (SQLite — accounts, scheduled_uploads, channel_pipelines, pipeline_runs, video_uploads, …)
+├── tiktok.db                  (SQLite — accounts, scheduled_uploads, channel_pipelines, pipeline_runs, video_uploads, douyin_cookies, …)
 ├── tiktok.db-shm              (WAL shared memory)
 ├── tiktok.db-wal              (WAL log)
+├── .secret_key                (Fernet key, mode 600 — mã hóa LLM API key + Douyin cookies)
 ├── CookiesDir/
 │   └── tiktok_session-<username>.cookie   (pickle list[dict])
-└── VideosDirPath/
-    └── pre-processed.mp4      (yt-dlp output đè mỗi lần download)
+├── VideosDirPath/
+│   └── pre-processed.mp4      (yt-dlp output đè mỗi lần download — YouTube pipeline)
+└── douyin_tmp/                (thư mục tạm Douyin pipeline — tự xóa sau mỗi tick)
+    └── {pipeline_id}_xxxx/
+        └── {author_sec_uid}/post/
+            ├── {date}_{aweme_id}.mp4
+            └── {date}_{aweme_id}_data.json
 ```
 
 Inside container: mount tại `/data`. `Config.cookies_dir = "./CookiesDir"` + `working_dir=/data` → resolve thành `/data/CookiesDir`.
@@ -145,6 +151,39 @@ User → webapp → POST /api/schedules (datetime, youtube_url, options)
             UPDATE status=succeeded|failed, result_text=...
 ```
 
+### Pipeline (Douyin kênh → TikTok)
+
+```
+User → POST /api/pipelines (source_type=douyin, douyin_cookie_id=N, …)
+                │
+        scheduler tick — pass 2:
+            claim_due_pipeline() + LockHeartbeat
+                │
+                ▼
+            INSERT PipelineRun
+            decrypt DouyinCookie → cookie_dict
+            douyin_channel.download_creator_posts(
+                creator_url, fetch_count, cookie_dict,
+                output_dir=/data/douyin_tmp/{id}_xxx/
+            )
+                ├─ write temp YAML config → /tmp/douyin_cfg_xxx.yml
+                ├─ subprocess Popen: vendor/douyin-downloader/run.py
+                │   [vendor: XBogus/ABogus sign → Douyin API → .mp4 + _data.json]
+                └─ scan output_dir/**/*_data.json → list[DownloadedVideo]
+                │
+            filter max_duration_seconds → cleanup long videos
+                │
+            Với mỗi DownloadedVideo × mỗi account:
+                dedupe (account_id, douyin_aweme_id)
+                [optional] LLM rewrite desc → {ai_title}
+                tiktok_adapter.upload_from_file(mp4_path, caption)
+                INSERT VideoUpload(douyin_aweme_id=…)
+                cleanup_aweme_files(output_dir, aweme_id)
+                │
+            shutil.rmtree(output_dir)
+            UPDATE PipelineRun + advance next_fire + Telegram
+```
+
 ### Pipeline (YouTube kênh → TikTok, Phase 1)
 
 ```
@@ -216,14 +255,14 @@ v2/
 │   ├── main.py           — app factory
 │   ├── db.py             — SQLite engine + WAL
 │   ├── models.py         — SQLModel: Account, ScheduledUpload, ChannelPipeline,
-│   │                     PipelineRun, VideoUpload, LoginSession
+│   │                     PipelineRun, VideoUpload, LoginSession, DouyinCookie
 │   ├── schemas.py        — Pydantic (PipelineCreate/Update, …)
 │   ├── routers/          — endpoint groups (+ pipelines, videos history)
-│   └── services/         — cookie_store, caption, youtube_channel, telegram, …
+│   └── services/         — cookie_store, caption, youtube_channel, douyin_channel, telegram, secrets, …
 ├── scheduler/
 │   ├── main.py           — entrypoint
 │   ├── worker.py         — poll loop (pass 1 + pass 2)
-│   └── pipeline_worker.py — claim, run tick, Telegram, advance next_fire
+│   └── pipeline_worker.py — claim, run tick (YouTube + Douyin), Telegram, advance next_fire
 ├── novnc/                — control server inside noVNC container
 │   ├── control_server.py — FastAPI :7900
 │   └── entrypoint.sh     — boot Xvfb + x11vnc + websockify + uvicorn
@@ -238,6 +277,8 @@ v2/
 │   └── Dockerfile
 ├── scripts/
 │   └── migrate-json-cookie-editor.py
+├── vendor/
+│   └── douyin-downloader/    — vendored CLI tool (baked vào base image)
 ├── docker/base.Dockerfile
 ├── docker-compose.yml
 ├── cli.py                — legacy CLI

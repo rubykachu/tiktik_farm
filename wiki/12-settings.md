@@ -2,7 +2,7 @@
 
 [← Index](README.md) | [← 11-roadmap](11-roadmap.md)
 
-Trang **Settings** (`/settings`) chứa cấu hình toàn cục cho v2. Phase 3 mở đầu với một nhóm duy nhất: **LLM caption rewrite**. Trang gồm 2 phần chính:
+Trang **Settings** (`/settings`) chứa cấu hình toàn cục cho v2. Mở đầu với một nhóm duy nhất: **LLM caption rewrite**. Trang gồm 2 phần chính:
 
 1. **Toggle global** — bật/tắt toàn bộ tính năng LLM cho mọi pipeline.
 2. **Available models** — danh sách model LLM do user tự đăng ký (Gemini, OpenAI, Grok, Azure). Worker chỉ đọc model được đánh dấu **default**.
@@ -159,13 +159,13 @@ data/.secret_key   (mode 600, gitignored)
 
 #### Rotate key (thủ công)
 
-Phase 3 chưa có tool rotate tự động (không tự re-encrypt). Quy trình:
+Chưa có tool rotate tự động (không tự re-encrypt). Quy trình:
 
 1. Xóa `data/.secret_key`.
 2. Restart api → key mới được sinh.
 3. Vào Settings → Edit từng LLM model → paste lại API key.
 
-Phase 4 backlog: tool `secrets rotate` đọc plaintext bằng key cũ, re-encrypt bằng key mới, swap key file atomic.
+Backlog: tool `secrets rotate` đọc plaintext bằng key cũ, re-encrypt bằng key mới, swap key file atomic.
 
 ### 7.2. Log scrubber
 
@@ -244,7 +244,7 @@ Partial unique index `ux_llm_models_one_default` enforce invariant **"tối đa 
 
 ## 9. Cài đặt + deploy
 
-Phase 3 thêm 2 package vào `requirements.txt`:
+Thêm 2 package vào `requirements.txt`:
 
 ```
 cryptography>=42,<46
@@ -273,7 +273,6 @@ Migration `apply_schema_patches` chạy tự động lúc api/scheduler boot —
 - LiteLLM providers: <https://docs.litellm.ai/docs/providers>
 - Azure OpenAI versions: <https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation>
 - Fernet (cryptography): <https://cryptography.io/en/latest/fernet/>
-- Phase 3 SPEC: `notebooks/v2/Phase3-SPEC.md`
 
 ---
 

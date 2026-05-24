@@ -4,18 +4,18 @@
 
 ## Hiện trạng (sau Phase 1 implementation)
 
-✅ Core upload pipeline (local file + YouTube URL single)  
-✅ Schedule **Single-shot** (YouTube only, `ScheduledUpload`)  
-✅ **Channel pipeline** lặp: YouTube → TikTok, dedupe, `VideoUpload` history, drill-down API/UI  
-✅ Caption template (`{title}`, `{title_hashtag}`, `{now}`), Telegram tùy chọn (summary theo tick)  
-✅ Trang `/schedules` hai tab; `/videos` = DB `VideoUpload` (chủ yếu pipeline)  
-✅ Import JSON Cookie (`/api/accounts/import-json`), modal confirm delete nhiều chỗ  
-✅ Worker hai pass + CAS lock/heartbeat/orphan reaper  
-✅ noVNC browser login  
-✅ Multi-account local single-user  
-✅ Docker stack production-ready (smoke test pass)  
-✅ 4 bug upstream đã fix  
-✅ Security baseline tối thiểu: Origin check mutating, validation URL/caption/Telegram, log scrub token  
+✅ Core upload pipeline (local file + YouTube URL single)
+✅ Schedule **Single-shot** (YouTube only, `ScheduledUpload`)
+✅ **Channel pipeline** lặp: YouTube → TikTok, dedupe, `VideoUpload` history, drill-down API/UI
+✅ Caption template (`{title}`, `{title_hashtag}`, `{now}`), Telegram tùy chọn (summary theo tick)
+✅ Trang `/schedules` hai tab; `/videos` = DB `VideoUpload` (chủ yếu pipeline)
+✅ Import JSON Cookie (`/api/accounts/import-json`), modal confirm delete nhiều chỗ
+✅ Worker hai pass + CAS lock/heartbeat/orphan reaper
+✅ noVNC browser login
+✅ Multi-account local single-user
+✅ Docker stack production-ready (smoke test pass)
+✅ 4 bug upstream đã fix
+✅ Security baseline tối thiểu: Origin check mutating, validation URL/caption/Telegram, log scrub token
 
 **Còn gap so với “full upload history”**: `VideoUpload` **không** ghi cho upload thủ công / single-shot — chỉ pipeline. Phase 2 có thể mở rộng bảng hoặc ghi thêm nguồn.
 
@@ -93,7 +93,7 @@ POST /api/uploads/youtube-playlist
 
 Stagger để tránh TikTok rate-limit khi đăng quá nhanh.
 
-## Phase 3 — Multi-tenant (SaaS)
+## Multi-tenant (SaaS)
 
 ### Schema changes
 
@@ -164,11 +164,11 @@ Stripe + webhook:
 - `customer.subscription.updated` → cập nhật `tenant.plan`
 - `invoice.payment_failed` → suspend tenant
 
-## Phase 4 — Horizontal scale
+## Horizontal scale
 
 Khi traffic vượt single-server:
 
-- SQLite → PostgreSQL (Phase 4 task, hiện SQLite WAL đủ ~100 concurrent users)
+- SQLite → PostgreSQL (hiện SQLite WAL đủ ~100 concurrent users)
 - Stateless API + scheduler (đã sẵn, chỉ cần DB external)
 - noVNC → K8s job dynamic spawn
 - Object storage cho video (S3-compat) thay file local

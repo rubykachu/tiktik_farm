@@ -57,9 +57,18 @@ Lifecycle, huỷ, retry: giữ nguyên như tài liệu cũ (`pending` → `runn
 
 ## Tab Pipelines — khái niệm `ChannelPipeline`
 
-**Pipeline** = cấu hình tự động: **URL YouTube** (kênh, `@handle/videos`, shorts, playlist hợp lệ…) → **yt-dlp** lấy **fetch_count** video mới nhất mỗi lần “tick” → với mỗi video, upload lên **tất cả** `account_ids` đã chọn (lần lượt).
+**Pipeline** = cấu hình tự động: **URL kênh** → downloader lấy **fetch_count** video mới nhất mỗi “tick” → upload lên **tất cả** `account_ids` đã chọn (lần lượt).
 
-- **Dedupe**: khóa `(account_id, youtube_video_id)` trên bảng `VideoUpload`. Đã **succeeded** → bỏ qua (đếm skipped dup). Đã **failed** ≥ 3 lần → bỏ qua (skipped exhausted).
+Pipeline hỗ trợ 2 nguồn qua trường `source_type`:
+
+| `source_type` | Downloader | Xác thực | Dedup key |
+|---|---|---|---|
+| `youtube` (mặc định) | yt-dlp | Không cần | `(account_id, youtube_video_id)` |
+| `douyin` | douyin-downloader subprocess | `DouyinCookie` (cookie Douyin thật) | `(account_id, douyin_aweme_id)` |
+
+Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
+
+- **Dedupe**: khóa `(account_id, youtube_video_id)` hoặc `(account_id, douyin_aweme_id)` trên bảng `VideoUpload`. Đã **succeeded** → bỏ qua (đếm skipped dup). Đã **failed** ≥ 3 lần → bỏ qua (skipped exhausted).
 - **Caption**: template trong DB, render bằng `api/services/caption.py` (biến whitelist, hashtag dedupe, tối đa 2200 ký tự). Worker gọi `render_caption` trước mỗi lần gọi adapter trong tick; kết quả lưu vào `VideoUpload.rendered_caption` cho bản ghi tương ứng.
 - **Tùy chọn nâng cao** (giống upload): `allow_comment`, `allow_duet`, `allow_stitch`, `visibility_type` — lưu trong `upload_options_json`.
 - **`max_duration_seconds`** (optional): yt-dlp **bỏ qua** video dài hơn `3 × N` giây; nếu tải, **cắt** 0…N giây (native, không shell ffmpeg riêng). Giới hạn file **500MB** mỗi lần tải.

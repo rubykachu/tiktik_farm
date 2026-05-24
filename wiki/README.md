@@ -16,7 +16,8 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 10. [Bug đã fix từ upstream](10-known-bugs.md) — 4 bug source code upstream
 11. [Roadmap Phase 2 + SaaS](11-roadmap.md) — port nghiệp vụ v1, multi-tenant prep
 12. [Lấy Telegram Chat ID (Bot API)](how_to_get_telegram_chat_id.md) — token, `getUpdates`, group/channel
-13. [Settings — LLM caption rewrite](12-settings.md) — Phase 3: toggle global, CRUD model (Gemini/OpenAI/Grok/Azure), secret key, SSRF guard, validation `{ai_title}`
+13. [Settings — LLM caption rewrite](12-settings.md) — toggle global, CRUD model (Gemini/OpenAI/Grok/Azure), secret key, SSRF guard, validation `{ai_title}`
+14. [Douyin Pipeline](13-douyin-pipeline.md) — source_type=douyin, DouyinCookie, vendor subprocess, dedup aweme_id, anti-bot, vận hành
 
 ## Quick reference
 
@@ -37,6 +38,9 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 | Lấy `chat_id` số cho Telegram (pipeline) | [how_to_get_telegram_chat_id](how_to_get_telegram_chat_id.md) |
 | Cấu hình LLM rewrite caption (Gemini/OpenAI/Grok/Azure) | [12-settings](12-settings.md) |
 | Setup Azure OpenAI / Foundry model | [12-settings § Provider matrix](12-settings.md#4-provider-matrix) |
+| Pipeline kênh Douyin → TikTok | [13-douyin-pipeline](13-douyin-pipeline.md) |
+| Quản lý Douyin Cookie | [13-douyin-pipeline § 2](13-douyin-pipeline.md#2-douyincookie--quản-lý-cookie-xác-thực) |
+| Cookie Douyin hết hạn (pulled_count=0) | [13-douyin-pipeline § 8.3](13-douyin-pipeline.md#83-cookie-hết-hạn) |
 
 ---
 

@@ -2,7 +2,7 @@
 
 [← Index](README.md) | [← 07-schedules](07-schedules.md)
 
-Trang **`/histories`** (sidebar **Histories**) hiển thị dữ liệu từ bảng **`VideoUpload`** (SQLite). Endpoint API giữ nguyên `/api/videos`; chỉ tên route + tab sidebar đổi từ Phase 3.
+Trang **`/histories`** (sidebar **Histories**) hiển thị dữ liệu từ bảng **`VideoUpload`** (SQLite). Endpoint API giữ nguyên `/api/videos`; chỉ tên route + tab sidebar.
 
 - URL cũ `/videos` vẫn redirect sang `/histories` để bookmark cũ không vỡ.
 - Backend (`/api/videos`, bảng `video_uploads`) không đổi — clients khác (CLI script, monitoring) tiếp tục hoạt động.
@@ -47,7 +47,7 @@ DELETE /api/videos/{id}
 
 Mọi `DELETE` cần header **`Origin: http://127.0.0.1:3000`** (hoặc `localhost:3000`). Xóa chỉ xóa **bản ghi DB** — **không** xóa video trên TikTok.
 
-### Phase 3 — `rendered_caption` có thể chứa output LLM
+### `rendered_caption` có thể chứa output LLM
 
 Nếu pipeline cấu hình `caption_ai_prompt` + template có `{ai_title}`, cột `rendered_caption` ghi caption sau khi đã thay `{ai_title}` bằng output LLM. Khi LLM lỗi và fallback, `rendered_caption` chứa raw YouTube title — không có dấu hiệu nào trong DB phân biệt 2 trường hợp; xem log scheduler (`LLM rewrite skipped: …`) để truy nguyên.
 
