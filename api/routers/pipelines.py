@@ -20,9 +20,10 @@ from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
-from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate
+from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, is_douyin_url
 from api.services.caption import template_uses_ai_title
 from api.services.llm_config import get_default_llm_model, is_llm_enabled
+from api.services.youtube_validate import is_youtube_url
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -167,6 +168,18 @@ def update_pipeline(
         else row.caption_ai_prompt
     )
     _validate_ai_title_preconditions(candidate_template, candidate_prompt)
+
+    if payload.channel_url is not None:
+        if row.source_type == "youtube" and not is_youtube_url(payload.channel_url):
+            raise HTTPException(
+                status_code=422,
+                detail=[{"loc": ["body", "channel_url"], "msg": "channel_url must point to a YouTube domain", "type": "value_error"}],
+            )
+        if row.source_type == "douyin" and not is_douyin_url(payload.channel_url):
+            raise HTTPException(
+                status_code=422,
+                detail=[{"loc": ["body", "channel_url"], "msg": "channel_url must point to a Douyin domain (douyin.com)", "type": "value_error"}],
+            )
 
     changed = False
     if payload.name is not None:

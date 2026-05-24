@@ -47,8 +47,24 @@ function buildSchema(existingTokenSet: boolean) {
       { message: "Select a Douyin cookie", path: ["douyin_cookie_id"] }
     )
     .refine(
-      (d) => d.source_type !== "youtube" || d.channel_url.startsWith("http"),
-      { message: "Invalid URL", path: ["channel_url"] }
+      (d) => {
+        if (d.source_type !== "youtube") return true;
+        try {
+          const u = new URL(d.channel_url);
+          return ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"].includes(u.hostname);
+        } catch { return false; }
+      },
+      { message: "Must be a YouTube URL (e.g. https://youtube.com/@channel)", path: ["channel_url"] }
+    )
+    .refine(
+      (d) => {
+        if (d.source_type !== "douyin") return true;
+        try {
+          const u = new URL(d.channel_url);
+          return ["douyin.com", "www.douyin.com", "m.douyin.com", "v.douyin.com"].includes(u.hostname);
+        } catch { return false; }
+      },
+      { message: "Must be a Douyin URL (e.g. https://www.douyin.com/user/...)", path: ["channel_url"] }
     )
     .refine((d) => !(d.interval_unit === "minutes" && d.interval_value < 2), {
       message: "Interval must be ≥ 2 when using minutes",
@@ -262,10 +278,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     const detail = err?.response?.data?.detail;
     if (Array.isArray(detail)) {
       for (const e of detail) {
-        const field = e.loc?.[e.loc.length - 1];
-        if (field) {
-          setError(field as any, { message: e.msg });
-        }
+        const loc: string[] = e.loc ?? [];
+        // Strip leading "body" segment added by FastAPI
+        const fieldLoc = loc.filter((s) => s !== "body");
+        const field = fieldLoc[fieldLoc.length - 1] || "channel_url";
+        setError(field as any, { message: e.msg });
       }
     } else if (typeof detail === "string") {
       setError("name", { message: detail });

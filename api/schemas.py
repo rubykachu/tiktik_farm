@@ -10,10 +10,29 @@ from datetime import datetime, timezone
 from typing import List, Literal, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from api.services.caption import find_unknown_vars
 from api.services.youtube_validate import is_youtube_url as is_youtube_channel_url
+
+_DOUYIN_ALLOWED_HOSTS = frozenset({
+    "douyin.com",
+    "www.douyin.com",
+    "m.douyin.com",
+    "v.douyin.com",
+})
+
+
+def is_douyin_url(url: str) -> bool:
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        u = urlparse(url)
+    except Exception:
+        return False
+    if u.scheme not in ("http", "https"):
+        return False
+    return u.netloc in _DOUYIN_ALLOWED_HOSTS
 
 _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 # Numeric only — private channels/supergroups use -100xxxxxxxxxx.
@@ -213,8 +232,8 @@ class PipelineUploadOptions(BaseModel):
 
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
-    channel_url: str
     source_type: Literal["youtube", "douyin"] = "youtube"
+    channel_url: str
     douyin_cookie_id: Optional[int] = None
     fetch_count: int = Field(ge=1, le=20)
     interval_value: int = Field(ge=1)
@@ -229,11 +248,15 @@ class PipelineCreate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
-    @model_validator(mode="after")
-    def _validate_channel_url(self):
-        if self.source_type == "youtube" and not is_youtube_channel_url(self.channel_url):
+    @field_validator("channel_url")
+    @classmethod
+    def _validate_channel_url(cls, v: str, info: ValidationInfo) -> str:
+        source_type = (info.data or {}).get("source_type", "youtube")
+        if source_type == "youtube" and not is_youtube_channel_url(v):
             raise ValueError("channel_url must point to a YouTube domain")
-        return self
+        if source_type == "douyin" and not is_douyin_url(v):
+            raise ValueError("channel_url must point to a Douyin domain (douyin.com)")
+        return v
 
     @model_validator(mode="after")
     def _validate_source_cookie(self):

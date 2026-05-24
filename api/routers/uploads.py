@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select

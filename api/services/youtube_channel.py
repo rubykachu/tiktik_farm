@@ -5,7 +5,6 @@ Does NOT use subprocess. All interaction is through yt_dlp.YoutubeDL.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Optional
 
 import yt_dlp

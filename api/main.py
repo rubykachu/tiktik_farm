@@ -11,7 +11,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.db import engine as _engine, init_db
+from api.db import init_db
 from api.db_migrations import apply_indexes, apply_schema_patches, seed_app_settings
 from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware

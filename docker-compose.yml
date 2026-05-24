@@ -56,6 +56,7 @@ services:
       - TIKTOK_CONFIG_PATH=/app/config.txt
       - SCHEDULER_POLL_SECONDS=30
       - SCHEDULER_CONCURRENCY=1
+      - DOUYIN_TMP_DIR=/data/douyin_tmp
     volumes:
       - ./data:/data
       - ./config.txt:/app/config.txt:ro
