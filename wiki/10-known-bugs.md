@@ -89,7 +89,7 @@ if not dc_id:
 `tt-target-idc` là routing hint cho TikTok datacenter (`useast1a`, `useast2a`, `useast5`, `alisg`, ...). Mỗi account "thuộc" 1 DC. Force `useast2a` cho account ở DC khác → TikTok routing fail → status_code 8.
 
 Cookie từ:
-- `cli.py login` Selenium / noVNC: tự collect cả 2 cookie (`wait_for_session_cookies` blocks đến khi có cả `sessionid` + `tt-target-idc`) → bug 3 không trigger
+- `cli.py login` Selenium: tự collect cả 2 cookie (`wait_for_session_cookies` blocks đến khi có cả `sessionid` + `tt-target-idc`) → bug 3 không trigger
 - Cookie-Editor / Chrome DevTools export: thường miss `tt-target-idc` (HttpOnly subdomain) → bug 3 trigger
 
 ### Fix
@@ -142,7 +142,7 @@ return True   # ⬅️ thêm
 |---|---|---|
 | #1 | ✅ | Source code hardcode |
 | #2 | ✅ | Phụ thuộc `fake_useragent` version → pin chặt nếu muốn deterministic |
-| #3 | ❌ một phần | Chỉ trigger nếu cookie thiếu `tt-target-idc`. Login qua Selenium/noVNC → an toàn. Export Cookie-Editor → bị. |
+| #3 | ❌ một phần | Chỉ trigger nếu cookie thiếu `tt-target-idc`. Login qua Selenium CLI → an toàn. Export Cookie-Editor → bị. |
 | #4 | ✅ | Source code hardcode |
 
 → Trên VPS Ubuntu Docker, **cả 4 bug dính** nếu chưa fix. Đảm bảo fork ta đã apply patches trước deploy.

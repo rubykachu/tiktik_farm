@@ -13,7 +13,7 @@ Chạy trong `v2/`. `make` = `make help`.
 | `up` / `down` / `ps` | Start / stop / status |
 | `restart` | Restart `api` + `scheduler` only — **không rebuild** |
 | `recreate` | Force-recreate mọi container — **không rebuild** |
-| `rebuild-base` | Rebuild `tiktok-base` + api/scheduler/novnc (`--no-cache` base) |
+| `rebuild-base` | Rebuild `tiktok-base` + api/scheduler (`--no-cache` base) |
 | `rebuild` | Full no-cache rebuild mọi image |
 | `rebuild-app` | Rebuild api + scheduler + webapp (prod webapp image) |
 | `logs`, `logs-api`, … | Tail logs |
@@ -46,7 +46,7 @@ make restart    # api + scheduler
 
 Sửa **`tiktok_uploader/`** hoặc **`requirements.txt`**: không mount — bắt buộc **`make deploy`** (hoặc `make rebuild-base && make up`).
 
-UI dev: http://127.0.0.1:3000 — Vite proxy `/api` → `api:8000`, `/novnc` + `/websockify` → `novnc:6080` (giống nginx prod).
+UI dev: http://127.0.0.1:3000 — Vite proxy `/api` → `api:8000`.
 
 Chi tiết setup: [03-setup-docker](03-setup-docker.md).
 
@@ -66,7 +66,7 @@ Chi tiết setup: [03-setup-docker](03-setup-docker.md).
 docker compose logs -f api                         # follow
 docker compose logs --tail=50 api                  # last 50
 docker compose logs --since=5m api                 # 5 phút gần đây
-docker compose logs -f api scheduler novnc webapp  # multi-service
+docker compose logs -f api scheduler webapp  # multi-service
 docker compose logs api | grep "ERROR\|Traceback"
 ```
 
@@ -80,7 +80,7 @@ tail -f /tmp/v2_webapp.log
 
 ## Operational rule: rebuild → force-recreate webapp
 
-**Nginx (prod webapp) cache DNS IP upstream tại boot.** Recreate `api`/`novnc` mà không recreate `webapp` → 502.
+**Nginx (prod webapp) cache DNS IP upstream tại boot.** Recreate `api` mà không recreate `webapp` → 502.
 
 → Dùng **`make deploy`** (recreate toàn stack sau build). Hoặc thủ công:
 
@@ -129,29 +129,12 @@ Tìm phrase:
 | `[-] Could not upload video` | Loop publish hết retry mà fail |
 | `KeyError: 'project'` | Bug regress, xem [10-known-bugs](10-known-bugs.md) |
 
-### 3. noVNC 502 hoặc DNS error
-
-- `nodename nor servname provided` = đang chạy native mà chưa override env `NOVNC_CONTROL_URL`. Xem [04-setup-native](04-setup-native.md) section hybrid.
-- Docker stack: `docker compose ps novnc` show Up?
-- `docker compose logs novnc` có error Chromium? Khả năng OOM, kiểm `/dev/shm` tmpfs (đã setup 512MB trong compose).
-
-### 4. Schedule Single-shot không chạy
-
-```bash
-docker compose logs --tail=20 scheduler
-```
-
-- `scheduler loop starting` → đã khởi động
-- Không thấy log gì sau đó → đang poll; pass 1 ưu tiên single-shot
-- Job đến hạn nhưng không run → kiểm `scheduled_for` timezone (UTC trong DB)
-
-### 5. Pipeline không tick / Run now 409
+### 3. Pipeline không tick / Run now 409
 
 ```bash
 docker compose logs --tail=80 scheduler
 ```
 
-- Xác nhận pass 1 không “kẹt” hàng loạt `ScheduledUpload` (pass 2 chỉ chạy khi pass 1 rảnh).
 - Kiểm tra `channel_pipelines.state`, `next_fire_at`, `lock_until` (SQLite snippet dưới).
 - **409 Run now**: pipeline đang chạy (`lock_until`) hoặc đã xếp sẵn Run now — đợi tick hiện tại xong.
 - **low_disk**: free `/tmp` trong container < 1 GB.
@@ -177,14 +160,11 @@ Container Python (sqlite3 CLI không có sẵn):
 docker compose exec api python -c "
 from sqlmodel import Session, select
 from api.db import engine
-from api.models import Account, ScheduledUpload, ChannelPipeline, PipelineRun, VideoUpload, LoginSession
+from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 with Session(engine) as s:
     print('Accounts:')
     for a in s.exec(select(Account)).all():
         print(f'  {a.id} {a.username} valid={a.has_valid_session}')
-    print('Schedules (last 10):')
-    for sc in s.exec(select(ScheduledUpload).order_by(ScheduledUpload.id.desc())).all()[:10]:
-        print(f'  {sc.id} acct={sc.account_id} status={sc.status} when={sc.scheduled_for}')
     print('Pipelines:')
     for p in s.exec(select(ChannelPipeline).order_by(ChannelPipeline.id.desc())).all()[:10]:
         print(f'  {p.id} {p.name!r} state={p.state} next={p.next_fire_at} lock={p.lock_until}')

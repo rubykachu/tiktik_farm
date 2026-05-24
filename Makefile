@@ -2,7 +2,7 @@
 #
 # Layer model:
 #   docker/base.Dockerfile installs requirements.txt + the tiktok_uploader
-#   package. api/scheduler/novnc images all FROM tiktok-base:latest and
+#   package. api/scheduler images all FROM tiktok-base:latest and
 #   only COPY their own source. So:
 #
 #   - You changed code in api/ or scheduler/ only        -> make restart
@@ -18,7 +18,7 @@
 
 # Allow overriding the compose project / file from CLI if ever needed.
 COMPOSE        ?= docker compose
-SERVICES_RUN   := api scheduler novnc webapp
+SERVICES_RUN   := api scheduler webapp
 
 # Pretty output.
 GREEN  := \033[1;32m
@@ -87,7 +87,7 @@ rebuild-base:  ## Rebuild the shared base image (requirements.txt / tiktok_uploa
 	@printf "$(YELLOW)Rebuilding tiktok-base (this picks up requirements.txt changes)…$(RESET)\n"
 	$(COMPOSE) build --no-cache tiktok-base
 	@printf "$(YELLOW)Rebuilding dependent images…$(RESET)\n"
-	$(COMPOSE) build api scheduler novnc
+	$(COMPOSE) build api scheduler
 	@printf "$(GREEN)Done. Run: make up$(RESET)\n"
 
 .PHONY: rebuild

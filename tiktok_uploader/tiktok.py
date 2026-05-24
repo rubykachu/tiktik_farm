@@ -23,8 +23,7 @@ def wait_for_session_cookies(driver, poll_interval: float = 1.0, timeout: float 
 	"""Poll a Selenium driver until both `sessionid` and `tt-target-idc` cookies
 	are present, then return them as a list of cookie dicts.
 
-	Shared by both the CLI login flow (Browser.get().driver) and the noVNC
-	control server, which drives an undetected-chromedriver inside a container.
+	Used by the CLI login flow (Browser.get().driver).
 
 	Args:
 		driver: Selenium WebDriver with an active TikTok page loaded.

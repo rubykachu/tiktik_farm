@@ -66,9 +66,8 @@ class AccountRead(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    # Register an existing cookie file (produced by CLI login or a previous
-    # noVNC login) against a username. The cookie file must already exist in
-    # CookiesDir; this endpoint does not *create* a login session.
+    # Register an existing cookie file against a username. The cookie file
+    # must already exist in CookiesDir; this endpoint does not create a login session.
     username: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.\-]+$")
     display_name: Optional[str] = Field(default=None, max_length=128)
 

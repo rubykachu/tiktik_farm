@@ -2,7 +2,7 @@
 
 [← Index](README.md) | [← 03-setup-docker](03-setup-docker.md)
 
-> Chỉ dùng để dev nhanh khi sửa React/FastAPI và muốn hot reload. **noVNC KHÔNG chạy được native trên macOS** (cần Linux Xvfb + chromium).
+> Chỉ dùng để dev nhanh khi sửa React/FastAPI và muốn hot reload.
 
 ## Yêu cầu
 
@@ -11,7 +11,6 @@
 | Python | 3.9+ (test trên 3.12) |
 | Node.js | 18+ (test trên 22) |
 | npm | bundled với Node |
-| Chrome (browser) | bất kỳ — cho `cli.py login` |
 
 ## First-time install
 
@@ -99,29 +98,6 @@ Scheduler tương tự — `pkill -f "scheduler.main"` rồi start lại.
 
 Vite (webapp) tự reload — không cần restart.
 
-## Native + Docker hybrid (cho login noVNC)
-
-Native không có noVNC. Workaround: chạy chỉ noVNC service trong Docker, API native trỏ về:
-
-```bash
-# Terminal 1: noVNC trong Docker
-docker compose build novnc
-docker run --rm -p 127.0.0.1:7900:7900 -p 127.0.0.1:6080:6080 \
-    -v "$(pwd)/data:/data" tiktok-novnc:latest
-
-# Terminal 2: API native với env trỏ về localhost
-NOVNC_CONTROL_URL=http://127.0.0.1:7900 \
-NOVNC_PUBLIC_URL=http://127.0.0.1:6080/vnc.html \
-TIKTOK_CONFIG_PATH=./config.txt \
-    ./.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 \
-    > /tmp/v2_api.log 2>&1 &
-
-# Terminal 3: webapp
-(cd webapp && ./node_modules/.bin/vite --port 3000 --host 127.0.0.1 &)
-```
-
-Khi đó UI `/login` sẽ load iframe trỏ về `http://127.0.0.1:6080/vnc.html?...` thay vì path nginx proxy.
-
 ## Khi nào nên dùng Native?
 
 - Sửa UI React → hot reload nhanh hơn nhiều so với rebuild Docker
@@ -129,7 +105,6 @@ Khi đó UI `/login` sẽ load iframe trỏ về `http://127.0.0.1:6080/vnc.html
 - Test endpoint nhanh — không cần rebuild image
 
 Khi không nên:
-- Test login noVNC (cần Docker)
 - Verify production behavior — luôn test Docker stack trước deploy
 - Demo cho người khác — Docker stack đảm bảo reproducible
 
