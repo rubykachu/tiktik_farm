@@ -290,6 +290,7 @@ class PipelineCreate(BaseModel):
 class PipelineUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     state: Optional[Literal["active", "paused"]] = None
+    channel_url: Optional[str] = Field(default=None, min_length=1, max_length=512)
     douyin_cookie_id: Optional[int] = None
     fetch_count: Optional[int] = Field(default=None, ge=1, le=20)
     interval_value: Optional[int] = Field(default=None, ge=1)

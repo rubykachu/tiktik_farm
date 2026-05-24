@@ -157,7 +157,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       interval_value: 6,
       interval_unit: "hours",
       first_fire_at: toLocalDatetime(),
-      fetch_count: 3,
+      fetch_count: 1,
       upload_delay_minutes: 0,
       max_duration_seconds: "" as any,
       caption_template: "{title}",
@@ -222,7 +222,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         interval_value: 6,
         interval_unit: "hours",
         first_fire_at: toLocalDatetime(),
-        fetch_count: 3,
+        fetch_count: 1,
         upload_delay_minutes: 0,
         max_duration_seconds: "" as any,
         caption_template: "{title}",
@@ -284,6 +284,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       const payload: PipelineUpdate = {
         name: data.name,
         state: saveState,
+        channel_url: data.channel_url,
         douyin_cookie_id: data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined,
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
@@ -346,6 +347,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
   const selectedAccounts = watch("account_ids");
   const sourceType = watch("source_type");
+  const fetchCount = watch("fetch_count");
   const clearBotToken = watch("clear_bot_token");
   const intervalValue = watch("interval_value");
   const intervalUnit = watch("interval_unit");
@@ -375,6 +377,13 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setAiSectionOpen(false);
     }
   }, [open]);
+
+  // Resync douyin_cookie_id after cookies load (reset() may fire before query resolves)
+  useEffect(() => {
+    if (open && pipeline?.douyin_cookie_id && douyinCookies?.length) {
+      setValue("douyin_cookie_id", pipeline.douyin_cookie_id);
+    }
+  }, [douyinCookies, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -508,15 +517,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     ? "https://www.douyin.com/user/MS4wLjAB..."
                     : "https://youtube.com/@channel/videos"
                 }
-                disabled={isEdit}
               />
               {errors.channel_url && (
                 <p className="field-error">{errors.channel_url.message}</p>
-              )}
-              {isEdit && (
-                <p className="text-xs text-slate-400 mt-1">
-                  Channel URL cannot change after creation.
-                </p>
               )}
             </div>
           </fieldset>
@@ -581,23 +584,25 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <p className="field-error">{errors.fetch_count.message}</p>
               )}
             </div>
-            <div>
-              <label className="label">Rest between uploads (minutes)</label>
-              <input
-                type="number"
-                className="input"
-                min={0}
-                max={30}
-                {...register("upload_delay_minutes")}
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Minutes to wait between uploads (0 = no wait). Helps avoid spam
-                detection by TikTok.
-              </p>
-              {errors.upload_delay_minutes && (
-                <p className="field-error">{errors.upload_delay_minutes.message}</p>
-              )}
-            </div>
+            {Number(fetchCount) > 1 && (
+              <div>
+                <label className="label">Rest between uploads (minutes)</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={0}
+                  max={30}
+                  {...register("upload_delay_minutes")}
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Minutes to wait between uploads (0 = no wait). Helps avoid spam
+                  detection by TikTok.
+                </p>
+                {errors.upload_delay_minutes && (
+                  <p className="field-error">{errors.upload_delay_minutes.message}</p>
+                )}
+              </div>
+            )}
             <div>
               <label className="label">Max duration (seconds, optional)</label>
               <input

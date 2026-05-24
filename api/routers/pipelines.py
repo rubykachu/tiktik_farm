@@ -172,6 +172,9 @@ def update_pipeline(
     if payload.name is not None:
         row.name = payload.name
         changed = True
+    if payload.channel_url is not None:
+        row.channel_url = payload.channel_url
+        changed = True
     if payload.state is not None:
         if payload.state == "active" and row.state == "paused":
             # Resume — restart firing now so the user sees progress.

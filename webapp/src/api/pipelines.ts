@@ -53,6 +53,7 @@ export interface PipelineCreate {
 export interface PipelineUpdate {
   name?: string;
   state?: "active" | "paused";
+  channel_url?: string;
   douyin_cookie_id?: number | null;
   fetch_count?: number;
   interval_value?: number;
