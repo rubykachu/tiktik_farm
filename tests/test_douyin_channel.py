@@ -39,16 +39,26 @@ def _write_aweme_files(output_dir: str, aweme_id: str, duration_ms: int, with_mp
         (target / f"{aweme_id}.mp4").write_bytes(b"fake_mp4")
 
 
+def _make_fake_popen(write_files_fn=None):
+    """Return a fake Popen constructor that optionally writes files and returns a mock process."""
+    def fake_popen(cmd, *args, **kwargs):
+        if write_files_fn is not None:
+            write_files_fn(cmd)
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = ("fake stdout\n", None)
+        mock_proc.returncode = 0
+        return mock_proc
+    return fake_popen
+
+
 class TestDownloadCreatorPosts:
     def test_returns_downloaded_videos(self, tmp_path):
         from api.services.douyin_channel import download_creator_posts, DownloadedVideo
 
-        def fake_run(*args, **kwargs):
-            # Simulate douyin-downloader writing files
+        def write_files(_cmd):
             _write_aweme_files(str(tmp_path), "111111111111111111", 30_000)
-            return MagicMock(returncode=0)
 
-        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+        with patch("api.services.douyin_channel.subprocess.Popen", side_effect=_make_fake_popen(write_files)):
             result = download_creator_posts(
                 creator_url="https://www.douyin.com/user/MS4wLjAB",
                 fetch_count=3,
@@ -67,11 +77,10 @@ class TestDownloadCreatorPosts:
         """Aweme with _data.json but no .mp4 is skipped (image-note)."""
         from api.services.douyin_channel import download_creator_posts
 
-        def fake_run(*args, **kwargs):
+        def write_files(_cmd):
             _write_aweme_files(str(tmp_path), "222222222222222222", 20_000, with_mp4=False)
-            return MagicMock(returncode=0)
 
-        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+        with patch("api.services.douyin_channel.subprocess.Popen", side_effect=_make_fake_popen(write_files)):
             result = download_creator_posts(
                 creator_url="https://www.douyin.com/user/MS4wLjAB",
                 fetch_count=3,
@@ -86,12 +95,11 @@ class TestDownloadCreatorPosts:
         """Videos longer than max_duration_seconds are filtered and their files deleted."""
         from api.services.douyin_channel import download_creator_posts
 
-        def fake_run(*args, **kwargs):
+        def write_files(_cmd):
             _write_aweme_files(str(tmp_path), "333333333333333333", 120_000)  # 120s
             _write_aweme_files(str(tmp_path), "444444444444444444", 30_000)   # 30s
-            return MagicMock(returncode=0)
 
-        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+        with patch("api.services.douyin_channel.subprocess.Popen", side_effect=_make_fake_popen(write_files)):
             result = download_creator_posts(
                 creator_url="https://www.douyin.com/user/MS4wLjAB",
                 fetch_count=3,
@@ -112,13 +120,12 @@ class TestDownloadCreatorPosts:
 
         written_configs: list[str] = []
 
-        def fake_run(cmd, *args, **kwargs):
+        def write_files(cmd):
             # cmd = ["python", "...", "-c", "<config_path>"]
             cfg_path = cmd[cmd.index("-c") + 1]
             written_configs.append(cfg_path)
-            return MagicMock(returncode=0)
 
-        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+        with patch("api.services.douyin_channel.subprocess.Popen", side_effect=_make_fake_popen(write_files)):
             download_creator_posts(
                 creator_url="https://www.douyin.com/user/MS4wLjAB",
                 fetch_count=1,
@@ -130,17 +137,15 @@ class TestDownloadCreatorPosts:
         assert len(written_configs) == 1
         assert not os.path.exists(written_configs[0])
 
-
     def test_vendor_subdirectory_layout(self, tmp_path):
         """Vendor writes to {output_dir}/{creator}/post/ — must still be found."""
         from api.services.douyin_channel import download_creator_posts, DownloadedVideo
 
-        def fake_run(*args, **kwargs):
+        def write_files(_cmd):
             _write_aweme_files(str(tmp_path), "7634909977655774474", 100_000,
                                subdir="煎饼果仔/post")
-            return MagicMock(returncode=0)
 
-        with patch("api.services.douyin_channel.subprocess.run", side_effect=fake_run):
+        with patch("api.services.douyin_channel.subprocess.Popen", side_effect=_make_fake_popen(write_files)):
             result = download_creator_posts(
                 creator_url="https://www.douyin.com/user/MS4wLjAB",
                 fetch_count=3,

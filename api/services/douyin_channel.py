@@ -66,7 +66,7 @@ def _build_config(
         "json": True,
         "folderstyle": False,
         "browser_fallback": {"enabled": False},
-        "progress": {"quiet_logs": True},
+        "progress": {"quiet_logs": False},
         "cookies": {
             "msToken": cookie_dict.get("msToken", ""),
             "ttwid": cookie_dict.get("ttwid", ""),
@@ -150,17 +150,23 @@ def download_creator_posts(
             yaml.dump(config, f, allow_unicode=True)
 
         vendor_run = os.path.abspath(_VENDOR_RUN)
+        proc = subprocess.Popen(
+            [sys.executable, vendor_run, "-c", config_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         try:
-            result = subprocess.run(
-                [sys.executable, vendor_run, "-c", config_path],
-                capture_output=True,
-                text=True,
-                timeout=_SUBPROCESS_TIMEOUT,
-            )
+            stdout, _ = proc.communicate(timeout=_SUBPROCESS_TIMEOUT)
         except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
             raise DouyinDownloadError(f"douyin-downloader timed out after {_SUBPROCESS_TIMEOUT} s")
-        if result.returncode != 0:
-            log.warning("douyin-downloader exited %d: %s", result.returncode, result.stderr[:500])
+        for line in stdout.splitlines():
+            if line.strip():
+                log.info("[douyin-dl] %s", line)
+        if proc.returncode != 0:
+            log.warning("douyin-downloader exited %d", proc.returncode)
     finally:
         try:
             os.unlink(config_path)

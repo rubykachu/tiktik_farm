@@ -353,7 +353,9 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
         )
         return
 
-    output_dir = tempfile.mkdtemp(prefix=f"douyin_{pipeline.id}_")
+    base_tmp = "/data/douyin_tmp"
+    os.makedirs(base_tmp, exist_ok=True)
+    output_dir = tempfile.mkdtemp(prefix=f"{pipeline.id}_", dir=base_tmp)
     db_path = os.path.join(output_dir, "douyin_dl.db")
 
     try:
