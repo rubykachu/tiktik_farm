@@ -126,6 +126,10 @@ webapp-fresh:  ## Wipe node_modules in the webapp container and reinstall (use i
 douyin-update:  ## Pull latest douyin-downloader into vendor/ (backs up current first)
 	bash scripts/update-douyin-vendor.sh
 
+.PHONY: tiktok-signature-update
+tiktok-signature-update:  ## Sync tiktok-signature JS files from upstream (use when "Failed to generate signatures")
+	bash scripts/update-tiktok-signature.sh
+
 # ─── Testing ───────────────────────────────────────────────────────────────
 
 .PHONY: test

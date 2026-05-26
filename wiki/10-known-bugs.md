@@ -167,26 +167,16 @@ TikTok signing nằm trong 2 thành phần:
 
 Khi upstream update, phần hay thay đổi nhất: `javascript/*.js` + cách gọi trong `index.js`.
 
-### Quy trình manual sync
+### Quy trình sync
 
 ```bash
-# 1. Download upstream tiktok-signature mới
-#    (tương tự pattern scripts/update-douyin-vendor.sh)
-curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/signer.js \
-    -o tiktok_uploader/tiktok-signature/javascript/signer.js
-curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/webmssdk.js \
-    -o tiktok_uploader/tiktok-signature/javascript/webmssdk.js
-curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/xbogus.js \
-    -o tiktok_uploader/tiktok-signature/javascript/xbogus.js
-
-# 2. Nếu index.js / browser.js cũng thay đổi — download thêm:
-curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/index.js \
-    -o tiktok_uploader/tiktok-signature/index.js
-
-# 3. Nếu upstream fix gì trong tiktok.py — diff thủ công:
-#    So sánh upstream tiktok.py với local, chỉ lấy thay đổi liên quan đến signing.
-#    KHÔNG copy toàn bộ file — sẽ mất 4 bug fix.
+# Chạy từ repo root
+bash scripts/update-tiktok-signature.sh
 ```
+
+Script download 5 file (`signer.js`, `webmssdk.js`, `xbogus.js`, `index.js`, `browser.js`) từ upstream, backup file cũ, in hướng dẫn test + commit. **Không động vào `tiktok.py`** — 4 bug fix an toàn.
+
+Nếu upstream có fix trong `tiktok.py` (hiếm) — diff thủ công, chỉ lấy phần signing, **không copy toàn bộ file**.
 
 ### 4 bug fix KHÔNG được overwrite
 
