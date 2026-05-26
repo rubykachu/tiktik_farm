@@ -149,33 +149,63 @@ return True   # ⬅️ thêm
 
 ## Chiến lược maintain với upstream
 
-Repo upstream activity thấp. Đề xuất:
+### Khi nào cần sync
 
-1. **Fork** trên GitHub dưới account/org của anh
-2. Branch `farm-tiktik-patches` từ upstream main
-3. Commit từng fix riêng (4 commits độc lập, message rõ ràng)
-4. Submit PR upstream cho bug 1, 2, 4 (obviously correct, đỡ phải tự maintain)
-5. Bug 3 giữ local (upstream có thể reject vì "login flow chúng tôi không hit case này")
-6. `git fetch upstream && git rebase upstream/main` định kỳ
-7. **Pin versions** trong `requirements.txt`:
-   ```
-   fake-useragent==2.2.0
-   ```
-   để bug 2 không tự đổi mặt giữa các deploy
+Upload fail với log: `[-] Failed to generate signatures` → TikTok đã đổi signing algorithm. Kiểm tra upstream `makiisthenes/TiktokAutoUploader` — họ thường fix trong 1-2 ngày.
 
-## Regression test
+### Cái gì quan trọng
 
-Viết test pin các fix để CI red khi upstream regress:
+TikTok signing nằm trong 2 thành phần:
 
-```python
-# tests/test_upload_regression.py
-def test_full_cookie_jar_loaded_into_session(monkeypatch): ...
-def test_desktop_ua_filter_applied(monkeypatch): ...
-def test_no_default_tt_target_idc(monkeypatch): ...
-def test_upload_video_returns_true_on_success(monkeypatch): ...
+| Path | Vai trò |
+|---|---|
+| `tiktok_uploader/tiktok-signature/index.js` | Playwright launcher, gọi TikTok JS |
+| `tiktok_uploader/tiktok-signature/javascript/signer.js` | TikTok sign function (57 KB) |
+| `tiktok_uploader/tiktok-signature/javascript/webmssdk.js` | TikTok SDK (265 KB) |
+| `tiktok_uploader/tiktok-signature/javascript/xbogus.js` | X-Bogus calculator (49 KB) |
+| `tiktok_uploader/tiktok.py` | Upload flow — có **4 bug fix của mình** |
+
+Khi upstream update, phần hay thay đổi nhất: `javascript/*.js` + cách gọi trong `index.js`.
+
+### Quy trình manual sync
+
+```bash
+# 1. Download upstream tiktok-signature mới
+#    (tương tự pattern scripts/update-douyin-vendor.sh)
+curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/signer.js \
+    -o tiktok_uploader/tiktok-signature/javascript/signer.js
+curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/webmssdk.js \
+    -o tiktok_uploader/tiktok-signature/javascript/webmssdk.js
+curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/javascript/xbogus.js \
+    -o tiktok_uploader/tiktok-signature/javascript/xbogus.js
+
+# 2. Nếu index.js / browser.js cũng thay đổi — download thêm:
+curl -L https://raw.githubusercontent.com/makiisthenes/TiktokAutoUploader/main/tiktok_uploader/tiktok-signature/index.js \
+    -o tiktok_uploader/tiktok-signature/index.js
+
+# 3. Nếu upstream fix gì trong tiktok.py — diff thủ công:
+#    So sánh upstream tiktok.py với local, chỉ lấy thay đổi liên quan đến signing.
+#    KHÔNG copy toàn bộ file — sẽ mất 4 bug fix.
 ```
 
-(Chưa viết — phase 2 task.)
+### 4 bug fix KHÔNG được overwrite
+
+Khi diff `tiktok.py` với upstream, đảm bảo 4 dòng này còn nguyên:
+
+| Bug | Dòng cần giữ |
+|---|---|
+| #1 full cookie jar | Loop `for c in cookies: session.cookies.set(...)` |
+| #2 desktop UA | `UserAgent(platforms="desktop", browsers="Chrome")` |
+| #3 no default dc | `if not dc_id: print("[INFO] ...")` — KHÔNG có `dc_id = "useast2a"` |
+| #4 return True | `return True` cuối `upload_video()` |
+
+### Pin version
+
+`requirements.txt` phải pin `fake-useragent` để bug 2 không tự regress giữa các deploy:
+
+```
+fake-useragent==2.2.0
+```
 
 ## Memory link
 
