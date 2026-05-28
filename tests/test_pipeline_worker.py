@@ -20,6 +20,7 @@ from scheduler.pipeline_worker import (
     _emergency_finalize,
     _check_disk_space,
     _next_fire_in_window,
+    _ensure_aware,
     LockHeartbeat,
 )
 
@@ -476,7 +477,7 @@ class TestWindowScheduling:
 
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
-            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            result = _ensure_aware(fresh.next_fire_at)
             expected = datetime(2026, 6, 1, 0, 15, 0, tzinfo=timezone.utc)
             assert result == expected
 
@@ -491,7 +492,7 @@ class TestWindowScheduling:
 
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
-            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            result = _ensure_aware(fresh.next_fire_at)
             expected = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
             assert result == expected
 
@@ -506,7 +507,7 @@ class TestWindowScheduling:
 
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
-            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            result = _ensure_aware(fresh.next_fire_at)
             # next cycle = base + 1 day = 2026-06-02 00:30
             assert result >= base + timedelta(days=1)
 
@@ -526,7 +527,7 @@ class TestWindowScheduling:
 
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
-            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            result = _ensure_aware(fresh.next_fire_at)
             assert result > now + timedelta(hours=5)
 
     def test_next_fire_in_window_helper_within(self):

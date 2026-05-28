@@ -121,9 +121,8 @@ def _validate_window_fields(
     if interval_unit == "minutes":
         raise ValueError("window_end_time cannot be used when interval_unit=minutes")
     if first_fire_at is not None:
-        start_h, start_m = first_fire_at.hour, first_fire_at.minute
+        start_total = first_fire_at.hour * 60 + first_fire_at.minute
         end_h, end_m = map(int, window_end_time.split(":"))  # type: ignore[union-attr]
-        start_total = start_h * 60 + start_m
         end_total = end_h * 60 + end_m
         if end_total <= start_total:
             raise ValueError(

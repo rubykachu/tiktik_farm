@@ -83,18 +83,14 @@ function buildSchema(existingTokenSet: boolean) {
     .refine(
       (d) => {
         if (!d.window_end_time || !d.first_fire_at) return true;
-        const [sh, sm] = d.first_fire_at.split(":").map(Number);
-        const [eh, em] = d.window_end_time.split(":").map(Number);
-        return eh * 60 + em > sh * 60 + sm;
+        return toMinutes(d.window_end_time) > toMinutes(d.first_fire_at);
       },
       { message: "Window end must be later than the start time", path: ["window_end_time"] }
     )
     .refine(
       (d) => {
         if (!d.window_end_time || !d.first_fire_at || !d.window_delay_minutes) return true;
-        const [sh, sm] = d.first_fire_at.split(":").map(Number);
-        const [eh, em] = d.window_end_time.split(":").map(Number);
-        const windowMin = (eh * 60 + em) - (sh * 60 + sm);
+        const windowMin = toMinutes(d.window_end_time) - toMinutes(d.first_fire_at);
         return windowMin > Number(d.window_delay_minutes);
       },
       { message: "Window duration must be greater than the repeat interval", path: ["window_delay_minutes"] }
@@ -153,6 +149,11 @@ function formatHttpDetail(detail: unknown, fallback: string): string {
     if (parts.length) return parts.join("; ");
   }
   return fallback;
+}
+
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
 }
 
 function toLocalTime(iso?: string): string {
