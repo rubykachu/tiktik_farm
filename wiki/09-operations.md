@@ -186,7 +186,7 @@ Mặc định scheduler chạy serial (1 pipeline tại 1 thời điểm). Để
 ```yaml
 scheduler:
   environment:
-    - SCHEDULER_CONCURRENCY=3        # số pipeline song song (tối đa 20)
+    - SCHEDULER_CONCURRENCY=4        # số pipeline song song (tối đa 20)
     - PIPELINE_TMP_DIR=/data/pipeline_tmp  # đã set sẵn — để video ra real disk
 ```
 
