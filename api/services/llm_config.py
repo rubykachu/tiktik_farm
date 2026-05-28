@@ -6,6 +6,7 @@ The worker pulls the default LLM here so it never has to import a router.
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from sqlalchemy import update
@@ -44,6 +45,32 @@ def set_llm_enabled(enabled: bool) -> None:
             row.updated_at = now_utc()
         s.add(row)
         s.commit()
+
+
+def get_llm_mode() -> str:
+    """Return 'cloud' or 'offline'. Defaults to 'cloud' when row absent."""
+    with Session(_api_db.engine) as s:
+        row = s.get(AppSetting, "llm.mode")
+        return row.value if row else "cloud"
+
+
+def set_llm_mode(mode: str) -> None:
+    with Session(_api_db.engine) as s:
+        row = s.get(AppSetting, "llm.mode")
+        if row is None:
+            row = AppSetting(key="llm.mode", value=mode)
+        else:
+            row.value = mode
+            row.updated_at = now_utc()
+        s.add(row)
+        s.commit()
+
+
+def get_ollama_config() -> tuple[str, str]:
+    """Read env vars. Not DB-backed — changes require restart."""
+    model = os.getenv("OLLAMA_MODEL", "llama3.2")
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    return model, base_url
 
 
 def set_default_llm_model(model_id: int) -> None:

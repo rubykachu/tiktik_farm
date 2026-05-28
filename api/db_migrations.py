@@ -112,6 +112,7 @@ def seed_app_settings(engine: Engine) -> None:
     now_iso = datetime.now(timezone.utc).isoformat()
     defaults = (
         ("llm.enabled", "true"),
+        ("llm.mode", "cloud"),
     )
     with engine.begin() as conn:
         # Table may not exist yet on truly fresh installs that skip init_db()
