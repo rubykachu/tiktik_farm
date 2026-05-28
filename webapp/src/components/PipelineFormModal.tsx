@@ -29,6 +29,8 @@ const baseSchema = z.object({
   allow_stitch: z.coerce.number().min(0).max(1),
   visibility_type: z.coerce.number().min(0).max(1),
   account_ids: z.array(z.number()).min(1, "Choose at least one account"),
+  window_end_time: z.string().optional().default(""),
+  window_delay_minutes: z.coerce.number().int().min(1).optional().or(z.literal("")),
   telegram_bot_token: z.string().optional().default(""),
   telegram_chat_id: z
     .string()
@@ -70,6 +72,33 @@ function buildSchema(existingTokenSet: boolean) {
       message: "Interval must be ≥ 2 when using minutes",
       path: ["interval_value"],
     })
+    .refine(
+      (d) => {
+        const endSet = !!(d.window_end_time && d.window_end_time.trim());
+        const delaySet = !!(d.window_delay_minutes !== "" && d.window_delay_minutes !== undefined);
+        return endSet === delaySet;
+      },
+      { message: "Window end time and repeat interval must both be set or both be empty", path: ["window_end_time"] }
+    )
+    .refine(
+      (d) => {
+        if (!d.window_end_time || !d.first_fire_at) return true;
+        const [sh, sm] = d.first_fire_at.split(":").map(Number);
+        const [eh, em] = d.window_end_time.split(":").map(Number);
+        return eh * 60 + em > sh * 60 + sm;
+      },
+      { message: "Window end must be later than the start time", path: ["window_end_time"] }
+    )
+    .refine(
+      (d) => {
+        if (!d.window_end_time || !d.first_fire_at || !d.window_delay_minutes) return true;
+        const [sh, sm] = d.first_fire_at.split(":").map(Number);
+        const [eh, em] = d.window_end_time.split(":").map(Number);
+        const windowMin = (eh * 60 + em) - (sh * 60 + sm);
+        return windowMin > Number(d.window_delay_minutes);
+      },
+      { message: "Window duration must be greater than the repeat interval", path: ["window_delay_minutes"] }
+    )
     .refine(
       (d) => d.interval_unit !== "days" || /^\d{2}:\d{2}$/.test(d.first_fire_at ?? ""),
       { message: "Enter a daily run time (HH:MM)", path: ["first_fire_at"] }
@@ -199,6 +228,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       allow_stitch: 0,
       visibility_type: 0,
       account_ids: [],
+      window_end_time: "",
+      window_delay_minutes: "" as any,
       telegram_bot_token: "",
       telegram_chat_id: "",
       clear_bot_token: false,
@@ -241,6 +272,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         allow_stitch: uploadOpts.allow_stitch as 0 | 1,
         visibility_type: uploadOpts.visibility_type as 0 | 1,
         account_ids: accountIds,
+        window_end_time: pipeline.window_end_time ?? "",
+        window_delay_minutes: (pipeline.window_delay_minutes ?? "") as any,
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
         clear_bot_token: false,
@@ -264,6 +297,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         allow_stitch: 0,
         visibility_type: 0,
         account_ids: [],
+        window_end_time: "",
+        window_delay_minutes: "" as any,
         telegram_bot_token: "",
         telegram_chat_id: "",
         clear_bot_token: false,
@@ -315,6 +350,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         ? undefined
         : Number(data.max_duration_seconds);
     const aiPrompt = (data.caption_ai_prompt || "").trim() || null;
+    const windowEndTime = (data.window_end_time || "").trim() || null;
+    const windowDelayMinutes =
+      data.window_delay_minutes === "" || data.window_delay_minutes === undefined
+        ? null
+        : Number(data.window_delay_minutes);
 
     if (isEdit && pipeline) {
       const payload: PipelineUpdate = {
@@ -337,6 +377,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         account_ids: data.account_ids,
         max_duration_seconds: maxDur ?? null,
         upload_delay_minutes: data.upload_delay_minutes,
+        window_end_time: windowEndTime,
+        window_delay_minutes: windowDelayMinutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
       };
@@ -365,6 +407,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         account_ids: data.account_ids,
         max_duration_seconds: maxDur,
         upload_delay_minutes: data.upload_delay_minutes,
+        window_end_time: windowEndTime,
+        window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
       };
@@ -591,18 +635,49 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="field-error">{errors.interval_value.message}</p>
             )}
             {intervalUnit === "days" && (
-              <div>
-                <label className="label">Run daily at ({getTimezoneLabel()})</label>
-                <input
-                  type="time"
-                  className="input"
-                  {...register("first_fire_at")}
-                />
-                {errors.first_fire_at && (
-                  <p className="field-error">{errors.first_fire_at.message}</p>
-                )}
-                <p className="text-xs text-slate-400 mt-1">
-                  If this time has already passed today, the first run will be tomorrow.
+              <div className="space-y-3">
+                <div>
+                  <label className="label">Run daily at ({getTimezoneLabel()})</label>
+                  <input
+                    type="time"
+                    className="input"
+                    {...register("first_fire_at")}
+                  />
+                  {errors.first_fire_at && (
+                    <p className="field-error">{errors.first_fire_at.message}</p>
+                  )}
+                  <p className="text-xs text-slate-400 mt-1">
+                    If this time has already passed today, the first run will be tomorrow.
+                  </p>
+                </div>
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <label className="label">Window end ({getTimezoneLabel()}, optional)</label>
+                    <input
+                      type="time"
+                      className="input"
+                      {...register("window_end_time")}
+                    />
+                    {errors.window_end_time && (
+                      <p className="field-error">{errors.window_end_time.message}</p>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <label className="label">Repeat every (min)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      min={1}
+                      placeholder="e.g. 5"
+                      {...register("window_delay_minutes")}
+                    />
+                    {errors.window_delay_minutes && (
+                      <p className="field-error">{errors.window_delay_minutes.message}</p>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Optional. If set, the pipeline re-runs every N minutes from the start time until the window end, then waits for the next day.
                 </p>
               </div>
             )}
