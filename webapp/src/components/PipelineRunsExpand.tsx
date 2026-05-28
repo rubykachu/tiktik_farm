@@ -31,6 +31,13 @@ function groupByDay(runs: PipelineRunItem[]): DayGroup[] {
   }));
 }
 
+function groupStatusLabel(g: DayGroup): { text: string; cls: string } {
+  if (g.hasRunning) return { text: "running", cls: "chip bg-blue-100 text-blue-700" };
+  if (g.hasError) return { text: "has errors", cls: "chip bg-red-100 text-red-700" };
+  if (g.totalUploaded === 0) return { text: "no uploads", cls: "text-slate-400 italic" };
+  return { text: "done", cls: "chip bg-emerald-100 text-emerald-700" };
+}
+
 function runStatusLabel(r: PipelineRunItem): { text: string; cls: string } {
   if (!r.finished_at) {
     if (r.status_text) return { text: r.status_text, cls: "text-blue-700 italic" };
@@ -164,12 +171,7 @@ function DayGroupRow({
   const [open, setOpen] = useState(group.hasRunning); // auto-open if live
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
-  const groupLabel = (() => {
-    if (group.hasRunning) return { text: "running", cls: "chip bg-blue-100 text-blue-700" };
-    if (group.hasError) return { text: "has errors", cls: "chip bg-red-100 text-red-700" };
-    if (group.totalUploaded === 0) return { text: "no uploads", cls: "text-slate-400 italic" };
-    return { text: "done", cls: "chip bg-emerald-100 text-emerald-700" };
-  })();
+  const groupLabel = groupStatusLabel(group);
 
   return (
     <Fragment>

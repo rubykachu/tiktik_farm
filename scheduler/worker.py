@@ -14,6 +14,8 @@ from scheduler.pipeline_worker import pipeline_tick, purge_old_runs, reap_orphan
 
 log = logging.getLogger("scheduler.worker")
 
+_PURGE_INTERVAL = 86_400  # seconds — once per day
+
 
 def tick() -> bool:
     """One poll cycle. Returns True if a job was processed, False if idle."""
@@ -30,7 +32,6 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
     reap_orphans()
     purge_old_runs()
 
-    _PURGE_INTERVAL = 86_400  # once per day
     last_purge = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:

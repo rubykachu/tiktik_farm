@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import update
+from sqlalchemy import delete as sa_delete, update
 from sqlmodel import Session, select
 
 import api.db as _api_db
@@ -91,8 +91,6 @@ RUN_RETENTION_DAYS = 30
 
 def purge_old_runs() -> int:
     """Delete pipeline_runs (+ their video_uploads) older than RUN_RETENTION_DAYS."""
-    from sqlalchemy import delete as sa_delete
-
     cutoff = now_utc() - timedelta(days=RUN_RETENTION_DAYS)
     deleted = 0
     with Session(_api_db.engine) as s:
