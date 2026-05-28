@@ -958,14 +958,22 @@ def _make_run(session: Session, pipeline_id: int, started_at: datetime) -> Pipel
     return run
 
 
-def _make_video_upload(session: Session, pipeline_id: int, run_id: int) -> VideoUpload:
+def _make_video_upload(
+    session: Session,
+    pipeline_id: int,
+    run_id: int,
+    *,
+    created_at: datetime | None = None,
+    youtube_video_id: str = "vid1",
+) -> VideoUpload:
     vu = VideoUpload(
         pipeline_id=pipeline_id,
         run_id=run_id,
         account_id=1,
-        youtube_video_id="vid1",
-        youtube_url="https://youtube.com/watch?v=vid1",
+        youtube_video_id=youtube_video_id,
+        youtube_url=f"https://youtube.com/watch?v={youtube_video_id}",
         status="succeeded",
+        created_at=created_at or now_utc(),
     )
     session.add(vu)
     session.commit()
@@ -1005,11 +1013,12 @@ class TestPurgeOldRuns:
 
     def test_cascades_delete_to_video_uploads(self):
         now = now_utc()
+        old_ts = now - timedelta(days=RUN_RETENTION_DAYS + 5)
         with Session(_api_db.engine) as s:
             _make_account(s)
             p = _make_pipeline(s)
-            old_run = _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS + 5))
-            _make_video_upload(s, p.id, old_run.id)
+            old_run = _make_run(s, p.id, old_ts)
+            _make_video_upload(s, p.id, old_run.id, created_at=old_ts)
 
         purge_old_runs()
 
@@ -1044,3 +1053,65 @@ class TestPurgeOldRuns:
         with Session(_api_db.engine) as s:
             remaining = s.exec(select(PipelineRun)).all()
             assert len(remaining) == 1
+
+    def test_cutoff_boundary_is_kept(self):
+        # A run 1 minute inside the retention window (< 30 days old) must not be deleted.
+        # "Exactly 30 days" is avoided — it would be racy because purge_old_runs() calls
+        # now_utc() internally, making its cutoff fractionally later than test setup.
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS) + timedelta(minutes=1))
+
+        assert purge_old_runs() == 0
+
+    def test_cascades_all_uploads_for_run(self):
+        now = now_utc()
+        old_ts = now - timedelta(days=RUN_RETENTION_DAYS + 3)
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            p = _make_pipeline(s)
+            old_run = _make_run(s, p.id, old_ts)
+            for vid in ["v1", "v2", "v3"]:
+                _make_video_upload(s, p.id, old_run.id, created_at=old_ts, youtube_video_id=vid)
+
+        purge_old_runs()
+
+        with Session(_api_db.engine) as s:
+            assert s.exec(select(VideoUpload)).all() == []
+
+    def test_new_upload_for_old_run_not_purged(self):
+        # Race-guard: VideoUpload inserted by a concurrent tick (created_at≈now)
+        # must NOT be deleted even if its run_id is in the old set.
+        now = now_utc()
+        old_ts = now - timedelta(days=RUN_RETENTION_DAYS + 5)
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            p = _make_pipeline(s)
+            old_run = _make_run(s, p.id, old_ts)
+            # Upload created NOW (simulates concurrent insert during purge window)
+            _make_video_upload(s, p.id, old_run.id, created_at=now)
+
+        purge_old_runs()
+
+        with Session(_api_db.engine) as s:
+            # PipelineRun deleted; fresh VideoUpload survived with run_id NULLed
+            assert s.exec(select(PipelineRun)).all() == []
+            uploads = s.exec(select(VideoUpload)).all()
+            assert len(uploads) == 1
+            assert uploads[0].run_id is None
+
+    def test_large_batch_does_not_crash(self):
+        # Confirms subquery approach avoids SQLite "too many SQL variables" (>999 IDs).
+        now = now_utc()
+        old_ts = now - timedelta(days=RUN_RETENTION_DAYS + 1)
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            for _ in range(1100):
+                _make_run(s, p.id, old_ts)
+
+        deleted = purge_old_runs()
+
+        assert deleted == 1100
+        with Session(_api_db.engine) as s:
+            assert s.exec(select(PipelineRun)).all() == []

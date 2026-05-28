@@ -30,8 +30,10 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
         concurrency = 1
     log.info("scheduler loop starting, poll_interval=%gs concurrency=%d", poll_interval, concurrency)
     reap_orphans()
-    purge_old_runs()
-
+    try:
+        purge_old_runs()
+    except Exception:
+        log.exception("purge_old_runs failed at startup, continuing")
     last_purge = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -46,7 +48,10 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
             pending -= done
 
             if time.monotonic() - last_purge >= _PURGE_INTERVAL:
-                purge_old_runs()
+                try:
+                    purge_old_runs()
+                except Exception:
+                    log.exception("purge_old_runs failed, skipping this cycle")
                 last_purge = time.monotonic()
 
             slots = concurrency - len(pending)
