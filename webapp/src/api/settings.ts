@@ -2,6 +2,9 @@ import { api } from "./client";
 
 export interface AppSettings {
   llm_enabled: boolean;
+  llm_mode: "cloud" | "offline";
+  ollama_model: string | null;
+  ollama_base_url: string | null;
 }
 
 export interface LLMTestResult {
