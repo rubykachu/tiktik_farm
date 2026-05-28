@@ -24,7 +24,12 @@ from api.models import Account, ChannelPipeline, DouyinCookie, PipelineRun, Vide
 from api.services import douyin_channel, llm, tiktok_adapter, telegram, youtube_channel
 from api.services import secrets
 from api.services.caption import render_caption, template_uses_ai_title
-from api.services.llm_config import get_default_llm_model, is_llm_enabled
+from api.services.llm_config import (
+    get_default_llm_model,
+    get_llm_mode,
+    get_ollama_config,
+    is_llm_enabled,
+)
 from api.utils.text import truncate
 
 log = logging.getLogger("scheduler.pipeline_worker")
@@ -263,6 +268,22 @@ def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
     if not is_llm_enabled():
         log.info("LLM globally disabled; using raw title for {ai_title}")
         return title
+
+    if get_llm_mode() == "offline":
+        model, base_url = get_ollama_config()
+        try:
+            rewritten = llm.rewrite_title_offline(
+                prompt,
+                title=title,
+                description=description,
+                model=model,
+                base_url=base_url,
+            )
+        except llm.LLMCallFailed as e:
+            log.warning("Ollama rewrite skipped: %s", e)
+            return title
+        return rewritten or title
+
     default = get_default_llm_model()
     if default is None:
         log.warning("Pipeline has caption_ai_prompt but no default LLM is set")
