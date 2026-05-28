@@ -80,6 +80,12 @@ class ChannelPipeline(SQLModel, table=True):
     # a tick is in flight. run_now_requested_at is set by POST /run-now and
     # cleared by the worker with an atomic CAS that preserves any new request
     # arriving mid-tick.
+    # Schedule window: if set, pipeline re-fires every window_delay_minutes
+    # from first_fire_at.time() until window_end_time (HH:MM UTC) each cycle,
+    # then jumps to the next cycle's start.
+    window_end_time: Optional[str] = Field(default=None, max_length=5)  # "HH:MM"
+    window_delay_minutes: Optional[int] = Field(default=None, ge=1)
+
     run_now_requested_at: Optional[datetime] = Field(default=None)
     lock_until: Optional[datetime] = Field(default=None)
 

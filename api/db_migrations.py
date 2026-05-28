@@ -64,6 +64,14 @@ def apply_schema_patches(engine: Engine) -> None:
                 conn.exec_driver_sql(
                     "ALTER TABLE channel_pipelines ADD COLUMN douyin_cookie_id INTEGER"
                 )
+            if "window_end_time" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN window_end_time TEXT"
+                )
+            if "window_delay_minutes" not in col_names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE channel_pipelines ADD COLUMN window_delay_minutes INTEGER"
+                )
 
         has_pipeline_runs = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"

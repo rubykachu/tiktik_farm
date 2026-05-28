@@ -854,6 +854,23 @@ def _ensure_aware(dt: datetime) -> datetime:
     return dt
 
 
+def _next_fire_in_window(pipeline: ChannelPipeline, prev: datetime) -> Optional[datetime]:
+    """Return prev + window_delay if still within today's window, else None.
+
+    "Today's window" is anchored to the calendar date of prev (UTC), so window
+    boundaries don't drift across day changes.
+    """
+    if not pipeline.window_end_time or not pipeline.window_delay_minutes:
+        return None
+    candidate = prev + timedelta(minutes=pipeline.window_delay_minutes)
+    end_h, end_m = map(int, pipeline.window_end_time.split(":"))
+    # Window closes at window_end_time on the same UTC date as prev.
+    window_close = prev.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    if candidate <= window_close:
+        return candidate
+    return None
+
+
 def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str) -> None:
     """Advance next_fire_at (scheduled) or clear run_now flag (manual)."""
     now = now_utc()
@@ -864,11 +881,15 @@ def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str) -> None:
             return
 
         if trigger_reason == "scheduled":
-            interval = _interval_to_timedelta(fresh.interval_value, fresh.interval_unit)
             prev = _ensure_aware(fresh.next_fire_at)
-            candidate_a = prev + interval
-            candidate_b = now + interval
-            fresh.next_fire_at = max(candidate_a, candidate_b)
+            in_window = _next_fire_in_window(fresh, prev)
+            if in_window is not None:
+                fresh.next_fire_at = in_window
+            else:
+                interval = _interval_to_timedelta(fresh.interval_value, fresh.interval_unit)
+                candidate_a = prev + interval
+                candidate_b = now + interval
+                fresh.next_fire_at = max(candidate_a, candidate_b)
         elif trigger_reason == "manual":
             # CAS: only clear if value hasn't changed during tick
             claimed_at = pipeline.run_now_requested_at

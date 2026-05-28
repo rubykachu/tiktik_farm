@@ -54,6 +54,8 @@ def _to_read(row: ChannelPipeline) -> dict:
         "max_duration_seconds": row.max_duration_seconds,
         "upload_delay_minutes": row.upload_delay_minutes or 0,
         "caption_ai_prompt": row.caption_ai_prompt,
+        "window_end_time": row.window_end_time,
+        "window_delay_minutes": row.window_delay_minutes,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
         "telegram_chat_id": row.telegram_chat_id,
         "run_now_requested_at": row.run_now_requested_at,
@@ -138,6 +140,8 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         max_duration_seconds=payload.max_duration_seconds,
         upload_delay_minutes=payload.upload_delay_minutes,
         caption_ai_prompt=(payload.caption_ai_prompt or None),
+        window_end_time=payload.window_end_time or None,
+        window_delay_minutes=payload.window_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
     )
@@ -244,6 +248,12 @@ def update_pipeline(
         changed = True
     if "caption_ai_prompt" in payload.model_fields_set:
         row.caption_ai_prompt = payload.caption_ai_prompt or None
+        changed = True
+    if "window_end_time" in payload.model_fields_set:
+        row.window_end_time = payload.window_end_time or None
+        changed = True
+    if "window_delay_minutes" in payload.model_fields_set:
+        row.window_delay_minutes = payload.window_delay_minutes
         changed = True
     if "douyin_cookie_id" in payload.model_fields_set:
         if row.source_type != "douyin":

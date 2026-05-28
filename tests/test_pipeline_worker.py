@@ -19,6 +19,7 @@ from scheduler.pipeline_worker import (
     pipeline_tick,
     _emergency_finalize,
     _check_disk_space,
+    _next_fire_in_window,
     LockHeartbeat,
 )
 
@@ -63,6 +64,7 @@ def _make_pipeline(session: Session, **overrides) -> ChannelPipeline:
          p.interval_unit, p.first_fire_at, p.next_fire_at, p.state,
          p.caption_template, p.upload_options_json, p.account_ids_json,
          p.max_duration_seconds, p.upload_delay_minutes, p.telegram_bot_token, p.telegram_chat_id,
+         p.window_end_time, p.window_delay_minutes,
          p.run_now_requested_at, p.lock_until, p.created_at, p.updated_at)
     return p
 
@@ -447,6 +449,118 @@ class TestAdvanceNextFire:
             fresh = s.get(ChannelPipeline, pipeline.id)
             # CAS doesn't match → flag preserved
             assert fresh.run_now_requested_at is not None
+
+
+# ─── E4b: Window scheduling ────────────────────────────────────────────────
+
+
+class TestWindowScheduling:
+    def _make_window_pipeline(self, session: Session, next_fire_at: datetime) -> ChannelPipeline:
+        return _make_pipeline(
+            session,
+            interval_value=1,
+            interval_unit="days",
+            next_fire_at=next_fire_at,
+            window_end_time="00:30",
+            window_delay_minutes=5,
+        )
+
+    def test_within_window_advances_by_delay(self):
+        # next_fire_at = 00:10 → next should be 00:15 (still ≤ 00:30)
+        base = datetime(2026, 6, 1, 0, 10, 0, tzinfo=timezone.utc)
+        with Session(_api_db.engine) as s:
+            pipeline = self._make_window_pipeline(s, next_fire_at=base)
+            s.expunge(pipeline)
+
+        advance_next_fire(pipeline, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            expected = datetime(2026, 6, 1, 0, 15, 0, tzinfo=timezone.utc)
+            assert result == expected
+
+    def test_at_window_end_advances_by_delay(self):
+        # next_fire_at = 00:25, delay=5 → candidate 00:30 == window_close → still in window
+        base = datetime(2026, 6, 1, 0, 25, 0, tzinfo=timezone.utc)
+        with Session(_api_db.engine) as s:
+            pipeline = self._make_window_pipeline(s, next_fire_at=base)
+            s.expunge(pipeline)
+
+        advance_next_fire(pipeline, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            expected = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+            assert result == expected
+
+    def test_past_window_jumps_to_next_cycle(self):
+        # next_fire_at = 00:30, delay=5 → candidate 00:35 > window_close 00:30 → use interval
+        base = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+        with Session(_api_db.engine) as s:
+            pipeline = self._make_window_pipeline(s, next_fire_at=base)
+            s.expunge(pipeline)
+
+        advance_next_fire(pipeline, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            # next cycle = base + 1 day = 2026-06-02 00:30
+            assert result >= base + timedelta(days=1)
+
+    def test_no_window_unchanged(self):
+        # Pipeline without window fields → original interval logic
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            pipeline = _make_pipeline(
+                s,
+                interval_value=6,
+                interval_unit="hours",
+                next_fire_at=now - timedelta(hours=1),
+            )
+            s.expunge(pipeline)
+
+        advance_next_fire(pipeline, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            result = fresh.next_fire_at.replace(tzinfo=timezone.utc) if fresh.next_fire_at.tzinfo is None else fresh.next_fire_at
+            assert result > now + timedelta(hours=5)
+
+    def test_next_fire_in_window_helper_within(self):
+        base = datetime(2026, 6, 1, 0, 10, 0, tzinfo=timezone.utc)
+        pipeline = ChannelPipeline(
+            name="x", channel_url="https://www.youtube.com/@x/videos",
+            fetch_count=1, interval_value=1, interval_unit="days",
+            first_fire_at=base, next_fire_at=base, state="active",
+            caption_template="{title}", window_end_time="00:30", window_delay_minutes=5,
+        )
+        result = _next_fire_in_window(pipeline, base)
+        assert result == datetime(2026, 6, 1, 0, 15, 0, tzinfo=timezone.utc)
+
+    def test_next_fire_in_window_helper_outside(self):
+        base = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+        pipeline = ChannelPipeline(
+            name="x", channel_url="https://www.youtube.com/@x/videos",
+            fetch_count=1, interval_value=1, interval_unit="days",
+            first_fire_at=base, next_fire_at=base, state="active",
+            caption_template="{title}", window_end_time="00:30", window_delay_minutes=5,
+        )
+        result = _next_fire_in_window(pipeline, base)
+        assert result is None
+
+    def test_next_fire_in_window_helper_no_window(self):
+        base = datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+        pipeline = ChannelPipeline(
+            name="x", channel_url="https://www.youtube.com/@x/videos",
+            fetch_count=1, interval_value=1, interval_unit="days",
+            first_fire_at=base, next_fire_at=base, state="active",
+            caption_template="{title}",
+        )
+        result = _next_fire_in_window(pipeline, base)
+        assert result is None
 
 
 # ─── E5: Telegram summary ──────────────────────────────────────────────────

@@ -37,6 +37,7 @@ def is_douyin_url(url: str) -> bool:
 _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 # Numeric only — private channels/supergroups use -100xxxxxxxxxx.
 _CHAT_ID_RE = re.compile(r"^-?\d+$")
+_WINDOW_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 # ---------- douyin cookies ---------------------------------------------------
@@ -100,6 +101,41 @@ def is_youtube_url(value: str) -> bool:
 # ---------- channel pipelines (Phase 1) -------------------------------------
 
 
+def _validate_window_fields(
+    window_end_time: Optional[str],
+    window_delay_minutes: Optional[int],
+    interval_unit: Optional[str],
+    first_fire_at: Optional[datetime],
+) -> None:
+    """Shared window validation for PipelineCreate and PipelineUpdate."""
+    end_set = window_end_time is not None
+    delay_set = window_delay_minutes is not None
+    if end_set != delay_set:
+        raise ValueError(
+            "window_end_time and window_delay_minutes must both be set or both be null"
+        )
+    if not end_set:
+        return
+    if not _WINDOW_TIME_RE.match(window_end_time):  # type: ignore[arg-type]
+        raise ValueError("window_end_time must be in HH:MM format (e.g. '00:30')")
+    if interval_unit == "minutes":
+        raise ValueError("window_end_time cannot be used when interval_unit=minutes")
+    if first_fire_at is not None:
+        start_h, start_m = first_fire_at.hour, first_fire_at.minute
+        end_h, end_m = map(int, window_end_time.split(":"))  # type: ignore[union-attr]
+        start_total = start_h * 60 + start_m
+        end_total = end_h * 60 + end_m
+        if end_total <= start_total:
+            raise ValueError(
+                "window_end_time must be later than the time component of first_fire_at"
+            )
+        window_minutes = end_total - start_total
+        if window_minutes <= window_delay_minutes:  # type: ignore[operator]
+            raise ValueError(
+                "window_end_time - first_fire_at time must be > window_delay_minutes"
+            )
+
+
 class PipelineUploadOptions(BaseModel):
     """Subset of UploadOptions exposed in the pipeline form."""
     allow_comment: Literal[0, 1] = 1
@@ -123,6 +159,8 @@ class PipelineCreate(BaseModel):
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
     upload_delay_minutes: int = Field(default=0, ge=0, le=30)
     caption_ai_prompt: Optional[str] = Field(default=None, max_length=2000)
+    window_end_time: Optional[str] = None    # "HH:MM" UTC
+    window_delay_minutes: Optional[int] = Field(default=None, ge=1)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
@@ -185,6 +223,12 @@ class PipelineCreate(BaseModel):
             raise ValueError(
                 "telegram_bot_token and telegram_chat_id must be set together"
             )
+        _validate_window_fields(
+            self.window_end_time,
+            self.window_delay_minutes,
+            self.interval_unit,
+            self.first_fire_at,
+        )
         return self
 
 
@@ -203,6 +247,8 @@ class PipelineUpdate(BaseModel):
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
     upload_delay_minutes: Optional[int] = Field(default=None, ge=0, le=30)
     caption_ai_prompt: Optional[str] = Field(default=None, max_length=2000)
+    window_end_time: Optional[str] = None    # "HH:MM" UTC, or null to clear
+    window_delay_minutes: Optional[int] = Field(default=None, ge=1)
     # bot_token: empty / absent → keep existing. Use clear_bot_token to remove.
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
@@ -248,6 +294,14 @@ class PipelineUpdate(BaseModel):
                 raise ValueError(
                     "cannot set telegram_chat_id while clear_bot_token is true"
                 )
+        # Validate window only when both fields are explicitly provided.
+        if self.window_end_time is not None or self.window_delay_minutes is not None:
+            _validate_window_fields(
+                self.window_end_time,
+                self.window_delay_minutes,
+                self.interval_unit,
+                self.first_fire_at,
+            )
         return self
 
 
@@ -270,6 +324,8 @@ class PipelineRead(BaseModel):
     max_duration_seconds: Optional[int]
     upload_delay_minutes: int
     caption_ai_prompt: Optional[str]
+    window_end_time: Optional[str] = None
+    window_delay_minutes: Optional[int] = None
     telegram_bot_token_set: bool
     telegram_chat_id: Optional[str]
     run_now_requested_at: Optional[datetime]
