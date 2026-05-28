@@ -97,6 +97,36 @@ def rewrite_title(
     return content
 
 
+def rewrite_title_offline(
+    prompt: str,
+    title: str,
+    description: str,
+    *,
+    model: str,
+    base_url: str,
+) -> str:
+    """Call a local Ollama instance. No API key required."""
+    user_msg = (
+        f"Title: {title}\n"
+        f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
+    )
+    try:
+        response = litellm.completion(
+            model=f"ollama/{model}",
+            api_base=base_url,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=MAX_OUTPUT_TOKENS,
+            timeout=DEFAULT_TIMEOUT,
+        )
+    except Exception as e:
+        log.warning("Ollama rewrite failed (model=%s base=%s): %s", model, base_url, e)
+        raise LLMCallFailed(str(e)) from e
+    return (response.choices[0].message.content or "").strip()
+
+
 _TEST_ERROR_MAX_CHARS = 200
 
 
