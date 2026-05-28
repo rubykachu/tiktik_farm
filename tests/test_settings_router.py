@@ -40,7 +40,7 @@ class TestGetSettings:
     def test_default_enabled_true(self, client):
         r = client.get("/api/settings", headers=HEADERS_OK)
         assert r.status_code == 200
-        assert r.json() == {"llm_enabled": True}
+        assert r.json()["llm_enabled"] is True
 
 
 class TestPatchSettings:

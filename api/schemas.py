@@ -467,10 +467,14 @@ class LLMModelRead(BaseModel):
 
 class SettingsRead(BaseModel):
     llm_enabled: bool
+    llm_mode: str
+    ollama_model: Optional[str] = None
+    ollama_base_url: Optional[str] = None
 
 
 class SettingsUpdate(BaseModel):
     llm_enabled: Optional[bool] = None
+    llm_mode: Optional[Literal["cloud", "offline"]] = None
 
 
 class LLMTestRequest(BaseModel):
