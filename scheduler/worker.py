@@ -6,7 +6,9 @@ All upload execution is delegated to pipeline_worker.
 from __future__ import annotations
 
 import logging
+import os
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from scheduler.pipeline_worker import pipeline_tick, reap_orphans
 
@@ -19,13 +21,27 @@ def tick() -> bool:
 
 
 def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by tick() in tests
-    log.info("scheduler loop starting, poll_interval=%ss", poll_interval)
+    try:
+        concurrency = max(1, min(int(os.getenv("SCHEDULER_CONCURRENCY", "1")), 20))
+    except ValueError:
+        log.warning("SCHEDULER_CONCURRENCY is not a valid integer, defaulting to 1")
+        concurrency = 1
+    log.info("scheduler loop starting, poll_interval=%gs concurrency=%d", poll_interval, concurrency)
     reap_orphans()
-    while True:
-        try:
-            busy = tick()
-        except Exception:
-            log.exception("tick failed")
-            busy = False
-        if not busy:
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        pending: set[Future] = set()
+        while True:
+            done = {f for f in pending if f.done()}
+            for f in done:
+                try:
+                    f.result()
+                except Exception:
+                    log.exception("pipeline_tick raised")
+            pending -= done
+
+            slots = concurrency - len(pending)
+            for _ in range(slots):
+                pending.add(executor.submit(pipeline_tick))
+
             time.sleep(poll_interval)

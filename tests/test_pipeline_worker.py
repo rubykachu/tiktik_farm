@@ -18,6 +18,7 @@ from scheduler.pipeline_worker import (
     send_telegram_summary,
     pipeline_tick,
     _emergency_finalize,
+    _check_disk_space,
     LockHeartbeat,
 )
 
@@ -647,3 +648,103 @@ class TestClaimOrdering:
         pipeline, trigger = result
         assert pipeline.id == p2_id
         assert trigger == "manual"
+
+
+# ─── PIPELINE_TMP_DIR config ───────────────────────────────────────────────
+
+
+class TestCheckDiskSpace:
+    @patch("scheduler.pipeline_worker.os.statvfs")
+    def test_uses_pipeline_tmp_dir_when_set(self, mock_statvfs, monkeypatch):
+        monkeypatch.setenv("PIPELINE_TMP_DIR", "/data/pipeline_tmp")
+        mock_statvfs.return_value = MagicMock(f_bavail=1_000_000, f_frsize=4096)
+
+        _check_disk_space()
+
+        mock_statvfs.assert_called_once_with("/data/pipeline_tmp")
+
+    @patch("scheduler.pipeline_worker.os.statvfs")
+    def test_falls_back_to_system_tmp_when_env_unset(self, mock_statvfs, monkeypatch):
+        import tempfile as _tmp
+        monkeypatch.delenv("PIPELINE_TMP_DIR", raising=False)
+        mock_statvfs.return_value = MagicMock(f_bavail=1_000_000, f_frsize=4096)
+
+        _check_disk_space()
+
+        mock_statvfs.assert_called_once_with(_tmp.gettempdir())
+
+    @patch("scheduler.pipeline_worker.os.statvfs")
+    def test_returns_false_when_less_than_1gb_free(self, mock_statvfs, monkeypatch):
+        monkeypatch.delenv("PIPELINE_TMP_DIR", raising=False)
+        mock_statvfs.return_value = MagicMock(f_bavail=100, f_frsize=4096)  # ~400KB free
+
+        assert _check_disk_space() is False
+
+    @patch("scheduler.pipeline_worker.os.statvfs")
+    def test_returns_true_when_enough_space(self, mock_statvfs, monkeypatch):
+        monkeypatch.delenv("PIPELINE_TMP_DIR", raising=False)
+        mock_statvfs.return_value = MagicMock(f_bavail=500_000, f_frsize=4096)  # ~2GB free
+
+        assert _check_disk_space() is True
+
+    @patch("scheduler.pipeline_worker.os.statvfs")
+    def test_empty_string_env_falls_back_to_system_tmp(self, mock_statvfs, monkeypatch):
+        import tempfile as _tmp
+        monkeypatch.setenv("PIPELINE_TMP_DIR", "")
+        mock_statvfs.return_value = MagicMock(f_bavail=1_000_000, f_frsize=4096)
+
+        _check_disk_space()
+
+        mock_statvfs.assert_called_once_with(_tmp.gettempdir())
+
+
+class TestYoutubeMkdtempDir:
+    @patch("scheduler.pipeline_worker._check_disk_space", return_value=True)
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.tempfile.mkdtemp")
+    def test_mkdtemp_passes_pipeline_tmp_dir(
+        self, mock_mkdtemp, mock_upload, mock_download, mock_list, _disk, monkeypatch
+    ):
+        monkeypatch.setenv("PIPELINE_TMP_DIR", "/data/pipeline_tmp")
+        mock_mkdtemp.return_value = "/data/pipeline_tmp/pipeline_dl_abc"
+        mock_list.return_value = [
+            {"id": "v1", "title": "T", "url": "https://www.youtube.com/watch?v=v1"}
+        ]
+        mock_download.return_value = ("/data/pipeline_tmp/pipeline_dl_abc/v1.mp4", "")
+        mock_upload.return_value = (True, "tk1", "https://tiktok.com/video/tk1")
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s)
+            s.expunge(pipeline)
+
+        run_pipeline(pipeline, "scheduled")
+
+        mock_mkdtemp.assert_called_once_with(prefix="pipeline_dl_", dir="/data/pipeline_tmp")
+
+    @patch("scheduler.pipeline_worker._check_disk_space", return_value=True)
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.tempfile.mkdtemp")
+    def test_mkdtemp_uses_none_dir_when_env_unset(
+        self, mock_mkdtemp, mock_upload, mock_download, mock_list, _disk, monkeypatch
+    ):
+        monkeypatch.delenv("PIPELINE_TMP_DIR", raising=False)
+        mock_mkdtemp.return_value = "/tmp/pipeline_dl_abc"
+        mock_list.return_value = [
+            {"id": "v1", "title": "T", "url": "https://www.youtube.com/watch?v=v1"}
+        ]
+        mock_download.return_value = ("/tmp/pipeline_dl_abc/v1.mp4", "")
+        mock_upload.return_value = (True, "tk1", "https://tiktok.com/video/tk1")
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s)
+            s.expunge(pipeline)
+
+        run_pipeline(pipeline, "scheduled")
+
+        mock_mkdtemp.assert_called_once_with(prefix="pipeline_dl_", dir=None)

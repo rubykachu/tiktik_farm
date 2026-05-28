@@ -193,7 +193,8 @@ class LockHeartbeat:
 
 def _check_disk_space() -> bool:
     """Return False if disk free < 1GB."""
-    stat = os.statvfs("/tmp")
+    path = os.environ.get("PIPELINE_TMP_DIR") or tempfile.gettempdir()
+    stat = os.statvfs(path)
     free_bytes = stat.f_bavail * stat.f_frsize
     return free_bytes >= 1_073_741_824
 
@@ -612,7 +613,10 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
 
                 if download_path is None:
                     try:
-                        temp_dir = tempfile.mkdtemp(prefix="pipeline_dl_")
+                        temp_dir = tempfile.mkdtemp(
+                            prefix="pipeline_dl_",
+                            dir=os.environ.get("PIPELINE_TMP_DIR") or None,
+                        )
                         download_path, description = youtube_channel.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
