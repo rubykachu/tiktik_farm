@@ -9,6 +9,7 @@ from sqlmodel import Session, SQLModel, select
 import api.db as _api_db
 from api.db import now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
+from api.schemas import _validate_window_fields
 from scheduler.pipeline_worker import (
     reap_orphans,
     claim_due_pipeline,
@@ -508,8 +509,8 @@ class TestWindowScheduling:
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
             result = _ensure_aware(fresh.next_fire_at)
-            # next cycle = base + 1 day = 2026-06-02 00:30
-            assert result >= base + timedelta(days=1)
+            # base is in 2026 (past), so candidate_a = base+1day wins over candidate_b=now+1day
+            assert result == datetime(2026, 6, 2, 0, 30, 0, tzinfo=timezone.utc)
 
     def test_no_window_unchanged(self):
         # Pipeline without window fields → original interval logic
@@ -562,6 +563,78 @@ class TestWindowScheduling:
         )
         result = _next_fire_in_window(pipeline, base)
         assert result is None
+
+
+# ─── E4c: _validate_window_fields ─────────────────────────────────────────
+
+
+_BASE_FFA = datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+class TestWindowValidation:
+    """Unit tests for api.schemas._validate_window_fields."""
+
+    # V8: both None → no error (no window configured)
+    def test_both_none_ok(self):
+        _validate_window_fields(None, None, "hours", _BASE_FFA)
+
+    # V9: valid pair → no error
+    def test_valid_pair_ok(self):
+        _validate_window_fields("00:30", 5, "days", _BASE_FFA)
+
+    # V1: only window_end_time set → ValueError
+    def test_only_end_time_raises(self):
+        with pytest.raises(ValueError, match="both"):
+            _validate_window_fields("00:30", None, "hours", _BASE_FFA)
+
+    # V2: only window_delay_minutes set → ValueError
+    def test_only_delay_raises(self):
+        with pytest.raises(ValueError, match="both"):
+            _validate_window_fields(None, 5, "hours", _BASE_FFA)
+
+    # V3: invalid format strings
+    @pytest.mark.parametrize("bad", ["9:30", "25:00", "00:60", "noon", "0030", ""])
+    def test_invalid_format_raises(self, bad):
+        with pytest.raises(ValueError, match="HH:MM"):
+            _validate_window_fields(bad, 5, "hours", _BASE_FFA)
+
+    # V4: interval_unit=minutes → ValueError
+    def test_minutes_interval_raises(self):
+        with pytest.raises(ValueError, match="minutes"):
+            _validate_window_fields("00:30", 5, "minutes", _BASE_FFA)
+
+    # V5: end == start → ValueError
+    def test_end_equals_start_raises(self):
+        ffa = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+        with pytest.raises(ValueError):
+            _validate_window_fields("00:30", 5, "hours", ffa)
+
+    # V5b: end before start → ValueError
+    def test_end_before_start_raises(self):
+        ffa = datetime(2026, 6, 1, 1, 0, 0, tzinfo=timezone.utc)
+        with pytest.raises(ValueError):
+            _validate_window_fields("00:30", 5, "hours", ffa)
+
+    # V6: window width == delay (not strictly greater) → ValueError
+    def test_window_equals_delay_raises(self):
+        # start=00:00, end=00:05, delay=5 → window=5, 5 <= 5 → error
+        with pytest.raises(ValueError):
+            _validate_window_fields("00:05", 5, "hours", _BASE_FFA)
+
+    # V7: first_fire_at=None → skips time comparison, no error
+    def test_first_fire_at_none_skips_time_check(self):
+        _validate_window_fields("00:30", 5, "hours", None)
+
+    # window > delay exactly by 1 minute → ok
+    def test_window_just_greater_than_delay_ok(self):
+        # start=00:00, end=00:06, delay=5 → window=6 > 5
+        _validate_window_fields("00:06", 5, "hours", _BASE_FFA)
+
+    # ge=3 enforcement: delay=2 is blocked at schema Field level, not this function
+    # (this function receives already-validated int from Pydantic; pass-through)
+    def test_delay_2_passes_function_level(self):
+        # _validate_window_fields itself has no ge check; Pydantic Field does
+        _validate_window_fields("00:30", 2, "hours", _BASE_FFA)
 
 
 # ─── E5: Telegram summary ──────────────────────────────────────────────────

@@ -432,3 +432,154 @@ class TestDelete:
             s.commit()
         r = client.delete(f"/api/pipelines/{pid}", headers=HEADERS_OK)
         assert r.status_code == 409
+
+
+# ─── Window scheduling ───────────────────────────────────────────────────────
+
+
+def _daily_payload(account_id: int, **overrides):
+    """Valid payload with interval_unit=days (required for window fields)."""
+    base = {
+        "name": "Window Pipeline",
+        "channel_url": "https://youtube.com/@cubez/videos",
+        "fetch_count": 1,
+        "interval_value": 1,
+        "interval_unit": "days",
+        "first_fire_at": (_now().replace(hour=0, minute=0, second=0, microsecond=0)
+                          + timedelta(days=1)).isoformat(),
+        "caption_template": "{title}",
+        "upload_options": {"allow_comment": 1, "allow_duet": 0,
+                           "allow_stitch": 0, "visibility_type": 0},
+        "account_ids": [account_id],
+    }
+    base.update(overrides)
+    return base
+
+
+class TestWindowSchedulingAPI:
+    # R1: create with valid window → 201, fields in response
+    def test_create_with_window_returns_fields(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid, window_end_time="00:30", window_delay_minutes=5),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["window_end_time"] == "00:30"
+        assert body["window_delay_minutes"] == 5
+
+    # R1b: create without window → fields are null
+    def test_create_without_window_fields_are_null(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["window_end_time"] is None
+        assert body["window_delay_minutes"] is None
+
+    # R2: invalid window (end before start) → 422
+    def test_create_window_end_before_start_422(self, client):
+        aid = _make_account(client)
+        ffa = (_now().replace(hour=1, minute=0, second=0, microsecond=0)
+               + timedelta(days=1)).isoformat()
+        r = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid, first_fire_at=ffa,
+                                window_end_time="00:30", window_delay_minutes=5),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+    # R2b: window on minutes-interval pipeline → 422
+    def test_create_window_on_minutes_interval_422(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json={**_daily_payload(aid), "interval_unit": "minutes",
+                  "interval_value": 10,
+                  "window_end_time": "00:30", "window_delay_minutes": 5},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+    # R2c: asymmetric window (only end_time) → 422
+    def test_create_asymmetric_window_422(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid, window_end_time="00:30"),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+    # R3: PATCH to add window → 200, fields persisted
+    def test_patch_add_window_persists(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_daily_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"window_end_time": "00:30", "window_delay_minutes": 5},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["window_end_time"] == "00:30"
+        assert body["window_delay_minutes"] == 5
+
+    # R4: PATCH to clear window (both null) → 200, fields nulled
+    def test_patch_clear_window(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid, window_end_time="00:30", window_delay_minutes=5),
+            headers=HEADERS_OK,
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"window_end_time": None, "window_delay_minutes": None},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["window_end_time"] is None
+        assert body["window_delay_minutes"] is None
+
+    # Blocker 1 regression: PATCH window onto minutes-interval pipeline → 422
+    def test_patch_window_on_minutes_interval_422(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json={**_daily_payload(aid), "interval_unit": "minutes", "interval_value": 10,
+                  "window_end_time": None, "window_delay_minutes": None},
+            headers=HEADERS_OK,
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"window_end_time": "00:30", "window_delay_minutes": 5},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+    # Blocker 2 regression: PATCH only one window field → 422 (half-set state blocked)
+    def test_patch_half_set_window_422(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json=_daily_payload(aid, window_end_time="00:30", window_delay_minutes=5),
+            headers=HEADERS_OK,
+        ).json()["id"]
+        # Null only delay, leave end_time in DB
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"window_delay_minutes": None},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text

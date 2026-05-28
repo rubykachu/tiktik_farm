@@ -30,7 +30,7 @@ const baseSchema = z.object({
   visibility_type: z.coerce.number().min(0).max(1),
   account_ids: z.array(z.number()).min(1, "Choose at least one account"),
   window_end_time: z.string().optional().default(""),
-  window_delay_minutes: z.coerce.number().int().min(1).optional().or(z.literal("")),
+  window_delay_minutes: z.coerce.number().int().min(3).optional().or(z.literal("")),
   telegram_bot_token: z.string().optional().default(""),
   telegram_chat_id: z
     .string()
@@ -668,7 +668,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     <input
                       type="number"
                       className="input"
-                      min={1}
+                      min={3}
                       placeholder="e.g. 5"
                       {...register("window_delay_minutes")}
                     />

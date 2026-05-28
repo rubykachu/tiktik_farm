@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
-from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, is_douyin_url
+from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, _validate_window_fields, is_douyin_url
 from api.services.caption import template_uses_ai_title
 from api.services.llm_config import get_default_llm_model, is_llm_enabled
 from api.services.youtube_validate import is_youtube_url
@@ -255,6 +255,45 @@ def update_pipeline(
     if "window_delay_minutes" in payload.model_fields_set:
         row.window_delay_minutes = payload.window_delay_minutes
         changed = True
+
+    # Post-merge window invariant checks (payload may omit either field, so we
+    # validate against the merged row state, not just the payload).
+    window_fields_touched = (
+        "window_end_time" in payload.model_fields_set
+        or "window_delay_minutes" in payload.model_fields_set
+    )
+    if window_fields_touched:
+        # Symmetry: both set or both null.
+        end_set = row.window_end_time is not None
+        delay_set = row.window_delay_minutes is not None
+        if end_set != delay_set:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="window_end_time and window_delay_minutes must both be set or both be null",
+            )
+        # interval_unit compatibility: window not allowed on minute-interval pipelines.
+        effective_unit = payload.interval_unit or row.interval_unit
+        if end_set and effective_unit == "minutes":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="window_end_time cannot be used when interval_unit=minutes",
+            )
+        # Time-ordering: use merged first_fire_at (payload may omit it).
+        if end_set:
+            effective_ffa = _as_utc(payload.first_fire_at or row.first_fire_at)
+            try:
+                _validate_window_fields(
+                    row.window_end_time,
+                    row.window_delay_minutes,
+                    effective_unit,
+                    effective_ffa,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(exc),
+                ) from exc
+
     if "douyin_cookie_id" in payload.model_fields_set:
         if row.source_type != "douyin":
             raise HTTPException(
