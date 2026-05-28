@@ -12,6 +12,7 @@ from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 from api.schemas import _validate_window_fields
 from scheduler.pipeline_worker import (
     reap_orphans,
+    purge_old_runs,
     claim_due_pipeline,
     run_pipeline,
     advance_next_fire,
@@ -23,6 +24,7 @@ from scheduler.pipeline_worker import (
     _next_fire_in_window,
     _ensure_aware,
     LockHeartbeat,
+    RUN_RETENTION_DAYS,
 )
 
 
@@ -936,3 +938,109 @@ class TestYoutubeMkdtempDir:
         run_pipeline(pipeline, "scheduled")
 
         mock_mkdtemp.assert_called_once_with(prefix="pipeline_dl_", dir=None)
+
+
+# ─── E1b: Retention purge ─────────────────────────────────────────────────
+
+
+def _make_run(session: Session, pipeline_id: int, started_at: datetime) -> PipelineRun:
+    run = PipelineRun(
+        pipeline_id=pipeline_id,
+        started_at=started_at,
+        finished_at=started_at + timedelta(minutes=1),
+        trigger_reason="scheduled",
+        pulled_count=1,
+        uploaded_count=1,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def _make_video_upload(session: Session, pipeline_id: int, run_id: int) -> VideoUpload:
+    vu = VideoUpload(
+        pipeline_id=pipeline_id,
+        run_id=run_id,
+        account_id=1,
+        youtube_video_id="vid1",
+        youtube_url="https://youtube.com/watch?v=vid1",
+        status="succeeded",
+    )
+    session.add(vu)
+    session.commit()
+    session.refresh(vu)
+    return vu
+
+
+class TestPurgeOldRuns:
+    def test_returns_zero_when_nothing_to_purge(self):
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            _make_run(s, p.id, now_utc() - timedelta(days=1))
+
+        assert purge_old_runs() == 0
+
+    def test_deletes_runs_older_than_retention(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS + 1))
+
+        deleted = purge_old_runs()
+
+        assert deleted == 1
+        with Session(_api_db.engine) as s:
+            assert s.exec(select(PipelineRun)).all() == []
+
+    def test_keeps_runs_within_retention_window(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS - 1))
+
+        assert purge_old_runs() == 0
+        with Session(_api_db.engine) as s:
+            assert len(s.exec(select(PipelineRun)).all()) == 1
+
+    def test_cascades_delete_to_video_uploads(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            p = _make_pipeline(s)
+            old_run = _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS + 5))
+            _make_video_upload(s, p.id, old_run.id)
+
+        purge_old_runs()
+
+        with Session(_api_db.engine) as s:
+            assert s.exec(select(VideoUpload)).all() == []
+
+    def test_does_not_delete_video_uploads_for_recent_runs(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            p = _make_pipeline(s)
+            recent_run = _make_run(s, p.id, now - timedelta(days=1))
+            _make_video_upload(s, p.id, recent_run.id)
+
+        purge_old_runs()
+
+        with Session(_api_db.engine) as s:
+            uploads = s.exec(select(VideoUpload)).all()
+            assert len(uploads) == 1
+
+    def test_purges_only_old_runs_keeps_recent(self):
+        now = now_utc()
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS + 2))
+            _make_run(s, p.id, now - timedelta(days=RUN_RETENTION_DAYS + 10))
+            _make_run(s, p.id, now - timedelta(days=5))  # recent — keep
+
+        deleted = purge_old_runs()
+
+        assert deleted == 2
+        with Session(_api_db.engine) as s:
+            remaining = s.exec(select(PipelineRun)).all()
+            assert len(remaining) == 1
