@@ -26,7 +26,7 @@ Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
 - **Tùy chọn nâng cao** (giống upload): `allow_comment`, `allow_duet`, `allow_stitch`, `visibility_type` — lưu trong `upload_options_json`.
 - **`max_duration_seconds`** (optional): yt-dlp **bỏ qua** video dài hơn `3 × N` giây; nếu tải, **cắt** 0…N giây (native, không shell ffmpeg riêng). Giới hạn file **500MB** mỗi lần tải.
 - **`upload_delay_minutes`** (0–30, mặc định 0): **Nghỉ giữa upload** — số phút scheduler `sleep` giữa **mỗi lần** upload TikTok thực hiện trong cùng một tick (áp dụng sau mỗi bản ghi upload thành công hoặc thất bại). `0` = hành vi cũ, không nghỉ. Giảm rủi ro bị TikTok coi là spam khi một tick đẩy nhiều video/account liên tiếp. Ví dụ: `fetch_count=10`, mỗi video 1 account, `upload_delay_minutes=5` → thời gian chờ upload khoảng **9 × 5 = 45** phút (cộng thời gian tải/upload thực tế). **LockHeartbeat** (mỗi 5 phút) vẫn gia hạn `lock_until` trong lúc tick dài.
-- **Đĩa**: kiểm tra free trên `/tmp` — nếu **< 1 GB**, bỏ qua tick, `PipelineRun.error_text = low_disk`.
+- **Đĩa**: kiểm tra free trên `PIPELINE_TMP_DIR` (mặc định: system `/tmp`) — nếu **< 1 GB**, bỏ qua tick, `PipelineRun.error_text = low_disk`.
 
 ### Lặp lại & thời điểm bắn
 
@@ -111,24 +111,41 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 
 ## Scheduler internals
 
-`scheduler/worker.py`:
+`scheduler/worker.py` chạy `loop()` với `ThreadPoolExecutor` — số luồng song song đọc từ `SCHEDULER_CONCURRENCY`:
 
 ```python
-def tick() -> bool:
-    return pipeline_tick()
-
 def loop(poll_interval: float = 30.0) -> None:
+    concurrency = max(1, min(int(os.getenv("SCHEDULER_CONCURRENCY", "1")), 20))
     reap_orphans()
-    while True:
-        try:
-            busy = tick()
-        except Exception:
-            busy = False
-        if not busy:
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        pending = set()
+        while True:
+            # reap done futures, log exceptions
+            ...
+            # fill up to `concurrency` slots
+            for _ in range(concurrency - len(pending)):
+                pending.add(executor.submit(pipeline_tick))
             time.sleep(poll_interval)
 ```
 
-`loop` gọi `reap_orphans()` **một lần** khi khởi động, sau đó `tick()` + `sleep(30)` khi idle.
+- `reap_orphans()` gọi **một lần** khi khởi động.
+- Mỗi poll cycle: fill đủ `concurrency` slot, sleep `SCHEDULER_POLL_SECONDS` (mặc định 30s).
+- `SCHEDULER_CONCURRENCY=1` (mặc định) → serial, behavior giống phiên bản cũ.
+- Giá trị 0 / âm / không hợp lệ → tự clamp về 1, log warning.
+- Mỗi `pipeline_tick()` thread-safe: atomic CAS claim `lock_until` trên DB, không shared state giữa các luồng.
+
+### Env vars scheduler
+
+| Env var | Mặc định | Mô tả |
+|---------|---------|-------|
+| `SCHEDULER_CONCURRENCY` | `1` | Số pipeline chạy song song (1–20) |
+| `SCHEDULER_POLL_SECONDS` | `30` | Giây giữa mỗi poll cycle |
+| `PIPELINE_TMP_DIR` | system `/tmp` | Thư mục lưu video YouTube tạm. Set sang real disk để tránh ăn RAM (tmpfs) khi chạy concurrent. |
+| `DOUYIN_TMP_DIR` | `{tmp}/douyin_tmp` | Thư mục lưu video Douyin tạm. |
+
+> **Capacity guide** (sau khi set `PIPELINE_TMP_DIR` sang real disk):
+> - 1 vCPU / 2 GB RAM → `SCHEDULER_CONCURRENCY=2`
+> - 2 vCPU / 4 GB RAM → `SCHEDULER_CONCURRENCY=4–5`
 
 ---
 

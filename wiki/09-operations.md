@@ -137,7 +137,7 @@ docker compose logs --tail=80 scheduler
 
 - Kiểm tra `channel_pipelines.state`, `next_fire_at`, `lock_until` (SQLite snippet dưới).
 - **409 Run now**: pipeline đang chạy (`lock_until`) hoặc đã xếp sẵn Run now — đợi tick hiện tại xong.
-- **low_disk**: free `/tmp` trong container < 1 GB.
+- **low_disk**: free `PIPELINE_TMP_DIR` (mặc định `/tmp`) trong container < 1 GB. Nếu đã set `PIPELINE_TMP_DIR=/data/pipeline_tmp`, kiểm tra dung lượng volume `/data`.
 
 ### 6. Cookie debug
 
@@ -177,6 +177,39 @@ with Session(engine) as s:
 Hoặc cài sqlite3 vào image base nếu cần thường xuyên:
 ```dockerfile
 RUN apt-get update && apt-get install -y sqlite3
+```
+
+## Scale concurrent pipelines
+
+Mặc định scheduler chạy serial (1 pipeline tại 1 thời điểm). Để tăng throughput, sửa `docker-compose.yml`:
+
+```yaml
+scheduler:
+  environment:
+    - SCHEDULER_CONCURRENCY=3        # số pipeline song song (tối đa 20)
+    - PIPELINE_TMP_DIR=/data/pipeline_tmp  # đã set sẵn — để video ra real disk
+```
+
+Rồi:
+
+```bash
+docker compose restart scheduler   # không cần rebuild
+```
+
+**Capacity guide** (với `PIPELINE_TMP_DIR` trỏ sang real disk):
+
+| Server | SCHEDULER_CONCURRENCY an toàn |
+|--------|-------------------------------|
+| 1 vCPU / 2 GB RAM | 2 |
+| 2 vCPU / 4 GB RAM | 4–5 |
+
+> Không set `PIPELINE_TMP_DIR` → video tạm lưu vào `/tmp` (tmpfs = ăn RAM). Mỗi pipeline concurrent cần ~500 MB tmpfs → giảm capacity xuống còn 2–3 ngay cả trên 4 GB RAM.
+
+**Verify đang chạy concurrent:**
+
+```bash
+docker compose logs --tail=5 scheduler
+# Xem dòng: scheduler loop starting, poll_interval=30s concurrency=3
 ```
 
 ## Backup + Restore
