@@ -34,17 +34,20 @@ def is_llm_enabled() -> bool:
         return bool(row and row.value.lower() == "true")
 
 
-def set_llm_enabled(enabled: bool) -> None:
+def _set_app_setting(key: str, value: str) -> None:
     with Session(_api_db.engine) as s:
-        row = s.get(AppSetting, "llm.enabled")
-        value = "true" if enabled else "false"
+        row = s.get(AppSetting, key)
         if row is None:
-            row = AppSetting(key="llm.enabled", value=value)
+            row = AppSetting(key=key, value=value)
         else:
             row.value = value
             row.updated_at = now_utc()
         s.add(row)
         s.commit()
+
+
+def set_llm_enabled(enabled: bool) -> None:
+    _set_app_setting("llm.enabled", "true" if enabled else "false")
 
 
 def get_llm_mode() -> str:
@@ -55,15 +58,7 @@ def get_llm_mode() -> str:
 
 
 def set_llm_mode(mode: str) -> None:
-    with Session(_api_db.engine) as s:
-        row = s.get(AppSetting, "llm.mode")
-        if row is None:
-            row = AppSetting(key="llm.mode", value=mode)
-        else:
-            row.value = mode
-            row.updated_at = now_utc()
-        s.add(row)
-        s.commit()
+    _set_app_setting("llm.mode", mode)
 
 
 def get_ollama_config() -> tuple[str, str]:
