@@ -467,7 +467,7 @@ class LLMModelRead(BaseModel):
 
 class SettingsRead(BaseModel):
     llm_enabled: bool
-    llm_mode: str
+    llm_mode: Literal["cloud", "offline"]
     ollama_model: Optional[str] = None
     ollama_base_url: Optional[str] = None
 

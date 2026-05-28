@@ -122,7 +122,8 @@ def rewrite_title_offline(
             timeout=DEFAULT_TIMEOUT,
         )
     except Exception as e:
-        log.warning("Ollama rewrite failed (model=%s base=%s): %s", model, base_url, e)
+        safe_err = scrub_bot_tokens(str(e))[:_TEST_ERROR_MAX_CHARS]
+        log.warning("Ollama rewrite failed (model=%s base=%s): %s", model, base_url, safe_err)
         raise LLMCallFailed(str(e)) from e
     return (response.choices[0].message.content or "").strip()
 

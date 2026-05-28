@@ -64,11 +64,11 @@ class TestGetSettingsOllama:
 
     def test_ollama_reads_env_vars(self, client, monkeypatch):
         monkeypatch.setenv("OLLAMA_MODEL", "mistral")
-        monkeypatch.setenv("OLLAMA_BASE_URL", "http://gpu-server:11434")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
         r = client.get("/api/settings", headers=HEADERS_OK)
         body = r.json()
         assert body["ollama_model"] == "mistral"
-        assert body["ollama_base_url"] == "http://gpu-server:11434"
+        assert body["ollama_base_url"] == "http://127.0.0.1:11434"
 
     def test_existing_llm_enabled_still_present(self, client):
         r = client.get("/api/settings", headers=HEADERS_OK)

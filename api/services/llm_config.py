@@ -7,7 +7,7 @@ The worker pulls the default LLM here so it never has to import a router.
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import update
 from sqlmodel import Session, select
@@ -15,6 +15,9 @@ from sqlmodel import Session, select
 import api.db as _api_db
 from api.db import now_utc
 from api.models import AppSetting, LLMModel
+from api.schemas import _validate_api_base
+
+_VALID_MODES = frozenset({"cloud", "offline"})
 
 
 def get_default_llm_model() -> Optional[LLMModel]:
@@ -50,21 +53,32 @@ def set_llm_enabled(enabled: bool) -> None:
     _set_app_setting("llm.enabled", "true" if enabled else "false")
 
 
-def get_llm_mode() -> str:
-    """Return 'cloud' or 'offline'. Defaults to 'cloud' when row absent."""
+def get_llm_mode() -> Literal["cloud", "offline"]:
+    """Return 'cloud' or 'offline'. Falls back to 'cloud' on absent/corrupt row."""
     with Session(_api_db.engine) as s:
         row = s.get(AppSetting, "llm.mode")
-        return row.value if row else "cloud"
+        value = row.value.strip().lower() if row else "cloud"
+        return value if value in _VALID_MODES else "cloud"  # type: ignore[return-value]
 
 
-def set_llm_mode(mode: str) -> None:
+def set_llm_mode(mode: Literal["cloud", "offline"]) -> None:
     _set_app_setting("llm.mode", mode)
 
 
 def get_ollama_config() -> tuple[str, str]:
-    """Read env vars. Not DB-backed — changes require restart."""
+    """Read env vars. Not DB-backed — changes require restart.
+
+    Raises RuntimeError if OLLAMA_BASE_URL fails SSRF validation.
+    """
     model = os.getenv("OLLAMA_MODEL", "llama3.2")
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    try:
+        _validate_api_base(base_url)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"OLLAMA_BASE_URL={base_url!r} failed validation: {exc}. "
+            "Use http://localhost:11434 or a loopback address."
+        ) from exc
     return model, base_url
 
 

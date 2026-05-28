@@ -84,11 +84,17 @@ class TestGetOllamaConfig:
 
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("OLLAMA_MODEL", "mistral")
-        monkeypatch.setenv("OLLAMA_BASE_URL", "http://remote:11434")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
         from api.services.llm_config import get_ollama_config
         model, base_url = get_ollama_config()
         assert model == "mistral"
-        assert base_url == "http://remote:11434"
+        assert base_url == "http://127.0.0.1:11434"
+
+    def test_invalid_base_url_raises(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://internal-server:11434")
+        from api.services.llm_config import get_ollama_config
+        with pytest.raises(RuntimeError, match="OLLAMA_BASE_URL"):
+            get_ollama_config()
 
 
 class TestSeedAppSettings:

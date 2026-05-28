@@ -15,8 +15,11 @@ from sqlmodel import Session, SQLModel, select
 
 import api.db as _api_db
 from api.db import now_utc
-from api.models import Account, ChannelPipeline, LLMModel, VideoUpload
+import json
+
+from api.models import Account, ChannelPipeline, DouyinCookie, LLMModel, VideoUpload
 from api.services import secrets as _secrets
+from api.services.douyin_channel import DownloadedVideo
 
 
 @pytest.fixture(autouse=True)
@@ -204,3 +207,121 @@ class TestOfflineMode:
 
         run_pipeline(p, "scheduled")
         mock_offline.assert_not_called()
+
+
+class TestOfflineModeEdgeCases:
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    def test_empty_offline_response_falls_back_to_raw_title(
+        self, mock_offline, mock_list, mock_download, mock_upload
+    ):
+        from api.services.llm_config import set_llm_mode
+        from scheduler.pipeline_worker import run_pipeline
+
+        mock_list.return_value = [{"id": "v1", "title": "raw-title", "url": "u"}]
+        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_offline.return_value = ""  # empty string from Ollama
+
+        set_llm_mode("offline")
+
+        with Session(_api_db.engine) as s:
+            _account(s); p = _pipeline(s); s.expunge(p)
+
+        run_pipeline(p, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            up = s.exec(select(VideoUpload)).first()
+            assert up.rendered_caption.startswith("raw-title")
+
+
+class TestDouyinOfflineMode:
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
+    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    def test_douyin_offline_mode_calls_rewrite_title_offline(
+        self, mock_offline, mock_dl, mock_upload
+    ):
+        from api.services.llm_config import set_llm_mode
+        from scheduler.pipeline_worker import run_pipeline
+
+        mock_dl.return_value = [
+            DownloadedVideo(
+                aweme_id="aa1",
+                file_path="/tmp/aa1.mp4",
+                title="douyin raw title",
+                description="desc",
+                duration_seconds=30,
+            )
+        ]
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_offline.return_value = "AI-douyin"
+
+        set_llm_mode("offline")
+
+        with Session(_api_db.engine) as s:
+            _account(s)
+            encrypted = _secrets.encrypt(json.dumps({"ttwid": "x"}))
+            cookie = DouyinCookie(name="c", cookie_json_encrypted=encrypted)
+            s.add(cookie); s.commit(); s.refresh(cookie)
+            p = _pipeline(
+                s,
+                source_type="douyin",
+                channel_url="https://www.douyin.com/user/MS4wLjAB",
+                douyin_cookie_id=cookie.id,
+                caption_template="{ai_title}",
+                caption_ai_prompt="Rewrite",
+            )
+            s.expunge(p)
+
+        run_pipeline(p, "scheduled")
+
+        mock_offline.assert_called_once()
+
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
+    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    def test_douyin_offline_failure_falls_back_to_raw_title(
+        self, mock_offline, mock_dl, mock_upload
+    ):
+        from api.services.llm import LLMCallFailed
+        from api.services.llm_config import set_llm_mode
+        from scheduler.pipeline_worker import run_pipeline
+
+        mock_dl.return_value = [
+            DownloadedVideo(
+                aweme_id="bb2",
+                file_path="/tmp/bb2.mp4",
+                title="douyin raw title",
+                description="desc",
+                duration_seconds=30,
+            )
+        ]
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_offline.side_effect = LLMCallFailed("conn refused")
+
+        set_llm_mode("offline")
+
+        with Session(_api_db.engine) as s:
+            _account(s)
+            encrypted = _secrets.encrypt(json.dumps({"ttwid": "x"}))
+            cookie = DouyinCookie(name="c", cookie_json_encrypted=encrypted)
+            s.add(cookie); s.commit(); s.refresh(cookie)
+            p = _pipeline(
+                s,
+                source_type="douyin",
+                channel_url="https://www.douyin.com/user/MS4wLjAB",
+                douyin_cookie_id=cookie.id,
+                caption_template="{ai_title}",
+                caption_ai_prompt="Rewrite",
+            )
+            s.expunge(p)
+
+        run = run_pipeline(p, "scheduled")
+        assert run.failed_count == 0
+
+        with Session(_api_db.engine) as s:
+            up = s.exec(select(VideoUpload)).first()
+            assert up.rendered_caption.startswith("douyin raw title")

@@ -266,7 +266,7 @@ def _maybe_upload_delay_after_record(
 def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
     """Return the rewritten title, or `title` on any failure path."""
     if not is_llm_enabled():
-        log.info("LLM globally disabled; using raw title for {ai_title}")
+        log.info("LLM globally disabled; using raw title: %s", title)
         return title
 
     if get_llm_mode() == "offline":
