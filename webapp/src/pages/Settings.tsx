@@ -31,6 +31,11 @@ export default function SettingsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
 
+  const modeMut = useMutation({
+    mutationFn: (mode: "cloud" | "offline") => SettingsApi.patch({ llm_mode: mode }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
   const setDefaultMut = useMutation({
     mutationFn: (id: number) => LLMModels.setDefault(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["llm-models"] }),
@@ -82,99 +87,138 @@ export default function SettingsPage() {
           </label>
         </header>
 
-        <div className="flex items-center justify-between border-t pt-4">
-          <p className="text-sm text-slate-600">Available models</p>
-          <button
-            className="btn-primary"
-            onClick={() => setEditState({ mode: "create" })}
-          >
-            <Plus size={16} /> Add model
-          </button>
+        <div className="flex items-center gap-3 border-t pt-4">
+          <span className="text-sm font-medium text-slate-600">Provider:</span>
+          <div className="flex rounded-md border border-slate-200 overflow-hidden text-sm">
+            <button
+              className={`px-3 py-1.5 transition-colors ${
+                (settings?.llm_mode ?? "cloud") === "cloud"
+                  ? "bg-brand-600 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              onClick={() => modeMut.mutate("cloud")}
+              disabled={modeMut.isPending}
+            >
+              Cloud
+            </button>
+            <button
+              className={`px-3 py-1.5 border-l border-slate-200 transition-colors ${
+                settings?.llm_mode === "offline"
+                  ? "bg-brand-600 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              onClick={() => modeMut.mutate("offline")}
+              disabled={modeMut.isPending}
+            >
+              Local (Ollama)
+            </button>
+          </div>
         </div>
 
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="text-left p-3">Default</th>
-                <th className="text-left p-3">Label</th>
-                <th className="text-left p-3">Model ID</th>
-                <th className="text-left p-3">Endpoint</th>
-                <th className="text-left p-3">API key</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading && (
-                <tr>
-                  <td className="p-4 text-slate-500" colSpan={6}>Loading…</td>
-                </tr>
-              )}
-              {isError && (
-                <tr>
-                  <td className="p-4 text-center text-red-400" colSpan={6}>Failed to load. Check API connection.</td>
-                </tr>
-              )}
-              {!isLoading && !isError && models && models.length === 0 && (
-                <tr>
-                  <td className="p-6 text-center text-slate-500" colSpan={6}>
-                    No models yet. Add one to enable caption rewriting.
-                  </td>
-                </tr>
-              )}
-              {models?.map((m) => (
-                <tr key={m.id}>
-                  <td className="p-3">
-                    {m.is_default ? (
-                      <span className="chip bg-emerald-100 text-emerald-700">
-                        <Star size={12} className="inline mr-1" /> default
-                      </span>
-                    ) : (
-                      <button
-                        className="text-xs text-brand-600 hover:underline"
-                        onClick={() => setDefaultMut.mutate(m.id)}
-                      >
-                        Set default
-                      </button>
-                    )}
-                  </td>
-                  <td className="p-3 font-medium">{m.label}</td>
-                  <td className="p-3 text-slate-600">
-                    <code className="text-xs bg-slate-100 px-1 rounded">
-                      {m.model_id}
-                    </code>
-                  </td>
-                  <td className="p-3 text-slate-500">
-                    {m.api_base ? (
-                      <code className="text-xs bg-slate-100 px-1 rounded break-all">
-                        {m.api_base}
-                      </code>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="p-3 text-slate-500">
-                    <code className="text-xs">{m.api_key_masked}</code>
-                  </td>
-                  <td className="p-3 text-right space-x-2">
-                    <button
-                      className="text-xs text-slate-600 hover:text-slate-900"
-                      onClick={() => setEditState({ mode: "edit", model: m })}
-                    >
-                      <Edit size={14} className="inline" /> Edit
-                    </button>
-                    <button
-                      className="text-xs text-red-600"
-                      onClick={() => setDeleteTarget(m)}
-                    >
-                      <Trash2 size={14} className="inline" /> Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {settings?.llm_mode === "offline" ? (
+          <OllamaPanel
+            model={settings.ollama_model}
+            baseUrl={settings.ollama_base_url}
+          />
+        ) : (
+          <>
+            <div className="flex items-center justify-between border-t pt-4">
+              <p className="text-sm text-slate-600">Available models</p>
+              <button
+                className="btn-primary"
+                onClick={() => setEditState({ mode: "create" })}
+              >
+                <Plus size={16} /> Add model
+              </button>
+            </div>
+
+            <div className="card p-0 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="text-left p-3">Default</th>
+                    <th className="text-left p-3">Label</th>
+                    <th className="text-left p-3">Model ID</th>
+                    <th className="text-left p-3">Endpoint</th>
+                    <th className="text-left p-3">API key</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {isLoading && (
+                    <tr>
+                      <td className="p-4 text-slate-500" colSpan={6}>Loading…</td>
+                    </tr>
+                  )}
+                  {isError && (
+                    <tr>
+                      <td className="p-4 text-center text-red-400" colSpan={6}>
+                        Failed to load. Check API connection.
+                      </td>
+                    </tr>
+                  )}
+                  {!isLoading && !isError && models && models.length === 0 && (
+                    <tr>
+                      <td className="p-6 text-center text-slate-500" colSpan={6}>
+                        No models yet. Add one to enable caption rewriting.
+                      </td>
+                    </tr>
+                  )}
+                  {models?.map((m) => (
+                    <tr key={m.id}>
+                      <td className="p-3">
+                        {m.is_default ? (
+                          <span className="chip bg-emerald-100 text-emerald-700">
+                            <Star size={12} className="inline mr-1" /> default
+                          </span>
+                        ) : (
+                          <button
+                            className="text-xs text-brand-600 hover:underline"
+                            onClick={() => setDefaultMut.mutate(m.id)}
+                          >
+                            Set default
+                          </button>
+                        )}
+                      </td>
+                      <td className="p-3 font-medium">{m.label}</td>
+                      <td className="p-3 text-slate-600">
+                        <code className="text-xs bg-slate-100 px-1 rounded">
+                          {m.model_id}
+                        </code>
+                      </td>
+                      <td className="p-3 text-slate-500">
+                        {m.api_base ? (
+                          <code className="text-xs bg-slate-100 px-1 rounded break-all">
+                            {m.api_base}
+                          </code>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-500">
+                        <code className="text-xs">{m.api_key_masked}</code>
+                      </td>
+                      <td className="p-3 text-right space-x-2">
+                        <button
+                          className="text-xs text-slate-600 hover:text-slate-900"
+                          onClick={() => setEditState({ mode: "edit", model: m })}
+                        >
+                          <Edit size={14} className="inline" /> Edit
+                        </button>
+                        <button
+                          className="text-xs text-red-600"
+                          onClick={() => setDeleteTarget(m)}
+                        >
+                          <Trash2 size={14} className="inline" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
 
       {editState && (
@@ -198,6 +242,46 @@ export default function SettingsPage() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
+    </div>
+  );
+}
+
+// ─── Ollama local panel ─────────────────────────────────────────────────────
+
+function OllamaPanel({
+  model,
+  baseUrl,
+}: {
+  model: string | null;
+  baseUrl: string | null;
+}) {
+  const displayModel = model ?? "llama3.2";
+  const displayUrl = baseUrl ?? "http://localhost:11434";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
+        <span className="font-medium text-slate-600">Model</span>
+        <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs">
+          {displayModel}
+        </code>
+        <span className="font-medium text-slate-600">Base URL</span>
+        <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs break-all">
+          {displayUrl}
+        </code>
+      </div>
+      <p className="text-xs text-slate-500">
+        Configured via env vars{" "}
+        <code className="bg-white border border-slate-200 px-1 rounded">OLLAMA_MODEL</code>{" "}
+        and{" "}
+        <code className="bg-white border border-slate-200 px-1 rounded">OLLAMA_BASE_URL</code>
+        . Restart required after changes.
+      </p>
+      <p className="text-xs text-slate-500">
+        Install model:{" "}
+        <code className="bg-white border border-slate-200 px-1 rounded">
+          ollama pull {displayModel}
+        </code>
+      </p>
     </div>
   );
 }
