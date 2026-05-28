@@ -10,7 +10,7 @@ import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from scheduler.pipeline_worker import pipeline_tick, reap_orphans
+from scheduler.pipeline_worker import pipeline_tick, purge_old_runs, reap_orphans
 
 log = logging.getLogger("scheduler.worker")
 
@@ -28,6 +28,10 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
         concurrency = 1
     log.info("scheduler loop starting, poll_interval=%gs concurrency=%d", poll_interval, concurrency)
     reap_orphans()
+    purge_old_runs()
+
+    _PURGE_INTERVAL = 86_400  # once per day
+    last_purge = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         pending: set[Future] = set()
@@ -39,6 +43,10 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
                 except Exception:
                     log.exception("pipeline_tick raised")
             pending -= done
+
+            if time.monotonic() - last_purge >= _PURGE_INTERVAL:
+                purge_old_runs()
+                last_purge = time.monotonic()
 
             slots = concurrency - len(pending)
             for _ in range(slots):

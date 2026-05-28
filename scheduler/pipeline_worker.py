@@ -83,6 +83,32 @@ def reap_orphans() -> int:
     return count
 
 
+# ─── E1b: Retention purge ─────────────────────────────────────────────────
+
+
+RUN_RETENTION_DAYS = 30
+
+
+def purge_old_runs() -> int:
+    """Delete pipeline_runs (+ their video_uploads) older than RUN_RETENTION_DAYS."""
+    from sqlalchemy import delete as sa_delete
+
+    cutoff = now_utc() - timedelta(days=RUN_RETENTION_DAYS)
+    deleted = 0
+    with Session(_api_db.engine) as s:
+        old_run_ids = s.exec(
+            select(PipelineRun.id).where(PipelineRun.started_at < cutoff)  # type: ignore[arg-type]
+        ).all()
+        if old_run_ids:
+            s.exec(sa_delete(VideoUpload).where(VideoUpload.run_id.in_(old_run_ids)))  # type: ignore[union-attr]
+            s.exec(sa_delete(PipelineRun).where(PipelineRun.id.in_(old_run_ids)))
+            deleted = len(old_run_ids)
+            s.commit()
+    if deleted:
+        log.info("purge_old_runs: deleted %d runs older than %d days", deleted, RUN_RETENTION_DAYS)
+    return deleted
+
+
 # ─── E2: Claim + LockHeartbeat ─────────────────────────────────────────────
 
 
