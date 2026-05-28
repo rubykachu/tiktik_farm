@@ -2,10 +2,11 @@
 
 [← Index](README.md) | [← 11-roadmap](11-roadmap.md)
 
-Trang **Settings** (`/settings`) chứa cấu hình toàn cục cho v2. Mở đầu với một nhóm duy nhất: **LLM caption rewrite**. Trang gồm 2 phần chính:
+Trang **Settings** (`/settings`) chứa cấu hình toàn cục cho v2. Mở đầu với một nhóm duy nhất: **LLM caption rewrite**. Trang gồm 3 phần chính:
 
 1. **Toggle global** — bật/tắt toàn bộ tính năng LLM cho mọi pipeline.
-2. **Available models** — danh sách model LLM do user tự đăng ký (Gemini, OpenAI, Grok, Azure). Worker chỉ đọc model được đánh dấu **default**.
+2. **Cloud / Local toggle** — chọn backend LLM: cloud API (Gemini, OpenAI…) hoặc Ollama local.
+3. **Available models** *(cloud mode only)* — danh sách model LLM do user tự đăng ký. Worker chỉ đọc model được đánh dấu **default**.
 
 ---
 
@@ -30,6 +31,7 @@ Mục tiêu: tránh trùng nội dung khi đăng nhiều account / nhiều kênh
 
 Ở góc phải header card "LLM caption rewrite":
 
+
 | Trạng thái | Hành vi |
 |---|---|
 | **Enabled** | Pipeline có `{ai_title}` + prompt → gọi LLM. Pipeline không có `{ai_title}` không bị ảnh hưởng. |
@@ -39,7 +41,41 @@ Lưu trong bảng `app_settings` với key `llm.enabled` (`"true"` / `"false"`).
 
 ---
 
-## 3. Quản lý models
+## 3. Cloud / Local (Ollama) toggle
+
+Nằm trong card "LLM caption rewrite", phía dưới global toggle. Hai nút **Cloud** và **Local (Ollama)**.
+
+| Mode | Backend | Yêu cầu |
+|---|---|---|
+| **Cloud** | Gọi litellm → provider cloud (Gemini, OpenAI, Azure…) | Phải có ít nhất 1 row trong Available models với `is_default = true`. |
+| **Local (Ollama)** | Gọi Ollama trực tiếp qua HTTP | Ollama phải đang chạy trên host. Không cần API key, không cần cấu hình DB. |
+
+Khi chọn **Local**, UI hiển thị read-only:
+
+- **Model**: giá trị `OLLAMA_MODEL` env var (default `llama3.2`).
+- **URL**: giá trị `OLLAMA_BASE_URL` env var (default `http://localhost:11434`).
+- Note: "Install model with: `ollama pull <model>`"
+
+Lưu trong `app_settings` với key `llm.mode` (`"cloud"` / `"offline"`). Default sau seed: `"cloud"`.
+
+### Cấu hình Ollama (env vars)
+
+Không thay đổi qua UI — cần sửa `.env` rồi restart api/scheduler:
+
+```env
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+`OLLAMA_BASE_URL` áp dụng cùng SSRF guard như `api_base` của cloud model (xem §7.3). Chỉ loopback được chấp nhận qua HTTP — public host phải dùng HTTPS.
+
+### Hành vi khi Ollama không sẵn sàng
+
+Worker không crash. Nếu Ollama trả lỗi (connection refused, model chưa pull, timeout), caption fallback về raw title và ghi log warning. Tiêu chí giống cloud: 1 hiccup LLM không fail cả tick.
+
+---
+
+## 4. Quản lý models
 
 ### Bảng Available models
 
@@ -82,7 +118,7 @@ Click **Add model** → modal:
 
 ---
 
-## 4. Provider matrix
+## 5. Provider matrix
 
 | Provider | `model_id` ví dụ | API key shape | `api_base` | `api_version` |
 |---|---|---|---|---|
@@ -90,7 +126,7 @@ Click **Add model** → modal:
 | **OpenAI** | `openai/gpt-4o-mini` | `sk-…` hoặc `sk-proj-…` | — (hoặc proxy URL) | — |
 | **xAI (Grok)** | `xai/grok-3-mini` | `xai-…` | — | — |
 | **Azure OpenAI / Foundry** | `azure/<deployment-name>` | Azure key | **bắt buộc** `https://<resource>.openai.azure.com/` | **bắt buộc**, vd `2024-08-01-preview` |
-| **Ollama (self-host)** | `openai/<model>` | bất kỳ | **bắt buộc** `http://localhost:11434/v1/` | — |
+| **Ollama (self-host)** | *(dùng Local toggle — xem §3)* | không cần | không cần | — |
 | **vLLM / proxy custom** | `openai/<model>` | key của proxy | **bắt buộc** URL của proxy | — |
 
 Format `provider/model` lookup đầy đủ: <https://docs.litellm.ai/docs/providers>.
@@ -103,15 +139,17 @@ Format `provider/model` lookup đầy đủ: <https://docs.litellm.ai/docs/provi
 
 ---
 
-## 5. Validate `{ai_title}` (cả UI lẫn API)
+## 6. Validate `{ai_title}` (cả UI lẫn API)
 
-Khi POST/PATCH `/api/pipelines` có `caption_template` chứa `{ai_title}`, server check 3 precondition, trả 422 với 1 trong 3 message:
+Khi POST/PATCH `/api/pipelines` có `caption_template` chứa `{ai_title}`, server check precondition, trả 422 với message tương ứng:
 
 | Điều kiện sai | Error message |
 |---|---|
 | `caption_ai_prompt` rỗng / null | `Add an AI prompt or remove {ai_title} from the caption template` |
 | `app_settings["llm.enabled"]` = `false` | `Enable LLM in Settings before using {ai_title}` |
-| Không có row `llm_models.is_default = true` | `Configure a default LLM in Settings before using {ai_title}` |
+| Mode = **cloud** và không có row `llm_models.is_default = true` | `Configure a default LLM in Settings before using {ai_title}` |
+
+> **Mode = Local (Ollama)**: precondition thứ 3 không áp dụng — Ollama không cần row trong `llm_models`. Chỉ cần LLM enabled và `caption_ai_prompt` được set.
 
 UI form (`PipelineFormModal`) validate cùng rule client-side qua Zod refinement để báo sớm.
 
@@ -119,7 +157,7 @@ UI form (`PipelineFormModal`) validate cùng rule client-side qua Zod refinement
 
 ---
 
-## 6. Test connection
+## 7. Test connection
 
 Nút **Test connection** trong modal Add/Edit:
 
@@ -134,9 +172,9 @@ Mọi error trả về đi qua `scrub_bot_tokens` + cap 200 ký tự để khôn
 
 ---
 
-## 7. Bảo mật
+## 8. Bảo mật
 
-### 7.1. Encryption at rest
+### 8.1. Encryption at rest
 
 API key trong DB lưu dưới dạng **Fernet ciphertext** (AES-128-CBC + HMAC-SHA256). Key dùng để mã hóa nằm tại:
 
@@ -167,7 +205,7 @@ Chưa có tool rotate tự động (không tự re-encrypt). Quy trình:
 
 Backlog: tool `secrets rotate` đọc plaintext bằng key cũ, re-encrypt bằng key mới, swap key file atomic.
 
-### 7.2. Log scrubber
+### 8.2. Log scrubber
 
 `api/logging.BotTokenScrubFilter` chạy ở root logger handler. Mọi log line + error message trả về client đều đi qua. Các regex pattern hiện scrub:
 
@@ -183,11 +221,13 @@ Backlog: tool `secrets rotate` đọc plaintext bằng key cũ, re-encrypt bằn
 
 Hệ quả phụ: git SHA 40-hex và base64 cache key cũng bị scrub. Trade-off chấp nhận được trong error message (log debug giảm tiện nhưng key không leak).
 
-### 7.3. SSRF guard cho `api_base`
+### 8.3. SSRF guard cho `api_base` và `OLLAMA_BASE_URL`
 
-`api_base` được fed thẳng vào `litellm.completion` → server gửi HTTP request tới URL đó. Nếu không validate, attacker write `api_base=http://169.254.169.254/...` (AWS metadata) → response body lọt về client.
+`api_base` (cloud model) và `OLLAMA_BASE_URL` (env var) đều được fed vào `litellm.completion` → server gửi HTTP request tới URL đó. Nếu không validate, attacker write `api_base=http://169.254.169.254/...` (AWS metadata) → response body lọt về client.
 
-Server validate `api_base` ở cả 3 chỗ (`Create`, `Update`, `Test`):
+`OLLAMA_BASE_URL` được validate tại startup (khi `get_ollama_config()` được gọi lần đầu). Nếu fail → `RuntimeError`, api/scheduler từ chối start.
+
+Server validate `api_base` (cloud) ở cả 3 chỗ (`Create`, `Update`, `Test`):
 
 | URL | Hành vi |
 |---|---|
@@ -202,13 +242,13 @@ Server validate `api_base` ở cả 3 chỗ (`Create`, `Update`, `Test`):
 
 Logic: scheme phải là `http` hoặc `https`. Nếu host parse được thành IP và rơi vào private/loopback/link-local/multicast/reserved → reject (trừ loopback). Nếu host là FQDN → bắt buộc `https` trừ khi là `localhost`.
 
-### 7.4. Model ID whitelist
+### 8.4. Model ID whitelist
 
 `model_id` phải khớp regex `^[a-z0-9_\-]+/[A-Za-z0-9._:\-]+$`. Provider segment lowercase + chỉ alphanumeric/underscore/hyphen — chặn các provider routing-style mà litellm hỗ trợ có thể tạo SSRF surface ngoài ý muốn.
 
 ---
 
-## 8. Schema DB liên quan
+## 9. Schema DB liên quan
 
 ```sql
 -- app_settings: key/value store toàn cục
@@ -217,7 +257,7 @@ CREATE TABLE app_settings (
   value TEXT NOT NULL,
   updated_at TIMESTAMP NOT NULL
 );
--- Seed: ("llm.enabled", "true")
+-- Seed: ("llm.enabled", "true"), ("llm.mode", "cloud")
 
 -- llm_models: user-managed endpoints
 CREATE TABLE llm_models (
@@ -242,7 +282,7 @@ Partial unique index `ux_llm_models_one_default` enforce invariant **"tối đa 
 
 ---
 
-## 9. Cài đặt + deploy
+## 10. Cài đặt + deploy
 
 Thêm 2 package vào `requirements.txt`:
 
@@ -264,13 +304,36 @@ Trên môi trường native (dev):
 pip install -r requirements.txt
 ```
 
-Migration `apply_schema_patches` chạy tự động lúc api/scheduler boot — thêm `caption_ai_prompt`, `api_base`, `api_version` nếu chưa có. Idempotent, an toàn rerun.
+Migration `apply_schema_patches` chạy tự động lúc api/scheduler boot — thêm `caption_ai_prompt`, `api_base`, `api_version` nếu chưa có. Idempotent, an toàn rerun. Seed `llm.mode = "cloud"` cũng được thêm tự động (idempotent, không ghi đè giá trị hiện tại).
+
+### Cài Ollama (nếu dùng Local mode)
+
+Ollama chạy trên **host machine** (không phải container). Cài một lần:
+
+```bash
+# Linux
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2
+# ollama serve   # không cần nếu systemd service đã start tự động
+```
+
+Sau đó set env vars trong `.env`:
+
+```env
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Restart api + scheduler để pickup env mới. Vào Settings → chuyển sang **Local (Ollama)**.
+
+> **Docker**: api và scheduler container có thể reach Ollama trên host qua `http://host.docker.internal:11434` (Docker Desktop) hoặc `http://172.17.0.1:11434` (Linux bridge). Cập nhật `OLLAMA_BASE_URL` trong `docker-compose.yml` tương ứng. Lưu ý: SSRF guard chấp nhận `host.docker.internal` và IP bridge nếu là loopback/link-local của Docker network — test với `GET /api/settings` trước khi bật.
 
 ---
 
-## 10. Tham khảo
+## 11. Tham khảo
 
 - LiteLLM providers: <https://docs.litellm.ai/docs/providers>
+- Ollama model library: <https://ollama.com/library>
 - Azure OpenAI versions: <https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation>
 - Fernet (cryptography): <https://cryptography.io/en/latest/fernet/>
 
