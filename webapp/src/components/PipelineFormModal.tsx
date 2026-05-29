@@ -286,7 +286,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         source_type: (pipeline.source_type ?? "youtube") as "youtube" | "douyin",
         douyin_cookie_id: pipeline.douyin_cookie_id ?? null,
         channel_url: pipeline.channel_url,
-        interval_value: pipeline.interval_value,
+        interval_value: pipeline.interval_unit === "hours" ? 1 : pipeline.interval_value,
         interval_unit: (pipeline.interval_unit === "hours" ? "days" : pipeline.interval_unit) as "minutes" | "days",
         first_fire_at: pipeline.interval_unit === "days" && pipeline.first_fire_at
           ? toLocalTime(pipeline.first_fire_at)

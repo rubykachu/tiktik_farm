@@ -814,6 +814,123 @@ class TestTelegramSummary:
         text = mock_send.call_args[0][2]
         assert len(text) <= 4096
 
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_skipped_counts_appear_in_summary(self, mock_send):
+        """H4: skipped_dup_count and skipped_exhausted_count show in message."""
+        mock_send.return_value = True
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(
+            id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled",
+            pulled_count=5, uploaded_count=2,
+            skipped_dup_count=2, skipped_exhausted_count=1,
+        )
+
+        send_telegram_summary(pipeline, run)
+        text = mock_send.call_args[0][2]
+        assert "Bỏ qua (trùng): 2" in text
+        assert "Bỏ qua (hết): 1" in text
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_run_id_none_skips_video_lookup_but_still_sends(self, mock_send):
+        """E4: run with id=None skips DB query, still sends summary."""
+        mock_send.return_value = True
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(
+            id=None, pipeline_id=1, started_at=now, trigger_reason="scheduled",
+            pulled_count=1, uploaded_count=1,
+        )
+
+        send_telegram_summary(pipeline, run)
+        mock_send.assert_called_once()
+        text = mock_send.call_args[0][2]
+        assert "[my-pipe]" in text
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_db_failure_on_video_fetch_still_sends(self, mock_send):
+        """E5: DB error when fetching VideoUpload → summary sent without video details."""
+        mock_send.return_value = True
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(
+            id=999, pipeline_id=1, started_at=now, trigger_reason="scheduled",
+            pulled_count=3, uploaded_count=2,
+        )
+
+        with patch("scheduler.pipeline_worker.Session") as mock_session_cls:
+            mock_session_cls.return_value.__enter__ = MagicMock(side_effect=Exception("db down"))
+            mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+            send_telegram_summary(pipeline, run)
+
+        mock_send.assert_called_once()
+        text = mock_send.call_args[0][2]
+        assert "[my-pipe]" in text
+        assert "Đăng tải: 2" in text
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_soft_cap_truncation_appears_when_many_videos(self, mock_send):
+        """E6: 'và N video khác' appears when video list exceeds 3500-char soft cap."""
+        mock_send.return_value = True
+        now = now_utc()
+
+        with Session(_api_db.engine) as s:
+            _make_account(s, account_id=1)
+            p = _make_pipeline(
+                s,
+                telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+                telegram_chat_id="-1001234567890",
+            )
+            run = PipelineRun(
+                pipeline_id=p.id, started_at=now, trigger_reason="scheduled",
+                pulled_count=35, uploaded_count=35,
+            )
+            s.add(run)
+            s.commit()
+            s.refresh(run)
+            run_id = run.id
+            pid = p.id
+
+            # Each entry: "  ✅ {60-char title}\n     {50-char url}" ≈ 120 chars
+            # 35 × 120 = 4200 chars body — enough to breach the 3500 soft cap
+            for i in range(35):
+                s.add(VideoUpload(
+                    run_id=run_id, account_id=1,
+                    youtube_video_id=f"v{i:04d}",
+                    youtube_title=f"Video Title That Is Exactly Sixty Characters Long {i:03d}",
+                    tiktok_url=f"https://tiktok.com/@channel/video/{i:020d}",
+                    status="done",
+                    youtube_url=f"https://youtube.com/watch?v=v{i}",
+                ))
+            s.commit()
+            s.refresh(run)
+
+        pipeline = _make_tg_pipeline(
+            now, id=pid,
+            telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+            telegram_chat_id="-1001234567890",
+        )
+        send_telegram_summary(pipeline, run)
+        text = mock_send.call_args[0][2]
+        assert "... và" in text
+        assert "video khác" in text
+        assert len(text) <= 4096
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_started_at_none_does_not_raise(self, mock_send):
+        """C2: run.started_at=None must not raise in finally — would mask original exception."""
+        mock_send.return_value = True
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(
+            id=1, pipeline_id=1, started_at=None, trigger_reason="scheduled",
+            pulled_count=1, uploaded_count=1,
+        )
+
+        # Must not raise AttributeError
+        send_telegram_summary(pipeline, run)
+        mock_send.assert_called_once()
+
 
 class TestPipelineRunContext:
     """Bug 7: _pipeline_run_context always sends Telegram even on crash."""
@@ -875,6 +992,25 @@ class TestPipelineRunContext:
             pass
 
         mock_notify.assert_called_once_with(pipeline, run)
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    @patch("scheduler.pipeline_worker.run_pipeline")
+    def test_telegram_skipped_when_post_crash_db_query_fails(self, mock_run, mock_finalize, mock_notify):
+        """P4: crash path DB re-fetch fails → run stays None → Telegram not sent."""
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=40)
+        mock_run.side_effect = RuntimeError("boom")
+
+        with patch("scheduler.pipeline_worker.Session") as mock_session_cls:
+            mock_session_cls.return_value.__enter__ = MagicMock(side_effect=Exception("db gone"))
+            mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+            with pytest.raises(RuntimeError):
+                with _pipeline_run_context(pipeline, "scheduled"):
+                    pass
+
+        mock_notify.assert_not_called()
 
 
 class TestEmergencyFinalize:

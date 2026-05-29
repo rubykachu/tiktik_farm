@@ -96,7 +96,8 @@ class TestDetectChats:
         assert mock_client.post.call_count == 1
 
     @patch("api.services.telegram.httpx.Client")
-    def test_empty_result(self, mock_cls, client):
+    def test_empty_result_returns_502(self, mock_cls, client):
+        """Bug 6: no recent messages → 502 (not empty 200) so frontend shows friendly error."""
         mock_client = MagicMock()
         mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
@@ -104,19 +105,24 @@ class TestDetectChats:
         def post_side_effect(url, **kwargs):
             mock_resp = MagicMock()
             mock_resp.status_code = 200
-            if "getUpdates" in str(url):
-                mock_resp.json.return_value = {"ok": True, "result": []}
+            mock_resp.json.return_value = {"ok": True, "result": []}
+            return mock_resp
+
+        def get_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"ok": True, "result": {"url": ""}}
             return mock_resp
 
         mock_client.post.side_effect = post_side_effect
+        mock_client.get.side_effect = get_side_effect
 
         r = client.post(
             "/api/telegram/detect-chats",
             json={"bot_token": VALID_TOKEN},
             headers=HEADERS_OK,
         )
-        assert r.status_code == 200
-        assert r.json() == {"chats": []}
+        assert r.status_code == 502
 
     @patch("api.services.telegram.httpx.Client")
     def test_get_updates_api_error_502(self, mock_cls, client):

@@ -5,7 +5,7 @@ Tài liệu này mô tả cách lấy **chat ID dạng số** qua Bot API (dùng
 **Trong farm_tiktik v2 (pipeline Telegram):**
 
 - Trường **`telegram_chat_id`** phải là **chuỗi chỉ gồm chữ số**, có thể có dấu `-` ở đầu (supergroup/channel thường là `-100…`). **Không** nhập `@username` hay link `t.me/…` vào form.
-- Modal pipeline có nút **Tự động phát hiện** (gọi `getUpdates`) — chỉ hiển thị **group / supergroup / channel** có trong buffer cập nhật; chat **private** với bot **không** có trong danh sách (cần lấy ID theo bước dưới rồi dán tay).
+- Modal pipeline có nút **Tự động phát hiện** (gọi `getUpdates`) — hiển thị **group / supergroup / channel / private** có trong buffer cập nhật; bấm chọn để điền chat ID tự động. Nếu buffer trống: gửi một tin nhắn cho bot rồi bấm lại.
 - Nút **Gửi tin test** gửi một tin nhắn thử để kiểm tra token + chat ID.
 - Worker gửi thông báo tick bằng **`sendMessage`** với `chat_id` và text thuần — **không** hỗ trợ chỉ định topic (`message_thread_id`) trong cấu hình pipeline.
 
@@ -81,7 +81,7 @@ Tài liệu này mô tả cách lấy **chat ID dạng số** qua Bot API (dùng
 
 7. When the bot token and chat id are correct, the message `test123` should arrive in the private chat with the bot.
 
-**farm_tiktik:** private chats **do not** appear in **Tự động phát hiện**; paste the numeric ID into **Chat ID** manually if you use a private chat for notifications.
+**farm_tiktik:** private chats **now appear** in **Tự động phát hiện** — select from the list or paste the numeric ID manually.
 
 [Back to top ↑](#how-to-get-telegram-bot-chat-id)
 

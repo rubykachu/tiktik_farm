@@ -74,12 +74,18 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 ## Telegram (tùy chọn, theo pipeline)
 
 - **`telegram_chat_id`**: chỉ chấp nhận **chuỗi số** (ví dụ `21xxxxxx38`, `-1001234567890`). **Không** dùng `@username`, invite link hay `t.me/...` trong form — API trả **422** nếu format sai. Cách lấy ID chi tiết: [how_to_get_telegram_chat_id.md](how_to_get_telegram_chat_id.md).
-- Trong modal pipeline (**Telegram**): **Tự động phát hiện** gọi `getUpdates` và liệt kê các chat loại **group / supergroup / channel** có trong buffer cập nhật (bấm chọn một dòng để điền `chat_id`). Chat **private** với bot **không** xuất hiện trong danh sách này — nếu cần, lấy ID bằng `getUpdates` (hoặc bot khác) rồi **dán tay** vào ô Chat ID.
+- Trong modal pipeline (**Telegram**): **Tự động phát hiện** gọi `getUpdates` và liệt kê các chat loại **group / supergroup / channel / private** có trong buffer cập nhật (bấm chọn một dòng để điền `chat_id`).
+  - Nếu buffer trống và **webhook đang bật**: lỗi "Xóa webhook trước, gửi một tin nhắn cho bot, rồi thử lại."
+  - Nếu buffer trống và không webhook: lỗi "Hãy gửi một tin nhắn cho bot rồi bấm Auto-detect lại."
 - **Gửi tin test** gửi một tin nhắn thử qua Bot API (cùng token + `chat_id` đang nhập) để xác nhận trước khi lưu pipeline.
 - Worker chỉ gọi `sendMessage` với `chat_id` + text — **không** hỗ trợ `message_thread_id` (forum topic); thông báo pipeline không nhắm vào topic con trong nhóm forum.
 - Cần **cả** `telegram_bot_token` + `telegram_chat_id` hoặc **cả hai trống** (validate ở API).
 - Token **không** xuất hiện trong GET list/detail — chỉ `telegram_bot_token_set: bool`. PATCH: token rỗng/không gửi → giữ cũ; xóa token: `clear_bot_token: true`.
-- Sau **mỗi** tick (kể cả 0 video), gửi **một** tin nhắn plaintext (không `parse_mode`) tóm tắt số liệu: tên pipeline, giờ bắt đầu (HH:mm VN), Pulled / Uploaded / Skipped / Failed, và dòng Error nếu `PipelineRun.error_text`.
+- Sau **mỗi** tick (kể cả khi crash), gửi **một** tin nhắn plaintext (không `parse_mode`) gồm:
+  - Header: tên pipeline, giờ bắt đầu (HH:mm VN)
+  - Tóm tắt: ⬇️ Tải xuống / ✅ Đăng tải / ⏭️ Bỏ qua (trùng/hết) / ⚠️ Thất bại — hoặc ❌ Lỗi hệ thống nếu pipeline crash
+  - Chi tiết từng video: tiêu đề + link TikTok (thành công) hoặc lý do lỗi (thất bại)
+  - Soft cap **3500 ký tự** cho phần video — phần còn lại hiển thị "... và N video khác"; hard cap **4096 ký tự** toàn tin.
 - Gửi lỗi Telegram **không** làm fail tick.
 
 ---
@@ -103,9 +109,19 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 
 ## UI Pipelines
 
-- **+ New pipeline** / **Edit** modal: Basic, Trigger (interval + thời gian bắt đầu — chỉ hiện time picker khi interval unit là `days`), Content (`fetch_count`, **Nghỉ giữa upload** (`upload_delay_minutes`), `max_duration_seconds`), Caption, Advanced (collapsible), Accounts (multi-select session hợp lệ), Telegram.
+- **+ New pipeline** / **Edit** modal chia 4 section:
+  - **Thông tin cơ bản**: tên pipeline + lịch chạy
+    - *Lặp lại mỗi* N `ngày` hoặc `phút` (**không còn `hours`**)
+    - *Chạy lúc* HH:MM — chỉ hiện khi unit là `days`
+    - Checkbox **"Chạy nhiều lần trong ngày?"** — khi bật hiện thêm *Chạy đến lúc* + *Lặp lại mỗi N phút* (thay thế field "Window end" cũ). Tắt → tự clear 2 field. Edit pipeline có window đã set → checkbox tự bật.
+  - **Tải xuống**: source type (chỉ hiện khi tạo mới), Douyin cookie (nếu Douyin), URL kênh, số video mỗi lần chạy, thời gian chờ giữa các video, max duration
+  - **Đăng tải**: danh sách tài khoản TikTok, caption template, AI rewrite (collapsible), tùy chọn nâng cao — comment/duet/stitch/riêng tư (collapsible)
+  - **Thông báo**: Telegram bot token + chat ID + auto-detect + gửi tin test
+- Validation chạy khi **submit** (không phải khi blur từng field).
+- Pipeline cũ lưu `interval_unit=hours` → khi mở Edit tự coerce thành `days`.
 - Bảng: Run now, Stop/Resume, Edit, Delete (modal).
 - **Drill-down**: mở hàng pipeline → lazy load `runs`; mở hàng run → video con. Poll ~5s khi có run chưa `finished_at`.
+- **Xem lỗi chi tiết**: click vào chip lỗi hoặc cột error của run → modal hiện full stack trace (scrollable).
 
 ---
 
@@ -133,6 +149,7 @@ def loop(poll_interval: float = 30.0) -> None:
 - `SCHEDULER_CONCURRENCY=1` (mặc định) → serial, behavior giống phiên bản cũ.
 - Giá trị 0 / âm / không hợp lệ → tự clamp về 1, log warning.
 - Mỗi `pipeline_tick()` thread-safe: atomic CAS claim `lock_until` trên DB, không shared state giữa các luồng.
+- **Pipeline timeout**: `run_pipeline()` chạy trong thread con với `fut.result(timeout=MAX_PIPELINE_SECONDS)`. Nếu quá giờ → `_emergency_finalize` → Telegram notification → tick kết thúc; thread cũ tiếp tục chạy ngầm đến khi tự xong hoặc process restart.
 
 ### Env vars scheduler
 
@@ -140,6 +157,7 @@ def loop(poll_interval: float = 30.0) -> None:
 |---------|---------|-------|
 | `SCHEDULER_CONCURRENCY` | `1` | Số pipeline chạy song song (1–20) |
 | `SCHEDULER_POLL_SECONDS` | `30` | Giây giữa mỗi poll cycle |
+| `MAX_PIPELINE_SECONDS` | `1800` | Timeout một lần chạy pipeline (giây). Quá giờ → finalize + Telegram, tick kết thúc. |
 | `PIPELINE_TMP_DIR` | system `/tmp` | Thư mục lưu video YouTube tạm. Set sang real disk để tránh ăn RAM (tmpfs) khi chạy concurrent. |
 | `DOUYIN_TMP_DIR` | `{tmp}/douyin_tmp` | Thư mục lưu video Douyin tạm. |
 

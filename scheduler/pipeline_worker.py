@@ -12,6 +12,8 @@ import shutil
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -40,6 +42,7 @@ HEARTBEAT_INTERVAL = 300  # 5 min
 ORPHAN_STALE_AFTER = timedelta(minutes=15)
 MAX_UPLOAD_ATTEMPTS = 3
 SUMMARY_MAX = 4096
+MAX_PIPELINE_SECONDS = int(os.getenv("MAX_PIPELINE_SECONDS", "1800"))  # 30 min default
 
 
 # ─── E1: Orphan reaper ─────────────────────────────────────────────────────
@@ -964,7 +967,7 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
 
     from zoneinfo import ZoneInfo
     tz = ZoneInfo("Asia/Ho_Chi_Minh")
-    started_str = run.started_at.astimezone(tz).strftime("%H:%M")
+    started_str = (run.started_at or now_utc()).astimezone(tz).strftime("%H:%M")
 
     parts = [f"📋 [{pipeline.name}] — {started_str}", ""]
 
@@ -1031,10 +1034,22 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
 
 @contextmanager
 def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
-    """Run pipeline, always send Telegram summary in finally (even on crash)."""
+    """Run pipeline with timeout, always send Telegram summary in finally (even on crash)."""
     run: Optional[PipelineRun] = None
     try:
-        run = run_pipeline(pipeline, trigger_reason)
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(run_pipeline, pipeline, trigger_reason)
+            try:
+                run = fut.result(timeout=MAX_PIPELINE_SECONDS)
+            except FutureTimeoutError:
+                log.error(
+                    "Pipeline %d exceeded %ds timeout — finalizing and moving on",
+                    pipeline.id, MAX_PIPELINE_SECONDS,
+                )
+                _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
+                raise TimeoutError(
+                    f"pipeline {pipeline.id} exceeded {MAX_PIPELINE_SECONDS}s"
+                )
         yield run
     except Exception:
         log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)

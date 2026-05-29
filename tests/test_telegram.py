@@ -206,3 +206,105 @@ class TestDetectChatsHelpers:
 
         with pytest.raises(TelegramApiError, match="webhook"):
             detect_chats(VALID_TOKEN)
+
+    def test_chats_from_updates_channel_post_key(self):
+        """H2: channel_post update type returns channel chat."""
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [{"channel_post": {"chat": {"id": -100, "title": "MyChannel", "type": "channel"}}}]
+        )
+        assert len(rows) == 1
+        assert rows[0] == {"id": -100, "title": "MyChannel", "type": "channel"}
+
+    def test_chats_from_updates_deduplicates_same_chat_id(self):
+        """E1: duplicate chat.id across multiple updates → only first entry kept."""
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [
+                {"message": {"chat": {"id": -50, "title": "First", "type": "supergroup"}}},
+                {"message": {"chat": {"id": -50, "title": "Second", "type": "supergroup"}}},
+            ]
+        )
+        assert len(rows) == 1
+        assert rows[0]["title"] == "First"
+
+    def test_chats_from_updates_non_numeric_id_skipped(self):
+        """E2: non-numeric chat.id is skipped without raising."""
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [{"message": {"chat": {"id": "not-a-number", "title": "Bad", "type": "supergroup"}}}]
+        )
+        assert rows == []
+
+    def test_chats_from_updates_title_fallback_to_chat_id_string(self):
+        """E3: all title fields absent → title falls back to str(chat_id)."""
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [{"message": {"chat": {"id": -999, "type": "supergroup"}}}]
+        )
+        assert rows[0]["title"] == "-999"
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_returned_dict_shape(self, mock_cls):
+        """H3: returned items have id (int), title (str), type (str) keys."""
+        from api.services.telegram import detect_chats
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": [
+                {"message": {"chat": {"id": -42, "title": "Grp", "type": "supergroup"}}}
+            ],
+        }
+        mock_client.post.return_value = mock_resp
+
+        result = detect_chats(VALID_TOKEN)
+        assert len(result) == 1
+        item = result[0]
+        assert isinstance(item["id"], int)
+        assert isinstance(item["title"], str)
+        assert isinstance(item["type"], str)
+        assert item == {"id": -42, "title": "Grp", "type": "supergroup"}
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_raises_on_invalid_json(self, mock_cls):
+        """P2: malformed JSON body from getUpdates raises TelegramApiError."""
+        from api.services.telegram import detect_chats, TelegramApiError
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.side_effect = ValueError("no JSON")
+        mock_client.post.return_value = mock_resp
+
+        with pytest.raises(TelegramApiError, match="invalid response"):
+            detect_chats(VALID_TOKEN)
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_raises_when_ok_false(self, mock_cls):
+        """P3: ok=false in getUpdates response raises TelegramApiError."""
+        from api.services.telegram import detect_chats, TelegramApiError
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": False, "description": "Unauthorized"}
+        mock_client.post.return_value = mock_resp
+
+        with pytest.raises(TelegramApiError, match="API error"):
+            detect_chats(VALID_TOKEN)
