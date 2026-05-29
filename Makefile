@@ -34,7 +34,7 @@ deploy:  ## Build all images + force-recreate containers (safe default after any
 	@printf "$(YELLOW)Building all images (tiktok-base + services)…$(RESET)\n"
 	$(COMPOSE) build
 	@printf "$(YELLOW)Recreating containers from fresh images…$(RESET)\n"
-	$(COMPOSE) up -d --force-recreate
+	$(COMPOSE) up -d --force-recreate --remove-orphans
 	@$(MAKE) --no-print-directory ps
 
 .PHONY: deploy-prod
@@ -42,18 +42,18 @@ deploy-prod:  ## Like deploy but prod compose only (no dev override / Vite)
 	@printf "$(YELLOW)Building production images…$(RESET)\n"
 	$(COMPOSE) -f docker-compose.yml build
 	@printf "$(YELLOW)Starting production stack…$(RESET)\n"
-	$(COMPOSE) -f docker-compose.yml up -d --force-recreate
+	$(COMPOSE) -f docker-compose.yml up -d --force-recreate --remove-orphans
 	@$(COMPOSE) -f docker-compose.yml ps
 
 .PHONY: up
 up:  ## Start the full stack in dev mode (uses docker-compose.override.yml)
 	@printf "$(GREEN)Starting stack…$(RESET)\n"
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --remove-orphans
 	@$(MAKE) --no-print-directory ps
 
 .PHONY: down
 down:  ## Stop and remove containers (keeps volumes + images)
-	$(COMPOSE) down
+	$(COMPOSE) down --remove-orphans
 
 .PHONY: restart
 restart:  ## Restart api + scheduler. Use after editing api/ or scheduler/ code.
@@ -105,12 +105,12 @@ rebuild-app:  ## Rebuild api + scheduler + webapp prod images (Dockerfile or cod
 
 .PHONY: recreate
 recreate:  ## Recreate all containers from current images (does NOT rebuild)
-	$(COMPOSE) up -d --force-recreate
+	$(COMPOSE) up -d --force-recreate --remove-orphans
 	@$(MAKE) --no-print-directory ps
 
 .PHONY: recreate-api
 recreate-api:  ## Recreate just api + scheduler from current images
-	$(COMPOSE) up -d --force-recreate api scheduler
+	$(COMPOSE) up -d --force-recreate --remove-orphans api scheduler
 	@$(MAKE) --no-print-directory ps
 
 # ─── Webapp dev volume helpers ─────────────────────────────────────────────
