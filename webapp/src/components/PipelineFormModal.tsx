@@ -177,6 +177,31 @@ function timeToNextOccurrence(timeStr: string): Date {
   return next;
 }
 
+const NEW_PIPELINE_DEFAULTS: FormData = {
+  name: "",
+  source_type: "youtube",
+  douyin_cookie_id: null,
+  channel_url: "",
+  interval_value: 1,
+  interval_unit: "days",
+  first_fire_at: "",
+  fetch_count: 1,
+  upload_delay_minutes: 0,
+  max_duration_seconds: "" as any,
+  caption_template: "{title}",
+  caption_ai_prompt: "",
+  allow_comment: 1,
+  allow_duet: 0,
+  allow_stitch: 0,
+  visibility_type: 0,
+  account_ids: [],
+  window_end_time: "",
+  window_delay_minutes: "" as any,
+  telegram_bot_token: "",
+  telegram_chat_id: "",
+  clear_bot_token: false,
+};
+
 export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const qc = useQueryClient();
   const isEdit = !!pipeline;
@@ -284,30 +309,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       });
     } else {
       setMultipleRuns(false);
-      reset({
-        name: "",
-        source_type: "youtube",
-        douyin_cookie_id: null,
-        channel_url: "",
-        interval_value: 1,
-        interval_unit: "days",
-        first_fire_at: "",
-        fetch_count: 1,
-        upload_delay_minutes: 0,
-        max_duration_seconds: "" as any,
-        caption_template: "{title}",
-        caption_ai_prompt: "",
-        allow_comment: 1,
-        allow_duet: 0,
-        allow_stitch: 0,
-        visibility_type: 0,
-        account_ids: [],
-        window_end_time: "",
-        window_delay_minutes: "" as any,
-        telegram_bot_token: "",
-        telegram_chat_id: "",
-        clear_bot_token: false,
-      });
+      reset(NEW_PIPELINE_DEFAULTS);
     }
   }, [open, pipeline, reset]);
 
@@ -360,25 +362,27 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       data.window_delay_minutes === "" || data.window_delay_minutes === undefined
         ? null
         : Number(data.window_delay_minutes);
+    const douyinCookieId = data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined;
+    const upload_options = {
+      allow_comment: data.allow_comment as 0 | 1,
+      allow_duet: data.allow_duet as 0 | 1,
+      allow_stitch: data.allow_stitch as 0 | 1,
+      visibility_type: data.visibility_type as 0 | 1,
+    };
 
     if (isEdit && pipeline) {
       const payload: PipelineUpdate = {
         name: data.name,
         state: saveState,
         channel_url: data.channel_url,
-        douyin_cookie_id: data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined,
+        douyin_cookie_id: douyinCookieId,
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
         interval_unit: data.interval_unit,
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt,
-        upload_options: {
-          allow_comment: data.allow_comment as 0 | 1,
-          allow_duet: data.allow_duet as 0 | 1,
-          allow_stitch: data.allow_stitch as 0 | 1,
-          visibility_type: data.visibility_type as 0 | 1,
-        },
+        upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur ?? null,
         upload_delay_minutes: data.upload_delay_minutes,
@@ -392,10 +396,10 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       }
       updateMut.mutate({ id: pipeline.id, data: payload });
     } else {
-      const payload: PipelineCreate = {
+      createMut.mutate({
         name: data.name,
         source_type: data.source_type,
-        douyin_cookie_id: data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined,
+        douyin_cookie_id: douyinCookieId,
         channel_url: data.channel_url,
         fetch_count: data.fetch_count,
         interval_value: data.interval_value,
@@ -403,12 +407,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt ?? undefined,
-        upload_options: {
-          allow_comment: data.allow_comment as 0 | 1,
-          allow_duet: data.allow_duet as 0 | 1,
-          allow_stitch: data.allow_stitch as 0 | 1,
-          visibility_type: data.visibility_type as 0 | 1,
-        },
+        upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur,
         upload_delay_minutes: data.upload_delay_minutes,
@@ -416,8 +415,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
-      };
-      createMut.mutate(payload);
+      });
     }
   }
 

@@ -20,6 +20,7 @@ from scheduler.pipeline_worker import (
     send_telegram_summary,
     pipeline_tick,
     _emergency_finalize,
+    _pipeline_run_context,
     _check_disk_space,
     _next_fire_in_window,
     _ensure_aware,
@@ -642,66 +643,51 @@ class TestWindowValidation:
 # ─── E5: Telegram summary ──────────────────────────────────────────────────
 
 
+def _make_tg_pipeline(now, **overrides):
+    defaults = dict(
+        id=1,
+        name="my-pipe",
+        channel_url="https://www.youtube.com/@x",
+        fetch_count=3,
+        interval_value=6,
+        interval_unit="hours",
+        first_fire_at=now,
+        next_fire_at=now,
+        state="active",
+        caption_template="{title}",
+        telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+        telegram_chat_id="-1001234567890",
+        created_at=now,
+        updated_at=now,
+    )
+    defaults.update(overrides)
+    return ChannelPipeline(**defaults)
+
+
 class TestTelegramSummary:
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_sends_when_configured(self, mock_send):
         mock_send.return_value = True
         now = now_utc()
-
-        pipeline = ChannelPipeline(
-            id=1,
-            name="my-pipe",
-            channel_url="https://www.youtube.com/@x",
-            fetch_count=3,
-            interval_value=6,
-            interval_unit="hours",
-            first_fire_at=now,
-            next_fire_at=now,
-            state="active",
-            caption_template="{title}",
-            telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
-            telegram_chat_id="-1001234567890",
-            created_at=now,
-            updated_at=now,
-        )
-
+        pipeline = _make_tg_pipeline(now)
         run = PipelineRun(
-            id=1,
-            pipeline_id=1,
-            started_at=now,
-            finished_at=now,
-            trigger_reason="scheduled",
-            pulled_count=3,
-            uploaded_count=2,
-            failed_count=1,
+            id=1, pipeline_id=1, started_at=now, finished_at=now,
+            trigger_reason="scheduled", pulled_count=3, uploaded_count=2, failed_count=1,
         )
 
         send_telegram_summary(pipeline, run)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
         assert "[my-pipe]" in text
-        assert "Pulled: 3" in text
+        assert "Tải xuống: 3" in text
+        assert "Đăng tải: 2" in text
+        assert "Thất bại: 1" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_skips_when_no_config(self, mock_send):
         now = now_utc()
-        pipeline = ChannelPipeline(
-            id=1,
-            name="no-tg",
-            channel_url="https://www.youtube.com/@x",
-            fetch_count=3,
-            interval_value=6,
-            interval_unit="hours",
-            first_fire_at=now,
-            next_fire_at=now,
-            state="active",
-            caption_template="{title}",
-            created_at=now,
-            updated_at=now,
-        )
-        run = PipelineRun(
-            id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled",
-        )
+        pipeline = _make_tg_pipeline(now, telegram_bot_token=None, telegram_chat_id=None)
+        run = PipelineRun(id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled")
 
         send_telegram_summary(pipeline, run)
         mock_send.assert_not_called()
@@ -710,29 +696,185 @@ class TestTelegramSummary:
     def test_failure_does_not_raise(self, mock_send):
         mock_send.side_effect = Exception("network error")
         now = now_utc()
-
-        pipeline = ChannelPipeline(
-            id=1,
-            name="fail-tg",
-            channel_url="https://www.youtube.com/@x",
-            fetch_count=3,
-            interval_value=6,
-            interval_unit="hours",
-            first_fire_at=now,
-            next_fire_at=now,
-            state="active",
-            caption_template="{title}",
-            telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
-            telegram_chat_id="-1001234567890",
-            created_at=now,
-            updated_at=now,
-        )
-        run = PipelineRun(
-            id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled",
-        )
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled")
 
         # Should not raise
         send_telegram_summary(pipeline, run)
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_error_text_in_summary(self, mock_send):
+        """Bug 7: run with system error shows error text in notification."""
+        mock_send.return_value = True
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now)
+        run = PipelineRun(
+            id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled",
+            pulled_count=0, error_text="Traceback: NullPointerException at line 42",
+        )
+
+        send_telegram_summary(pipeline, run)
+        text = mock_send.call_args[0][2]
+        assert "Lỗi hệ thống" in text
+        assert "NullPointerException" in text
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_rich_format_includes_video_details(self, mock_send):
+        """Bug 8: per-video details appear in notification."""
+        mock_send.return_value = True
+        now = now_utc()
+
+        with Session(_api_db.engine) as s:
+            _make_account(s, account_id=1)
+            p = _make_pipeline(
+                s,
+                telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+                telegram_chat_id="-1001234567890",
+            )
+            run = PipelineRun(
+                pipeline_id=p.id, started_at=now, trigger_reason="scheduled",
+                pulled_count=2, uploaded_count=1, failed_count=1,
+            )
+            s.add(run)
+            s.commit()
+            s.refresh(run)
+            run_id = run.id
+            pid = p.id
+
+            v1 = VideoUpload(
+                run_id=run_id, account_id=1, youtube_title="My Great Video",
+                youtube_video_id="aaa111", youtube_url="https://youtube.com/watch?v=aaa",
+                tiktok_url="https://tiktok.com/@x/video/123", status="done",
+            )
+            v2 = VideoUpload(
+                run_id=run_id, account_id=1, youtube_title="Failed Video",
+                youtube_video_id="bbb222", youtube_url="https://youtube.com/watch?v=bbb",
+                error_text="upload_timeout", status="failed",
+            )
+            s.add_all([v1, v2])
+            s.commit()
+            s.refresh(run)
+
+        pipeline = _make_tg_pipeline(
+            now, id=pid,
+            telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+            telegram_chat_id="-1001234567890",
+        )
+
+        send_telegram_summary(pipeline, run)
+        text = mock_send.call_args[0][2]
+        assert "My Great Video" in text
+        assert "tiktok.com" in text
+        assert "Failed Video" in text
+        assert "upload_timeout" in text
+        assert len(text) <= 4096
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_message_respects_4096_limit(self, mock_send):
+        """Bug 8: message is capped at 4096 chars."""
+        mock_send.return_value = True
+        now = now_utc()
+
+        with Session(_api_db.engine) as s:
+            _make_account(s, account_id=1)
+            p = _make_pipeline(
+                s,
+                telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+                telegram_chat_id="-1001234567890",
+            )
+            run = PipelineRun(
+                pipeline_id=p.id, started_at=now, trigger_reason="scheduled",
+                pulled_count=50, uploaded_count=50,
+            )
+            s.add(run)
+            s.commit()
+            s.refresh(run)
+            run_id = run.id
+            pid = p.id
+
+            # Add 50 videos with long titles to force truncation
+            for i in range(50):
+                s.add(VideoUpload(
+                    run_id=run_id, account_id=1,
+                    youtube_video_id=f"vid{i:04d}",
+                    youtube_title=f"Very Long Video Title Number {i} - Extended Edition",
+                    tiktok_url=f"https://tiktok.com/@x/video/{i}",
+                    status="done",
+                    youtube_url=f"https://youtube.com/watch?v=vid{i}",
+                ))
+            s.commit()
+            s.refresh(run)
+
+        pipeline = _make_tg_pipeline(
+            now, id=pid,
+            telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
+            telegram_chat_id="-1001234567890",
+        )
+        send_telegram_summary(pipeline, run)
+        text = mock_send.call_args[0][2]
+        assert len(text) <= 4096
+
+
+class TestPipelineRunContext:
+    """Bug 7: _pipeline_run_context always sends Telegram even on crash."""
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker.run_pipeline")
+    def test_telegram_sent_on_success(self, mock_run, mock_notify):
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=10)
+        run = PipelineRun(id=99, pipeline_id=10, started_at=now, trigger_reason="scheduled")
+        mock_run.return_value = run
+
+        with _pipeline_run_context(pipeline, "scheduled") as r:
+            assert r is run
+
+        mock_notify.assert_called_once_with(pipeline, run)
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    @patch("scheduler.pipeline_worker.run_pipeline")
+    def test_telegram_sent_on_crash(self, mock_run, mock_finalize, mock_notify):
+        """Crash in run_pipeline must still trigger Telegram notification."""
+        now = now_utc()
+
+        # Put pipeline + run in DB so the post-crash query finds the run
+        with Session(_api_db.engine) as s:
+            p = _make_pipeline(s)
+            pid = p.id
+            db_run = PipelineRun(
+                pipeline_id=pid, started_at=now, trigger_reason="scheduled",
+                error_text="worker_crash",
+            )
+            s.add(db_run)
+            s.commit()
+
+        pipeline = _make_tg_pipeline(now, id=pid)
+
+        mock_run.side_effect = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            with _pipeline_run_context(pipeline, "scheduled"):
+                pass  # never reached
+
+        mock_finalize.assert_called_once()
+        mock_notify.assert_called_once()
+        notified_run = mock_notify.call_args[0][1]
+        assert notified_run is not None
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker.run_pipeline")
+    def test_telegram_not_sent_when_run_is_none_due_to_no_db(self, mock_run, mock_notify):
+        """send_telegram_summary is called — it no-ops internally when run is valid."""
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=30)
+        run = PipelineRun(id=55, pipeline_id=30, started_at=now, trigger_reason="scheduled")
+        mock_run.return_value = run
+
+        with _pipeline_run_context(pipeline, "scheduled"):
+            pass
+
+        mock_notify.assert_called_once_with(pipeline, run)
 
 
 class TestEmergencyFinalize:

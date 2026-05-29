@@ -991,30 +991,29 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
             log.warning("Failed to fetch VideoUpload for Telegram summary run %d", run.id)
 
     if uploads:
-        parts.append("")
-        parts.append("📼 Chi tiết:")
+        parts.extend(["", "📼 Chi tiết:"])
         header = "\n".join(parts)
 
-        video_parts: list[str] = []
+        video_lines: list[str] = []
         for v in uploads:
             title = truncate(v.youtube_title or "video", 60)
             if v.status == "done" and v.tiktok_url:
-                video_parts.append(f"  ✅ {title}\n     {v.tiktok_url}")
+                video_lines.append(f"  ✅ {title}\n     {v.tiktok_url}")
             elif v.error_text:
-                video_parts.append(f"  ❌ {title}\n     {truncate(v.error_text, 80)}")
+                video_lines.append(f"  ❌ {title}\n     {truncate(v.error_text, 80)}")
             else:
-                video_parts.append(f"  ⏭️ {title}")
+                video_lines.append(f"  ⏭️ {title}")
 
-        body_parts: list[str] = []
+        body: list[str] = []
         used = len(header)
-        for i, vp in enumerate(video_parts):
-            if used + len(vp) + 1 > 3500:
-                body_parts.append(f"\n... và {len(video_parts) - i} video khác")
+        for i, vl in enumerate(video_lines):
+            if used + len(vl) + 1 > 3500:
+                body.append(f"\n... và {len(video_lines) - i} video khác")
                 break
-            body_parts.append(vp)
-            used += len(vp) + 1
+            body.append(vl)
+            used += len(vl) + 1
 
-        text = header + "\n" + "\n".join(body_parts)
+        text = header + "\n" + "\n".join(body)
     else:
         text = "\n".join(parts)
 

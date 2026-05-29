@@ -111,25 +111,29 @@ class TestDetectChatsHelpers:
         mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
         mock_cls.return_value.__exit__ = MagicMock(return_value=False)
 
+        chat_update = {
+            "message": {"chat": {"id": -50, "title": "G", "type": "supergroup"}}
+        }
+
         def post_side_effect(url, **kwargs):
             mock_resp = MagicMock()
             mock_resp.status_code = 200
-            if "getUpdates" in str(url):
-                mock_resp.json.return_value = {"ok": True, "result": []}
+            mock_resp.json.return_value = {"ok": True, "result": [chat_update]}
             return mock_resp
 
         mock_client.post.side_effect = post_side_effect
-        detect_chats(VALID_TOKEN)
+        result = detect_chats(VALID_TOKEN)
         mock_cls.assert_called_with(follow_redirects=False, timeout=15)
         assert mock_client.post.call_count == 1
         assert "getUpdates" in str(mock_client.post.call_args[0][0])
+        assert len(result) == 1
 
-    def test_chats_from_updates_skips_private_keeps_supergroup(self):
+    def test_chats_from_updates_includes_private_and_supergroup(self):
         from api.services.telegram import _chats_from_updates_result
 
         rows = _chats_from_updates_result(
             [
-                {"message": {"chat": {"id": 1, "type": "private", "first_name": "A"}}},
+                {"message": {"chat": {"id": 1, "type": "private", "first_name": "Alice"}}},
                 {
                     "my_chat_member": {
                         "chat": {"id": -50, "title": "G", "type": "supergroup"}
@@ -137,4 +141,68 @@ class TestDetectChatsHelpers:
                 },
             ]
         )
-        assert rows == [{"id": -50, "title": "G", "type": "supergroup"}]
+        assert len(rows) == 2
+        assert rows[0] == {"id": 1, "title": "Alice", "type": "private"}
+        assert rows[1] == {"id": -50, "title": "G", "type": "supergroup"}
+
+    def test_chats_from_updates_private_uses_first_name(self):
+        from api.services.telegram import _chats_from_updates_result
+
+        rows = _chats_from_updates_result(
+            [{"message": {"chat": {"id": 99, "type": "private", "first_name": "Bob"}}}]
+        )
+        assert rows[0]["title"] == "Bob"
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_raises_when_no_recent_messages(self, mock_cls):
+        from api.services.telegram import detect_chats, TelegramApiError
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        def get_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"ok": True, "result": {"url": ""}}
+            return mock_resp
+
+        def post_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"ok": True, "result": []}
+            return mock_resp
+
+        mock_client.post.side_effect = post_side_effect
+        mock_client.get.side_effect = get_side_effect
+
+        with pytest.raises(TelegramApiError, match="Không tìm thấy"):
+            detect_chats(VALID_TOKEN)
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_detect_chats_raises_when_webhook_active(self, mock_cls):
+        from api.services.telegram import detect_chats, TelegramApiError
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        def post_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"ok": True, "result": []}
+            return mock_resp
+
+        def get_side_effect(url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "ok": True, "result": {"url": "https://example.com/hook"}
+            }
+            return mock_resp
+
+        mock_client.post.side_effect = post_side_effect
+        mock_client.get.side_effect = get_side_effect
+
+        with pytest.raises(TelegramApiError, match="webhook"):
+            detect_chats(VALID_TOKEN)
