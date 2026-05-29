@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -965,25 +966,93 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
     tz = ZoneInfo("Asia/Ho_Chi_Minh")
     started_str = run.started_at.astimezone(tz).strftime("%H:%M")
 
-    lines = [f"[{pipeline.name}] — {started_str}", ""]
-    lines.append(f"Pulled: {run.pulled_count}")
-    lines.append(f"Uploaded: {run.uploaded_count}")
-    if run.skipped_dup_count:
-        lines.append(f"Skipped (dup): {run.skipped_dup_count}")
-    if run.skipped_exhausted_count:
-        lines.append(f"Skipped (exhausted): {run.skipped_exhausted_count}")
-    if run.failed_count:
-        lines.append(f"Failed: {run.failed_count}")
+    parts = [f"📋 [{pipeline.name}] — {started_str}", ""]
 
     if run.error_text:
-        lines.append(f"\nError: {truncate(run.error_text, 200, suffix='')}")
+        parts.append(f"❌ Lỗi hệ thống: {truncate(run.error_text, 200)}")
+    else:
+        parts.append(f"⬇️ Tải xuống: {run.pulled_count}")
+        parts.append(f"✅ Đăng tải: {run.uploaded_count}")
+        if run.skipped_dup_count:
+            parts.append(f"⏭️ Bỏ qua (trùng): {run.skipped_dup_count}")
+        if run.skipped_exhausted_count:
+            parts.append(f"⏭️ Bỏ qua (hết): {run.skipped_exhausted_count}")
+        if run.failed_count:
+            parts.append(f"⚠️ Thất bại: {run.failed_count}")
 
-    text = "\n".join(lines)
+    uploads: list[VideoUpload] = []
+    if run.id is not None:
+        try:
+            with Session(_api_db.engine) as s:
+                uploads = list(
+                    s.exec(select(VideoUpload).where(VideoUpload.run_id == run.id)).all()
+                )
+        except Exception:
+            log.warning("Failed to fetch VideoUpload for Telegram summary run %d", run.id)
+
+    if uploads:
+        parts.append("")
+        parts.append("📼 Chi tiết:")
+        header = "\n".join(parts)
+
+        video_parts: list[str] = []
+        for v in uploads:
+            title = truncate(v.youtube_title or "video", 60)
+            if v.status == "done" and v.tiktok_url:
+                video_parts.append(f"  ✅ {title}\n     {v.tiktok_url}")
+            elif v.error_text:
+                video_parts.append(f"  ❌ {title}\n     {truncate(v.error_text, 80)}")
+            else:
+                video_parts.append(f"  ⏭️ {title}")
+
+        body_parts: list[str] = []
+        used = len(header)
+        for i, vp in enumerate(video_parts):
+            if used + len(vp) + 1 > 3500:
+                body_parts.append(f"\n... và {len(video_parts) - i} video khác")
+                break
+            body_parts.append(vp)
+            used += len(vp) + 1
+
+        text = header + "\n" + "\n".join(body_parts)
+    else:
+        text = "\n".join(parts)
+
+    if len(text) > 4096:
+        text = text[:4090] + "\n…"
 
     try:
         telegram.send_message(pipeline.telegram_bot_token, pipeline.telegram_chat_id, text)
     except Exception as e:
         log.warning("Telegram notify failed for pipeline %d: %s", pipeline.id, e)
+
+
+# ─── Pipeline run context manager ─────────────────────────────────────────
+
+
+@contextmanager
+def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
+    """Run pipeline, always send Telegram summary in finally (even on crash)."""
+    run: Optional[PipelineRun] = None
+    try:
+        run = run_pipeline(pipeline, trigger_reason)
+        yield run
+    except Exception:
+        log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)
+        _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
+        try:
+            with Session(_api_db.engine) as s:
+                run = s.exec(
+                    select(PipelineRun)
+                    .where(PipelineRun.pipeline_id == pipeline.id)
+                    .order_by(PipelineRun.started_at.desc())
+                ).first()
+        except Exception:
+            log.exception("Failed to fetch run after crash for pipeline %d", pipeline.id)
+        raise
+    finally:
+        if run is not None:
+            send_telegram_summary(pipeline, run)
 
 
 # ─── Pipeline tick (composed) ──────────────────────────────────────────────
@@ -1001,12 +1070,9 @@ def pipeline_tick() -> bool:
     hb.start(pipeline.lock_until or now_utc() + LOCK_TTL)
 
     try:
-        run = run_pipeline(pipeline, trigger_reason)
-        advance_next_fire(pipeline, trigger_reason)
-        send_telegram_summary(pipeline, run)
+        with _pipeline_run_context(pipeline, trigger_reason):
+            advance_next_fire(pipeline, trigger_reason)
     except Exception:
-        log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)
-        _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
         advance_next_fire(pipeline, trigger_reason)
     finally:
         hb.stop()

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Accounts } from "../api/client";
@@ -6,6 +6,34 @@ import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
 
 type Props = { pipelineId: number };
+
+function ErrorDetailModal({ text, onClose }: { text: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 p-4 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-red-700">Chi tiết lỗi</span>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+        </div>
+        <pre className="text-xs bg-slate-900 text-slate-100 rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap break-all font-mono">
+          {text}
+        </pre>
+      </div>
+    </div>
+  );
+}
 
 interface DayGroup {
   date: string; // "YYYY-MM-DD"
@@ -49,6 +77,7 @@ function runStatusLabel(r: PipelineRunItem): { text: string; cls: string } {
 }
 
 function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }) {
+  const [errorModal, setErrorModal] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["run-videos", pipelineId, runId],
     queryFn: () => Pipelines.listRunVideos(pipelineId, runId),
@@ -72,42 +101,54 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
   if (!data?.length) return <div className="p-2 text-xs text-slate-400">No videos.</div>;
 
   return (
-    <table className="w-full text-xs ml-8">
-      <thead>
-        <tr className="text-slate-400">
-          <th className="text-left p-1">Account</th>
-          <th className="text-left p-1">YouTube</th>
-          <th className="text-left p-1">TikTok</th>
-          <th className="text-left p-1">Status</th>
-          <th className="text-left p-1">Error</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((v) => (
-          <tr key={v.id} className="border-t border-slate-50">
-            <td className="p-1">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
-            <td className="p-1 max-w-[120px] truncate">
-              <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                {v.youtube_title || v.youtube_video_id}
-              </a>
-            </td>
-            <td className="p-1">
-              {v.tiktok_url ? (
-                <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  {v.tiktok_video_id || "link"}
-                </a>
-              ) : "—"}
-            </td>
-            <td className="p-1">
-              <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
-            </td>
-            <td className="p-1 max-w-[150px] truncate text-slate-500" title={v.error_text || ""}>
-              {v.error_text || ""}
-            </td>
+    <>
+      {errorModal && (
+        <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
+      )}
+      <table className="w-full text-xs ml-8">
+        <thead>
+          <tr className="text-slate-400">
+            <th className="text-left p-1">Account</th>
+            <th className="text-left p-1">YouTube</th>
+            <th className="text-left p-1">TikTok</th>
+            <th className="text-left p-1">Status</th>
+            <th className="text-left p-1">Error</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.map((v) => (
+            <tr key={v.id} className="border-t border-slate-50">
+              <td className="p-1">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
+              <td className="p-1 max-w-[120px] truncate">
+                <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  {v.youtube_title || v.youtube_video_id}
+                </a>
+              </td>
+              <td className="p-1">
+                {v.tiktok_url ? (
+                  <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    {v.tiktok_video_id || "link"}
+                  </a>
+                ) : "—"}
+              </td>
+              <td className="p-1">
+                <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
+              </td>
+              <td className="p-1">
+                {v.error_text ? (
+                  <button
+                    className="max-w-[150px] truncate text-red-600 hover:underline text-left"
+                    onClick={() => setErrorModal(v.error_text || "")}
+                  >
+                    {v.error_text}
+                  </button>
+                ) : ""}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
 
@@ -122,9 +163,15 @@ function RunRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [errorModal, setErrorModal] = useState<string | null>(null);
   const status = runStatusLabel(run);
+  const isError = status.text === "error";
+
   return (
     <Fragment>
+      {errorModal && (
+        <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
+      )}
       <tr className="cursor-pointer hover:bg-slate-100" onClick={onToggle}>
         <td className="p-1 pl-6">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -138,18 +185,21 @@ function RunRow({
         <td className="p-1">{run.skipped_dup_count + run.skipped_exhausted_count}</td>
         <td className="p-1">{run.failed_count}</td>
         <td className="p-1 text-[10px]">
-          <span className={status.cls}>{status.text}</span>
+          {isError ? (
+            <button
+              className={`${status.cls} cursor-pointer hover:opacity-75`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setErrorModal(run.error_text || "");
+              }}
+            >
+              {status.text}
+            </button>
+          ) : (
+            <span className={status.cls}>{status.text}</span>
+          )}
         </td>
       </tr>
-      {run.error_text && (
-        <tr>
-          <td colSpan={8} className="px-6 pb-1">
-            <div className="text-[10px] text-red-600 bg-red-50 rounded px-2 py-1 font-mono break-all">
-              {run.error_text}
-            </div>
-          </td>
-        </tr>
-      )}
       {expanded && (
         <tr>
           <td colSpan={8} className="p-0">

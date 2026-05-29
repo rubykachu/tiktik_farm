@@ -16,7 +16,7 @@ _BOT_TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 # Numeric only — private channels/supergroups use -100xxxxxxxxxx.
 _CHAT_ID_RE = re.compile(r"^-?\d+$")
 _ALLOWED_HOST = "api.telegram.org"
-_GROUP_LIKE_TYPES = frozenset({"group", "supergroup", "channel"})
+_GROUP_LIKE_TYPES = frozenset({"group", "supergroup", "channel", "private"})
 
 TELEGRAM_TEST_MESSAGE = (
     "🔔 Test from TikTok Uploader — Telegram is configured correctly!"
@@ -91,7 +91,7 @@ def _chats_from_updates_result(result: list[Any]) -> list[dict[str, Any]]:
                 continue
             if cid_int in ordered:
                 continue
-            title = chat.get("title") or chat.get("username") or str(cid_int)
+            title = chat.get("title") or chat.get("first_name") or chat.get("username") or str(cid_int)
             ordered[cid_int] = {"id": cid_int, "title": str(title), "type": str(ctype)}
     return list(ordered.values())
 
@@ -137,4 +137,30 @@ def detect_chats(bot_token: str) -> list[dict[str, Any]]:
     if not isinstance(result, list):
         return []
 
-    return _chats_from_updates_result(result)
+    chats = _chats_from_updates_result(result)
+
+    if not chats:
+        # Check webhook — getUpdates returns nothing when a webhook is active
+        try:
+            wh_url = _method_url(bot_token, "getWebhookInfo")
+            with httpx.Client(follow_redirects=False, timeout=10) as client:
+                wh_resp = client.get(wh_url)
+            if wh_resp.status_code == 200:
+                wh_data = wh_resp.json()
+                if wh_data.get("result", {}).get("url"):
+                    raise TelegramApiError(
+                        "Bot có webhook đang hoạt động — getUpdates không trả về tin nhắn. "
+                        "Xóa webhook trước, gửi một tin nhắn cho bot, rồi thử lại."
+                    )
+        except TelegramApiError:
+            raise
+        except Exception:
+            pass
+
+        if not result:
+            raise TelegramApiError(
+                "Không tìm thấy tin nhắn gần đây. "
+                "Hãy gửi một tin nhắn cho bot rồi bấm Auto-detect lại."
+            )
+
+    return chats

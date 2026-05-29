@@ -17,7 +17,7 @@ const baseSchema = z.object({
   douyin_cookie_id: z.number().nullable().optional(),
   channel_url: z.string().min(1, "Required"),
   interval_value: z.coerce.number().int().min(1),
-  interval_unit: z.enum(["minutes", "hours", "days"]),
+  interval_unit: z.enum(["minutes", "days"]),
   first_fire_at: z.string().optional().default(""),
   fetch_count: z.coerce.number().int().min(1).max(20),
   upload_delay_minutes: z.coerce.number().int().min(0).max(30).default(0),
@@ -210,14 +210,14 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     formState: { errors, touchedFields },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    mode: "onBlur",
+    mode: "onSubmit",
     defaultValues: {
       name: "",
       source_type: "youtube" as "youtube" | "douyin",
       douyin_cookie_id: null,
       channel_url: "",
-      interval_value: 6,
-      interval_unit: "hours",
+      interval_value: 1,
+      interval_unit: "days",
       first_fire_at: "",
       fetch_count: 1,
       upload_delay_minutes: 0,
@@ -255,14 +255,17 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         uploadOpts = { ...uploadOpts, ...JSON.parse(pipeline.upload_options_json) };
       } catch {}
 
+      setMultipleRuns(!!pipeline.window_end_time);
       reset({
         name: pipeline.name,
         source_type: (pipeline.source_type ?? "youtube") as "youtube" | "douyin",
         douyin_cookie_id: pipeline.douyin_cookie_id ?? null,
         channel_url: pipeline.channel_url,
         interval_value: pipeline.interval_value,
-        interval_unit: pipeline.interval_unit,
-        first_fire_at: pipeline.interval_unit === "days" ? toLocalTime(pipeline.first_fire_at) : "",
+        interval_unit: (pipeline.interval_unit === "hours" ? "days" : pipeline.interval_unit) as "minutes" | "days",
+        first_fire_at: pipeline.interval_unit === "days" && pipeline.first_fire_at
+          ? toLocalTime(pipeline.first_fire_at)
+          : "",
         fetch_count: pipeline.fetch_count,
         upload_delay_minutes: pipeline.upload_delay_minutes ?? 0,
         max_duration_seconds: pipeline.max_duration_seconds ?? ("" as any),
@@ -280,13 +283,14 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         clear_bot_token: false,
       });
     } else {
+      setMultipleRuns(false);
       reset({
         name: "",
         source_type: "youtube",
         douyin_cookie_id: null,
         channel_url: "",
-        interval_value: 6,
-        interval_unit: "hours",
+        interval_value: 1,
+        interval_unit: "days",
         first_fire_at: "",
         fetch_count: 1,
         upload_delay_minutes: 0,
@@ -419,6 +423,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
+  const [multipleRuns, setMultipleRuns] = useState(false);
   const [telegramDetectLoading, setTelegramDetectLoading] = useState(false);
   const [telegramDetectChats, setTelegramDetectChats] = useState<
     TelegramChatItem[] | null
@@ -480,9 +485,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const repeatHint = useMemo(() => {
     const n = Number(intervalValue);
     if (!Number.isFinite(n) || n < 1) return null;
-    const unitLabel =
-      intervalUnit === "minutes" ? "minutes" : intervalUnit === "days" ? "days" : "hours";
-    return `Pipeline runs every ${n} ${unitLabel} from this anchor while active.`;
+    const unitLabel = intervalUnit === "minutes" ? "phút" : "ngày";
+    return `Pipeline chạy mỗi ${n} ${unitLabel} từ mốc thời gian này khi đang hoạt động.`;
   }, [intervalValue, intervalUnit]);
 
   async function handleTelegramDetect() {
@@ -535,7 +539,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {isEdit ? "Edit pipeline" : "New pipeline"}
+            {isEdit ? "Chỉnh sửa pipeline" : "Tạo pipeline mới"}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <X size={20} />
@@ -543,20 +547,138 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         </div>
 
         <form
-          className="grid lg:grid-cols-2 gap-x-6 gap-y-5"
+          className="space-y-6"
           onSubmit={(e) => e.preventDefault()}
         >
-          {/* Basic */}
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium text-slate-700">Basic</legend>
+          {/* Section 1: Thông tin cơ bản */}
+          <fieldset className="space-y-4">
+            <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
+              Thông tin cơ bản
+            </legend>
             <div>
-              <label className="label">Name</label>
-              <input className="input" {...register("name")} placeholder="My pipeline" />
+              <label className="label">Tên pipeline</label>
+              <input className="input" {...register("name")} placeholder="Ví dụ: Kênh du lịch" />
               {errors.name && <p className="field-error">{errors.name.message}</p>}
             </div>
+
+            {/* Lịch chạy */}
+            <div className="space-y-3">
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="label">Lặp lại mỗi</label>
+                  <input
+                    type="number"
+                    className="input"
+                    min={1}
+                    {...register("interval_value")}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="label">Đơn vị</label>
+                  <select
+                    className="input"
+                    {...register("interval_unit")}
+                    onChange={(e) => {
+                      const unit = e.target.value as "minutes" | "days";
+                      setValue("interval_unit", unit);
+                      setValue("interval_value", unit === "days" ? 1 : 10);
+                      if (unit !== "days") {
+                        setValue("window_end_time", "");
+                        setValue("window_delay_minutes", "" as any);
+                        setMultipleRuns(false);
+                      }
+                    }}
+                  >
+                    <option value="days">ngày</option>
+                    <option value="minutes">phút</option>
+                  </select>
+                </div>
+              </div>
+              {errors.interval_value && (
+                <p className="field-error">{errors.interval_value.message}</p>
+              )}
+              {repeatHint && (
+                <p className="text-xs text-slate-500">{repeatHint}</p>
+              )}
+
+              {intervalUnit === "days" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="label">Chạy lúc ({getTimezoneLabel()})</label>
+                    <input
+                      type="time"
+                      className="input"
+                      {...register("first_fire_at")}
+                    />
+                    {errors.first_fire_at && (
+                      <p className="field-error">{errors.first_fire_at.message}</p>
+                    )}
+                    <p className="text-xs text-slate-400 mt-1">
+                      Nếu giờ này đã qua hôm nay, lần chạy đầu tiên sẽ vào ngày mai.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={multipleRuns}
+                      onChange={(e) => {
+                        setMultipleRuns(e.target.checked);
+                        if (!e.target.checked) {
+                          setValue("window_end_time", "");
+                          setValue("window_delay_minutes", "" as any);
+                        }
+                      }}
+                    />
+                    Chạy nhiều lần trong ngày?
+                  </label>
+
+                  {multipleRuns && (
+                    <div className="space-y-3 pl-4 border-l-2 border-slate-200">
+                      <div className="flex gap-3 items-end">
+                        <div className="flex-1">
+                          <label className="label">Chạy đến lúc ({getTimezoneLabel()})</label>
+                          <input
+                            type="time"
+                            className="input"
+                            {...register("window_end_time")}
+                          />
+                          {errors.window_end_time && (
+                            <p className="field-error">{errors.window_end_time.message}</p>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <label className="label">Lặp lại mỗi (phút)</label>
+                          <input
+                            type="number"
+                            className="input"
+                            min={3}
+                            placeholder="Ví dụ: 5"
+                            {...register("window_delay_minutes")}
+                          />
+                          {errors.window_delay_minutes && (
+                            <p className="field-error">{errors.window_delay_minutes.message}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Pipeline sẽ chạy lại mỗi N phút từ giờ bắt đầu đến giờ kết thúc, rồi chờ đến ngày hôm sau.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </fieldset>
+
+          {/* Section 2: Tải xuống */}
+          <fieldset className="space-y-3">
+            <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
+              Tải xuống
+            </legend>
             {!isEdit && (
               <div>
-                <label className="label">Source type</label>
+                <label className="label">Nguồn video</label>
                 <select className="input" {...register("source_type")}>
                   <option value="youtube">YouTube</option>
                   <option value="douyin">Douyin</option>
@@ -565,12 +687,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             )}
             {sourceType === "douyin" && (
               <div>
-                <label className="label">Douyin cookie</label>
+                <label className="label">Douyin Cookie</label>
                 <select
                   className="input"
                   {...register("douyin_cookie_id", { valueAsNumber: true })}
                 >
-                  <option value="">— Select cookie —</option>
+                  <option value="">— Chọn cookie —</option>
                   {douyinCookies?.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -582,9 +704,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 )}
                 {(!douyinCookies || douyinCookies.length === 0) && (
                   <p className="text-xs text-amber-600 mt-1">
-                    No Douyin cookies yet. Add one in{" "}
+                    Chưa có cookie Douyin nào. Thêm cookie trong{" "}
                     <Link to="/accounts" className="text-brand-600 hover:underline">
-                      Accounts → Douyin Cookies
+                      Tài khoản → Douyin Cookies
                     </Link>
                     .
                   </p>
@@ -593,7 +715,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             )}
             <div>
               <label className="label">
-                {sourceType === "douyin" ? "Douyin creator URL" : "Channel URL"}
+                {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
               </label>
               <input
                 className="input"
@@ -608,90 +730,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <p className="field-error">{errors.channel_url.message}</p>
               )}
             </div>
-          </fieldset>
-
-          {/* Trigger */}
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium text-slate-700">Trigger</legend>
-            <div className="flex gap-3 items-end">
-              <div className="flex-1">
-                <label className="label">Every</label>
-                <input
-                  type="number"
-                  className="input"
-                  min={1}
-                  {...register("interval_value")}
-                />
-              </div>
-              <div className="flex-1">
-                <label className="label">Unit</label>
-                <select className="input" {...register("interval_unit")}>
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
-                </select>
-              </div>
-            </div>
-            {errors.interval_value && (
-              <p className="field-error">{errors.interval_value.message}</p>
-            )}
-            {intervalUnit === "days" && (
-              <div className="space-y-3">
-                <div>
-                  <label className="label">Run daily at ({getTimezoneLabel()})</label>
-                  <input
-                    type="time"
-                    className="input"
-                    {...register("first_fire_at")}
-                  />
-                  {errors.first_fire_at && (
-                    <p className="field-error">{errors.first_fire_at.message}</p>
-                  )}
-                  <p className="text-xs text-slate-400 mt-1">
-                    If this time has already passed today, the first run will be tomorrow.
-                  </p>
-                </div>
-                <div className="flex gap-3 items-end">
-                  <div className="flex-1">
-                    <label className="label">Window end ({getTimezoneLabel()}, optional)</label>
-                    <input
-                      type="time"
-                      className="input"
-                      {...register("window_end_time")}
-                    />
-                    {errors.window_end_time && (
-                      <p className="field-error">{errors.window_end_time.message}</p>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <label className="label">Repeat every (min)</label>
-                    <input
-                      type="number"
-                      className="input"
-                      min={3}
-                      placeholder="e.g. 5"
-                      {...register("window_delay_minutes")}
-                    />
-                    {errors.window_delay_minutes && (
-                      <p className="field-error">{errors.window_delay_minutes.message}</p>
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Optional. If set, the pipeline re-runs every N minutes from the start time until the window end, then waits for the next day.
-                </p>
-              </div>
-            )}
-            {repeatHint && (
-              <p className="text-xs text-slate-500 mt-1">{repeatHint}</p>
-            )}
-          </fieldset>
-
-          {/* Content */}
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium text-slate-700">Content</legend>
             <div>
-              <label className="label">Videos per run (1-20)</label>
+              <label className="label">Số video mỗi lần chạy (1–20)</label>
               <input
                 type="number"
                 className="input"
@@ -705,7 +745,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </div>
             {Number(fetchCount) > 1 && (
               <div>
-                <label className="label">Rest between uploads (minutes)</label>
+                <label className="label">Thời gian chờ giữa các video (phút)</label>
                 <input
                   type="number"
                   className="input"
@@ -714,8 +754,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                   {...register("upload_delay_minutes")}
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  Minutes to wait between uploads (0 = no wait). Helps avoid spam
-                  detection by TikTok.
+                  Chờ N phút giữa mỗi lần đăng (0 = không chờ). Giúp tránh bị TikTok hạn chế.
                 </p>
                 {errors.upload_delay_minutes && (
                   <p className="field-error">{errors.upload_delay_minutes.message}</p>
@@ -723,25 +762,73 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </div>
             )}
             <div>
-              <label className="label">Max duration (seconds, optional)</label>
+              <label className="label">Độ dài tối đa (giây, tùy chọn)</label>
               <input
                 type="number"
                 className="input"
                 min={1}
                 {...register("max_duration_seconds")}
-                placeholder="Leave empty for no limit"
+                placeholder="Để trống nếu không giới hạn"
               />
               <p className="text-xs text-slate-400 mt-1">
-                When set, yt-dlp skips videos longer than 3× this value and trims
-                the rest to the first N seconds.
+                Video dài hơn giá trị này sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên.
               </p>
             </div>
           </fieldset>
 
-          {/* Caption */}
+          {/* Section 3: Đăng tải */}
           <fieldset className="space-y-3">
-            <legend className="text-sm font-medium text-slate-700">Caption</legend>
+            <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
+              Đăng tải
+            </legend>
+
+            {/* Accounts */}
+            <div className="space-y-2">
+              <label className="label">
+                Tài khoản TikTok{" "}
+                <span className="text-slate-400 font-normal">
+                  ({selectedAccounts.length} đã chọn)
+                </span>
+              </label>
+              {validAccounts.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  Chưa có tài khoản hợp lệ. Hãy nhập cookie trước.
+                </p>
+              )}
+              <div className="max-h-40 overflow-y-auto border rounded p-2 grid grid-cols-2 gap-1">
+                {validAccounts.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      value={a.id}
+                      checked={selectedAccounts.includes(a.id)}
+                      onChange={(e) => {
+                        const id = a.id;
+                        if (e.target.checked) {
+                          setValue("account_ids", [...selectedAccounts, id], {
+                            shouldValidate: true,
+                          });
+                        } else {
+                          setValue(
+                            "account_ids",
+                            selectedAccounts.filter((x) => x !== id),
+                            { shouldValidate: true }
+                          );
+                        }
+                      }}
+                    />
+                    {a.display_name || a.username}
+                  </label>
+                ))}
+              </div>
+              {errors.account_ids && (
+                <p className="field-error">{errors.account_ids.message}</p>
+              )}
+            </div>
+
+            {/* Caption */}
             <div>
+              <label className="label">Caption</label>
               <textarea
                 className="input min-h-[80px]"
                 maxLength={2200}
@@ -752,7 +839,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <p className="field-error">{errors.caption_template.message}</p>
               )}
               <p className="text-xs text-slate-400 mt-1">
-                Variables:{" "}
+                Dùng các biến này trong caption:{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{title}"}</code>,{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{title_hashtag}"}</code>,{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{now}"}</code>,{" "}
@@ -760,123 +847,82 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </p>
             </div>
 
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm font-medium text-slate-700"
-              onClick={() => setAdvancedOpen(!advancedOpen)}
-            >
-              {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              Advanced flags
-            </button>
-            {advancedOpen && (
-              <div className="grid grid-cols-2 gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" value={1} {...register("allow_comment")} defaultChecked />
-                  Allow comment
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" value={1} {...register("allow_duet")} />
-                  Allow duet
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" value={1} {...register("allow_stitch")} />
-                  Allow stitch
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" value={1} {...register("visibility_type")} />
-                  Private
-                </label>
-              </div>
-            )}
-          </fieldset>
-
-          {/* AI rewrite (optional, full-width) */}
-          <fieldset className="lg:col-span-2 space-y-3">
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm font-medium text-slate-700"
-              onClick={() => setAiSectionOpen(!aiSectionOpen)}
-            >
-              {aiSectionOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              AI caption rewrite (optional)
-            </button>
-            {aiSectionOpen && (
-              <div className="space-y-2">
-                <label className="label">Prompt</label>
-                <textarea
-                  className="input min-h-[80px]"
-                  maxLength={2000}
-                  {...register("caption_ai_prompt")}
-                  placeholder="Rewrite the title in a clickbait style for TikTok."
-                />
-                {errors.caption_ai_prompt && (
-                  <p className="field-error">{errors.caption_ai_prompt.message}</p>
-                )}
-                <p className="text-xs text-slate-500">
-                  The output is available as{" "}
-                  <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> in
-                  the caption template. Configure the default model in{" "}
-                  <Link to="/settings" className="text-brand-600 hover:underline">
-                    Settings
-                  </Link>
-                  .
-                </p>
-              </div>
-            )}
-          </fieldset>
-
-          {/* Accounts (full-width) */}
-          <fieldset className="lg:col-span-2 space-y-2">
-            <legend className="text-sm font-medium text-slate-700">
-              Accounts{" "}
-              <span className="text-slate-400 font-normal">
-                ({selectedAccounts.length} selected)
-              </span>
-            </legend>
-            {validAccounts.length === 0 && (
-              <p className="text-xs text-amber-600">
-                No accounts with a valid session. Import a cookie first.
-              </p>
-            )}
-            <div className="max-h-40 overflow-y-auto border rounded p-2 grid grid-cols-2 gap-1">
-              {validAccounts.map((a) => (
-                <label key={a.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    value={a.id}
-                    checked={selectedAccounts.includes(a.id)}
-                    onChange={(e) => {
-                      const id = a.id;
-                      if (e.target.checked) {
-                        setValue("account_ids", [...selectedAccounts, id], {
-                          shouldValidate: true,
-                        });
-                      } else {
-                        setValue(
-                          "account_ids",
-                          selectedAccounts.filter((x) => x !== id),
-                          { shouldValidate: true }
-                        );
-                      }
-                    }}
+            {/* AI rewrite */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-sm font-medium text-slate-700"
+                onClick={() => setAiSectionOpen(!aiSectionOpen)}
+              >
+                {aiSectionOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                Viết lại caption bằng AI (tùy chọn)
+              </button>
+              {aiSectionOpen && (
+                <div className="space-y-2 pl-4 border-l-2 border-slate-200">
+                  <label className="label">Prompt AI</label>
+                  <textarea
+                    className="input min-h-[80px]"
+                    maxLength={2000}
+                    {...register("caption_ai_prompt")}
+                    placeholder="Viết lại tiêu đề theo phong cách TikTok hấp dẫn."
                   />
-                  {a.display_name || a.username}
-                </label>
-              ))}
+                  {errors.caption_ai_prompt && (
+                    <p className="field-error">{errors.caption_ai_prompt.message}</p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    Kết quả được dùng qua biến{" "}
+                    <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> trong caption.
+                    Cài đặt model mặc định trong{" "}
+                    <Link to="/settings" className="text-brand-600 hover:underline">
+                      Cài đặt
+                    </Link>
+                    .
+                  </p>
+                </div>
+              )}
             </div>
-            {errors.account_ids && (
-              <p className="field-error">{errors.account_ids.message}</p>
-            )}
+
+            {/* Advanced flags */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-sm font-medium text-slate-700"
+                onClick={() => setAdvancedOpen(!advancedOpen)}
+              >
+                {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                Tùy chọn nâng cao
+              </button>
+              {advancedOpen && (
+                <div className="grid grid-cols-2 gap-3 pl-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" value={1} {...register("allow_comment")} defaultChecked />
+                    Cho phép bình luận
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" value={1} {...register("allow_duet")} />
+                    Cho phép Duet
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" value={1} {...register("allow_stitch")} />
+                    Cho phép Stitch
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" value={1} {...register("visibility_type")} />
+                    Chế độ riêng tư
+                  </label>
+                </div>
+              )}
+            </div>
           </fieldset>
 
-          {/* Telegram (optional, full-width) */}
-          <fieldset className="lg:col-span-2 space-y-3">
-            <legend className="text-sm font-medium text-slate-700">
-              Telegram <span className="text-slate-400 font-normal">(optional)</span>
+          {/* Section 4: Thông báo */}
+          <fieldset className="space-y-3">
+            <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
+              Thông báo <span className="text-slate-400 font-normal text-sm">(tùy chọn)</span>
             </legend>
             <div className="grid lg:grid-cols-2 gap-3">
               <div>
-                <label className="label">Bot token</label>
+                <label className="label">Bot Token</label>
                 <div className="flex gap-2 items-stretch">
                   <input
                     type="password"
@@ -884,7 +930,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     {...register("telegram_bot_token")}
                     placeholder={
                       isEdit && pipeline?.telegram_bot_token_set
-                        ? "••• (configured)"
+                        ? "••• (đã cấu hình)"
                         : "123456:ABC-DEF..."
                     }
                     disabled={clearBotToken}
@@ -901,14 +947,14 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                       void handleTelegramDetect();
                     }}
                   >
-                    {telegramDetectLoading ? "Loading…" : "Auto-detect"}
+                    {telegramDetectLoading ? "Đang tìm…" : "Tự động tìm"}
                   </button>
                 </div>
                 {isEdit &&
                   pipeline?.telegram_bot_token_set &&
                   !String(telegramBotToken || "").trim() && (
                     <p className="text-xs text-slate-500 mt-1">
-                      Re-enter the bot token to use this feature.
+                      Nhập lại bot token để sử dụng tính năng này.
                     </p>
                   )}
               </div>
@@ -934,13 +980,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                       void handleTelegramTest();
                     }}
                   >
-                    {telegramTestSending ? "Sending…" : "Send test"}
+                    {telegramTestSending ? "Đang gửi…" : "Gửi thử"}
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  Numeric only (private channels usually start with{" "}
-                  <code className="bg-slate-100 px-1 rounded">-100…</code>). Add the
-                  bot as a channel admin.
+                  Chỉ nhập số (kênh private thường bắt đầu bằng{" "}
+                  <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot làm admin kênh.
                 </p>
                 {errors.telegram_chat_id && (
                   <p className="field-error">{errors.telegram_chat_id.message}</p>
@@ -949,7 +994,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </div>
             {telegramDetectChats && telegramDetectChats.length > 0 && (
               <div>
-                <label className="label">Pick a detected chat</label>
+                <label className="label">Chọn chat đã tìm thấy</label>
                 <select
                   className="input"
                   key={telegramDetectChats.map((c) => c.id).join(",")}
@@ -961,7 +1006,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     }
                   }}
                 >
-                  <option value="">— Select —</option>
+                  <option value="">— Chọn —</option>
                   {telegramDetectChats.map((c) => (
                     <option key={c.id} value={String(c.id)}>
                       {`${c.title} (${c.type}) — ${c.id}`}
@@ -974,8 +1019,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               telegramDetectChats.length === 0 &&
               !telegramDetectLoading && (
                 <p className="text-sm text-amber-700">
-                  No channels found. Add the bot as a channel admin and send at
-                  least one message.
+                  Không tìm thấy chat nào. Hãy gửi một tin nhắn cho bot rồi thử lại.
                 </p>
               )}
             {telegramDetectErr && (
@@ -984,7 +1028,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">
                 <input type="checkbox" {...register("clear_bot_token")} />
-                Remove bot token
+                Xóa bot token
               </label>
             )}
             {errors.telegram_bot_token && (
@@ -993,9 +1037,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
           </fieldset>
 
           {/* Actions */}
-          <div className="lg:col-span-2 flex justify-end gap-2 pt-3 border-t">
+          <div className="flex justify-end gap-2 pt-3 border-t">
             <button type="button" className="btn-secondary" onClick={onClose}>
-              Cancel
+              Hủy
             </button>
             <button
               type="button"
@@ -1003,7 +1047,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               disabled={isBusy}
               onClick={handleSubmit((d) => onSubmit(d, "paused"))}
             >
-              Save as paused
+              Lưu (tạm dừng)
             </button>
             <button
               type="button"
@@ -1011,7 +1055,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               disabled={isBusy}
               onClick={handleSubmit((d) => onSubmit(d, "active"))}
             >
-              {isEdit ? "Save & activate" : "Create & activate"}
+              {isEdit ? "Lưu & kích hoạt" : "Tạo & kích hoạt"}
             </button>
           </div>
         </form>
