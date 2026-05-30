@@ -60,20 +60,20 @@ function groupByDay(runs: PipelineRunItem[]): DayGroup[] {
 }
 
 function groupStatusLabel(g: DayGroup): { text: string; cls: string } {
-  if (g.hasRunning) return { text: "running", cls: "chip bg-blue-100 text-blue-700" };
-  if (g.hasError) return { text: "has errors", cls: "chip bg-red-100 text-red-700" };
-  if (g.totalUploaded === 0) return { text: "no uploads", cls: "text-slate-400 italic" };
-  return { text: "done", cls: "chip bg-emerald-100 text-emerald-700" };
+  if (g.hasRunning) return { text: "đang chạy", cls: "chip bg-blue-100 text-blue-700" };
+  if (g.hasError) return { text: "có lỗi", cls: "chip bg-red-100 text-red-700" };
+  if (g.totalUploaded === 0) return { text: "không đăng được", cls: "text-slate-400 italic" };
+  return { text: "hoàn thành", cls: "chip bg-emerald-100 text-emerald-700" };
 }
 
 function runStatusLabel(r: PipelineRunItem): { text: string; cls: string } {
   if (!r.finished_at) {
     if (r.status_text) return { text: r.status_text, cls: "text-blue-700 italic" };
-    return { text: "running", cls: "chip bg-blue-100 text-blue-700" };
+    return { text: "đang chạy", cls: "chip bg-blue-100 text-blue-700" };
   }
-  if (r.error_text) return { text: "error", cls: "chip bg-red-100 text-red-700" };
-  if (r.pulled_count === 0) return { text: "no new videos", cls: "text-slate-400 italic" };
-  return { text: "done", cls: "chip bg-emerald-100 text-emerald-700" };
+  if (r.error_text) return { text: "lỗi", cls: "chip bg-red-100 text-red-700" };
+  if (r.pulled_count === 0) return { text: "không có video mới", cls: "text-slate-400 italic" };
+  return { text: "hoàn thành", cls: "chip bg-emerald-100 text-emerald-700" };
 }
 
 function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }) {
@@ -96,9 +96,9 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
     return m;
   }, [accounts]);
 
-  if (isLoading) return <div className="p-2 text-xs text-slate-400">Loading videos…</div>;
-  if (isError) return <div className="p-2 text-xs text-red-400">Failed to load videos.</div>;
-  if (!data?.length) return <div className="p-2 text-xs text-slate-400">No videos.</div>;
+  if (isLoading) return <div className="p-2 text-xs text-slate-400">Đang tải video…</div>;
+  if (isError) return <div className="p-2 text-xs text-red-400">Không thể tải video.</div>;
+  if (!data?.length) return <div className="p-2 text-xs text-slate-400">Không có video.</div>;
 
   return (
     <>
@@ -108,11 +108,11 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
       <table className="w-full text-xs ml-8">
         <thead>
           <tr className="text-slate-400">
-            <th className="text-left p-1">Account</th>
+            <th className="text-left p-1">Tài khoản</th>
             <th className="text-left p-1">YouTube</th>
             <th className="text-left p-1">TikTok</th>
-            <th className="text-left p-1">Status</th>
-            <th className="text-left p-1">Error</th>
+            <th className="text-left p-1">Trạng thái</th>
+            <th className="text-left p-1">Lỗi</th>
           </tr>
         </thead>
         <tbody>
@@ -165,7 +165,7 @@ function RunRow({
 }) {
   const [errorModal, setErrorModal] = useState<string | null>(null);
   const status = runStatusLabel(run);
-  const isError = status.text === "error";
+  const isError = status.text === "lỗi";
 
   return (
     <Fragment>
@@ -237,9 +237,9 @@ function DayGroupRow({
           {group.date}
         </td>
         <td className="p-1 text-[10px] text-slate-500" colSpan={3}>
-          {group.runs.length} tick{group.runs.length !== 1 ? "s" : ""}
+          {group.runs.length} lần chạy
           {group.totalUploaded > 0 && (
-            <span className="ml-2 text-emerald-700">{group.totalUploaded} uploaded</span>
+            <span className="ml-2 text-emerald-700">{group.totalUploaded} đã đăng</span>
           )}
         </td>
         <td className="p-1" colSpan={2}>
@@ -252,13 +252,13 @@ function DayGroupRow({
         <Fragment>
           <tr className="bg-slate-50">
             <th className="p-1 pl-6 w-6" />
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Time</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Trigger</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Downloaded</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Uploaded</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Skipped</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Failed</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Status</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Thời gian</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Kích hoạt</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Đã tải về</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Đã đăng</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Bỏ qua</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Thất bại</th>
+            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Trạng thái</th>
           </tr>
           {group.runs.map((r) => (
             <RunRow
@@ -287,9 +287,9 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
     },
   });
 
-  if (isLoading) return <div className="p-3 text-xs text-slate-400">Loading runs…</div>;
-  if (isError) return <div className="p-3 text-xs text-red-400">Failed to load runs.</div>;
-  if (!data?.length) return <div className="p-3 text-xs text-slate-400">No runs yet.</div>;
+  if (isLoading) return <div className="p-3 text-xs text-slate-400">Đang tải…</div>;
+  if (isError) return <div className="p-3 text-xs text-red-400">Không thể tải. Kiểm tra kết nối.</div>;
+  if (!data?.length) return <div className="p-3 text-xs text-slate-400">Chưa có lần chạy nào.</div>;
 
   const groups = groupByDay(data);
 

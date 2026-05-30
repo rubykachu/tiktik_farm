@@ -33,11 +33,11 @@ export default function AccountsPage() {
     mutationFn: (id: number) => Accounts.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] });
-      toast.success(`Account "${deleteTarget?.username ?? ""}" deleted`);
+      toast.success(`Đã xóa tài khoản "${deleteTarget?.username ?? ""}"`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
+      toast.error("Xóa thất bại", { description: e?.response?.data?.detail ?? e.message });
       setDeleteTarget(null);
     },
   });
@@ -46,11 +46,11 @@ export default function AccountsPage() {
     mutationFn: (id: number) => DouyinCookies.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["douyin-cookies"] });
-      toast.success(`Cookie "${deleteCookieTarget?.name ?? ""}" deleted`);
+      toast.success(`Đã xóa cookie "${deleteCookieTarget?.name ?? ""}"`);
       setDeleteCookieTarget(null);
     },
     onError: (e: any) => {
-      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
+      toast.error("Xóa thất bại", { description: e?.response?.data?.detail ?? e.message });
       setDeleteCookieTarget(null);
     },
   });
@@ -66,21 +66,21 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold">Accounts</h2>
+          <h2 className="text-2xl font-semibold">Tài khoản</h2>
           <p className="text-sm text-slate-500 mt-1">
-            TikTok accounts and Douyin cookies.
+            Quản lý tài khoản TikTok và cookie Douyin.
           </p>
         </div>
         {tab === "tiktok" && (
           <button className="btn-secondary" onClick={() => setJsonModalOpen(true)}>
             <FileJson size={16} />
-            Add Cookie Tiktok
+            Thêm Cookie TikTok
           </button>
         )}
         {tab === "douyin" && (
           <button className="btn-secondary" onClick={() => { setEditCookie(null); setCookieModalOpen(true); }}>
             <FileJson size={16} />
-            Add Cookie Douyin
+            Thêm Cookie Douyin
           </button>
         )}
       </div>
@@ -88,10 +88,10 @@ export default function AccountsPage() {
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-slate-200">
         <button className={tabClass(tab === "tiktok")} onClick={() => setTab("tiktok")}>
-          TikTok Accounts
+          Tài khoản TikTok
         </button>
         <button className={tabClass(tab === "douyin")} onClick={() => setTab("douyin")}>
-          Douyin Cookies
+          Cookie Douyin
         </button>
       </div>
 
@@ -101,32 +101,32 @@ export default function AccountsPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="text-left p-3">Username</th>
-                  <th className="text-left p-3">Display name</th>
-                  <th className="text-left p-3">Session</th>
-                  <th className="text-left p-3">Last used</th>
-                  <th className="p-3 text-right">Actions</th>
+                  <th className="text-left p-3">Tên đăng nhập</th>
+                  <th className="text-left p-3">Tên hiển thị</th>
+                  <th className="text-left p-3">Phiên đăng nhập</th>
+                  <th className="text-left p-3">Dùng lần cuối</th>
+                  <th className="p-3 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading && (
                   <tr>
                     <td className="p-4 text-slate-500" colSpan={5}>
-                      Loading…
+                      Đang tải…
                     </td>
                   </tr>
                 )}
                 {isError && (
                   <tr>
                     <td className="p-4 text-center text-red-400" colSpan={5}>
-                      Failed to load. Check API connection.
+                      Không thể tải. Kiểm tra kết nối.
                     </td>
                   </tr>
                 )}
                 {!isLoading && !isError && data && data.length === 0 && (
                   <tr>
                     <td className="p-6 text-center text-slate-500" colSpan={5}>
-                      No accounts yet. Use "Import JSON" to add a cookie.
+                      Chưa có tài khoản nào. Nhấn "Thêm Cookie TikTok" để thêm.
                     </td>
                   </tr>
                 )}
@@ -143,7 +143,7 @@ export default function AccountsPage() {
                             : "bg-amber-100 text-amber-700")
                         }
                       >
-                        {a.has_valid_session ? "valid" : "needs re-login"}
+                        {a.has_valid_session ? "Hợp lệ" : "Cần đăng nhập lại"}
                       </span>
                     </td>
                     <td className="p-3 text-slate-500">
@@ -154,7 +154,7 @@ export default function AccountsPage() {
                         className="inline-flex items-center gap-1 text-red-600 text-xs font-medium"
                         onClick={() => setDeleteTarget({ id: a.id, username: a.username })}
                       >
-                        <Trash2 size={14} /> Delete
+                        <Trash2 size={14} /> Xóa
                       </button>
                     </td>
                   </tr>
@@ -170,30 +170,30 @@ export default function AccountsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="text-left p-3">Name</th>
-                <th className="text-left p-3">Created</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="text-left p-3">Tên</th>
+                <th className="text-left p-3">Ngày tạo</th>
+                <th className="p-3 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {cookiesLoading && (
                 <tr>
                   <td className="p-4 text-slate-500" colSpan={3}>
-                    Loading…
+                    Đang tải…
                   </td>
                 </tr>
               )}
               {cookiesError && (
                 <tr>
                   <td className="p-4 text-center text-red-400" colSpan={3}>
-                    Failed to load. Check API connection.
+                    Không thể tải. Kiểm tra kết nối.
                   </td>
                 </tr>
               )}
               {!cookiesLoading && !cookiesError && cookies && cookies.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-slate-500" colSpan={3}>
-                    No cookies yet. Click "Add Cookie" to import a Cookie-Editor JSON file.
+                    Chưa có cookie nào. Nhấn "Thêm Cookie Douyin" để thêm.
                   </td>
                 </tr>
               )}
@@ -208,13 +208,13 @@ export default function AccountsPage() {
                       className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
                       onClick={() => { setEditCookie(c); setCookieModalOpen(true); }}
                     >
-                      <Edit2 size={14} /> Update
+                      <Edit2 size={14} /> Cập nhật
                     </button>
                     <button
                       className="inline-flex items-center gap-1 text-red-600 text-xs font-medium"
                       onClick={() => setDeleteCookieTarget({ id: c.id, name: c.name })}
                     >
-                      <Trash2 size={14} /> Delete
+                      <Trash2 size={14} /> Xóa
                     </button>
                   </td>
                 </tr>
@@ -237,10 +237,10 @@ export default function AccountsPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Delete account "${deleteTarget?.username ?? ""}"?`}
+        title={`Xóa tài khoản "${deleteTarget?.username ?? ""}"?`}
         body={
           <p>
-            The account and its cookie file will be removed. This action cannot be undone.
+            Tài khoản và file cookie sẽ bị xóa vĩnh viễn. Không thể hoàn tác.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}
@@ -249,11 +249,11 @@ export default function AccountsPage() {
 
       <ConfirmDialog
         open={deleteCookieTarget !== null}
-        title={`Delete cookie "${deleteCookieTarget?.name ?? ""}"?`}
+        title={`Xóa cookie "${deleteCookieTarget?.name ?? ""}"?`}
         body={
           <p>
-            Pipelines using this cookie will not run until a new cookie is selected.
-            This action cannot be undone.
+            Các lịch đăng dùng cookie này sẽ không chạy được cho đến khi chọn cookie mới.
+            Không thể hoàn tác.
           </p>
         }
         onCancel={() => setDeleteCookieTarget(null)}

@@ -45,11 +45,11 @@ export default function SettingsPage() {
     mutationFn: (id: number) => LLMModels.remove(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["llm-models"] });
-      toast.success(`LLM model "${deleteTarget?.label ?? ""}" deleted`);
+      toast.success(`Đã xóa model "${deleteTarget?.label ?? ""}"`);
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      toast.error("Delete failed", { description: e?.response?.data?.detail ?? e.message });
+      toast.error("Xóa thất bại", { description: e?.response?.data?.detail ?? e.message });
       setDeleteTarget(null);
     },
   });
@@ -57,20 +57,20 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Settings</h2>
+        <h2 className="text-2xl font-semibold">Cài đặt</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Configure global behavior and LLM endpoints used for caption rewriting.
+          Cấu hình chung cho hệ thống và AI dùng để viết lại tiêu đề.
         </p>
       </div>
 
       <section className="card p-6 space-y-4">
         <header className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">LLM caption rewrite</h3>
+            <h3 className="text-lg font-medium">Tự động viết lại tiêu đề bằng AI</h3>
             <p className="text-sm text-slate-500">
-              When enabled, pipelines that use{" "}
-              <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> call
-              the default model below to rewrite the YouTube title.
+              Khi bật, các lịch đăng dùng{" "}
+              <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> sẽ gọi
+              model mặc định bên dưới để viết lại tiêu đề YouTube.
             </p>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -82,13 +82,13 @@ export default function SettingsPage() {
               disabled={toggleMut.isPending}
             />
             <span className="font-medium">
-              {settings?.llm_enabled ? "Enabled" : "Disabled"}
+              {settings?.llm_enabled ? "Đang bật" : "Đang tắt"}
             </span>
           </label>
         </header>
 
         <div className="flex items-center gap-3 border-t pt-4">
-          <span className="text-sm font-medium text-slate-600">Provider:</span>
+          <span className="text-sm font-medium text-slate-600">Nhà cung cấp:</span>
           <div className="flex rounded-md border border-slate-200 overflow-hidden text-sm">
             <button
               className={`px-3 py-1.5 transition-colors ${
@@ -99,7 +99,7 @@ export default function SettingsPage() {
               onClick={() => modeMut.mutate("cloud")}
               disabled={modeMut.isPending}
             >
-              Cloud
+              Đám mây
             </button>
             <button
               className={`px-3 py-1.5 border-l border-slate-200 transition-colors ${
@@ -110,7 +110,7 @@ export default function SettingsPage() {
               onClick={() => modeMut.mutate("offline")}
               disabled={modeMut.isPending}
             >
-              Local (Ollama)
+              Máy cục bộ (Ollama)
             </button>
           </div>
         </div>
@@ -123,12 +123,12 @@ export default function SettingsPage() {
         ) : (
           <>
             <div className="flex items-center justify-between border-t pt-4">
-              <p className="text-sm text-slate-600">Available models</p>
+              <p className="text-sm text-slate-600">Model đang có</p>
               <button
                 className="btn-primary"
                 onClick={() => setEditState({ mode: "create" })}
               >
-                <Plus size={16} /> Add model
+                <Plus size={16} /> Thêm model
               </button>
             </div>
 
@@ -136,31 +136,31 @@ export default function SettingsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="text-left p-3">Default</th>
-                    <th className="text-left p-3">Label</th>
+                    <th className="text-left p-3">Mặc định</th>
+                    <th className="text-left p-3">Tên hiển thị</th>
                     <th className="text-left p-3">Model ID</th>
                     <th className="text-left p-3">Endpoint</th>
                     <th className="text-left p-3">API key</th>
-                    <th className="p-3 text-right">Actions</th>
+                    <th className="p-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {isLoading && (
                     <tr>
-                      <td className="p-4 text-slate-500" colSpan={6}>Loading…</td>
+                      <td className="p-4 text-slate-500" colSpan={6}>Đang tải…</td>
                     </tr>
                   )}
                   {isError && (
                     <tr>
                       <td className="p-4 text-center text-red-400" colSpan={6}>
-                        Failed to load. Check API connection.
+                        Không thể tải. Kiểm tra kết nối.
                       </td>
                     </tr>
                   )}
                   {!isLoading && !isError && models && models.length === 0 && (
                     <tr>
                       <td className="p-6 text-center text-slate-500" colSpan={6}>
-                        No models yet. Add one to enable caption rewriting.
+                        Chưa có model nào. Thêm model để bật tính năng viết lại tiêu đề.
                       </td>
                     </tr>
                   )}
@@ -169,14 +169,14 @@ export default function SettingsPage() {
                       <td className="p-3">
                         {m.is_default ? (
                           <span className="chip bg-emerald-100 text-emerald-700">
-                            <Star size={12} className="inline mr-1" /> default
+                            <Star size={12} className="inline mr-1" /> mặc định
                           </span>
                         ) : (
                           <button
                             className="text-xs text-brand-600 hover:underline"
                             onClick={() => setDefaultMut.mutate(m.id)}
                           >
-                            Set default
+                            Đặt mặc định
                           </button>
                         )}
                       </td>
@@ -203,13 +203,13 @@ export default function SettingsPage() {
                           className="text-xs text-slate-600 hover:text-slate-900"
                           onClick={() => setEditState({ mode: "edit", model: m })}
                         >
-                          <Edit size={14} className="inline" /> Edit
+                          <Edit size={14} className="inline" /> Sửa
                         </button>
                         <button
                           className="text-xs text-red-600"
                           onClick={() => setDeleteTarget(m)}
                         >
-                          <Trash2 size={14} className="inline" /> Delete
+                          <Trash2 size={14} className="inline" /> Xóa
                         </button>
                       </td>
                     </tr>
@@ -231,12 +231,12 @@ export default function SettingsPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Delete "${deleteTarget?.label ?? ""}"?`}
+        title={`Xóa "${deleteTarget?.label ?? ""}"?`}
         body={
           <p>
-            This removes the model from the list. Pipelines currently using{" "}
-            <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> will
-            fall back to the raw YouTube title until another default is set.
+            Model sẽ bị xóa khỏi danh sách. Các lịch đăng đang dùng{" "}
+            <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> sẽ dùng
+            tiêu đề YouTube gốc cho đến khi có model mặc định mới.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}
@@ -270,14 +270,14 @@ function OllamaPanel({
         </code>
       </div>
       <p className="text-xs text-slate-500">
-        Configured via env vars{" "}
+        Cấu hình qua biến môi trường{" "}
         <code className="bg-white border border-slate-200 px-1 rounded">OLLAMA_MODEL</code>{" "}
-        and{" "}
+        và{" "}
         <code className="bg-white border border-slate-200 px-1 rounded">OLLAMA_BASE_URL</code>
-        . Restart required after changes.
+        . Cần khởi động lại sau khi thay đổi.
       </p>
       <p className="text-xs text-slate-500">
-        Install model:{" "}
+        Cài model:{" "}
         <code className="bg-white border border-slate-200 px-1 rounded">
           ollama pull {displayModel}
         </code>
@@ -423,7 +423,7 @@ function LLMModelModal({
       <div className="rounded-lg bg-white shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {isEdit ? "Edit LLM model" : "Add LLM model"}
+            {isEdit ? "Sửa model AI" : "Thêm model AI"}
           </h3>
           <button
             onClick={onClose}
@@ -435,7 +435,7 @@ function LLMModelModal({
 
         <div className="space-y-3">
           <div>
-            <label className="label">Label</label>
+            <label className="label">Tên hiển thị</label>
             <input
               className="input"
               value={label}
@@ -452,7 +452,7 @@ function LLMModelModal({
               placeholder="gemini/gemini-2.0-flash-lite"
             />
             <p className="text-xs text-slate-500 mt-1">
-              Format: <code>provider/model</code>. Examples:{" "}
+              Định dạng: <code>provider/model</code>. Ví dụ:{" "}
               <code>gemini/gemini-2.0-flash-lite</code>,{" "}
               <code>openai/gpt-4o-mini</code>,{" "}
               <code>azure/my-gpt4o-deployment</code>.{" "}
@@ -462,7 +462,7 @@ function LLMModelModal({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Full list <ExternalLink size={11} />
+                Danh sách đầy đủ <ExternalLink size={11} />
               </a>
             </p>
           </div>
@@ -474,12 +474,12 @@ function LLMModelModal({
               value={apiKey}
               onChange={bind(setApiKey)}
               placeholder={
-                isEdit ? "Leave empty to keep existing key" : "sk-… or AIza…"
+                isEdit ? "Để trống để giữ key hiện tại" : "sk-… or AIza…"
               }
             />
             {isEdit && (
               <p className="text-xs text-slate-500 mt-1">
-                Existing key: <code>{existing!.api_key_masked}</code>
+                Key hiện tại: <code>{existing!.api_key_masked}</code>
               </p>
             )}
           </div>
@@ -488,8 +488,8 @@ function LLMModelModal({
             <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/50 p-3">
               <p className="text-xs font-medium text-blue-700">
                 {needsEndpoint
-                  ? "Azure endpoint (required for azure/ models)"
-                  : "Custom endpoint (optional)"}
+                  ? "Azure endpoint (bắt buộc cho model azure/)"
+                  : "Endpoint tùy chỉnh (không bắt buộc)"}
               </p>
               <div>
                 <label className="label">API base URL</label>
@@ -501,8 +501,8 @@ function LLMModelModal({
                 />
                 {needsEndpoint && (
                   <p className="text-xs text-amber-600 mt-1">
-                    Root URL only — do NOT include <code>/openai/v1</code> (litellm
-                    adds the path automatically).
+                    Chỉ nhập URL gốc — KHÔNG thêm <code>/openai/v1</code> (litellm
+                    sẽ tự thêm).
                   </p>
                 )}
               </div>
@@ -515,7 +515,7 @@ function LLMModelModal({
                   placeholder="2025-02-01-preview"
                 />
                 <p className="text-xs text-slate-500 mt-1">
-                  Leave empty to use litellm default. Common values:{" "}
+                  Để trống dùng mặc định của litellm. Giá trị thông dụng:{" "}
                   <code>2025-04-01-preview</code>, <code>2025-02-01-preview</code>,{" "}
                   <code>2024-08-01-preview</code>.
                 </p>
@@ -534,7 +534,7 @@ function LLMModelModal({
             }
             onClick={() => testMut.mutate()}
           >
-            {testMut.isPending ? "Testing…" : "Test connection"}
+            {testMut.isPending ? "Đang kiểm tra…" : "Kiểm tra kết nối"}
           </button>
 
           {!isEdit && (
@@ -544,7 +544,7 @@ function LLMModelModal({
                 checked={setDefault}
                 onChange={(e) => setSetDefault(e.target.checked)}
               />
-              Set as default
+              Đặt làm mặc định
             </label>
           )}
 
@@ -567,14 +567,14 @@ function LLMModelModal({
 
         <div className="flex justify-end gap-2 pt-3 border-t">
           <button className="btn-secondary" onClick={onClose}>
-            Cancel
+            Hủy
           </button>
           <button
             className="btn-primary"
             disabled={!canSubmit || busy}
             onClick={onSave}
           >
-            {isEdit ? "Save" : "Add"}
+            {isEdit ? "Lưu" : "Thêm"}
           </button>
         </div>
       </div>

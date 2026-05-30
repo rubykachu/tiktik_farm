@@ -3,10 +3,10 @@ import { Users, Calendar, History, Settings as SettingsIcon } from "lucide-react
 import clsx from "clsx";
 
 const items = [
-  { to: "/accounts", label: "Accounts", icon: Users },
-  { to: "/schedules", label: "Schedules", icon: Calendar },
-  { to: "/histories", label: "Histories", icon: History },
-  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/accounts", label: "Tài khoản", icon: Users },
+  { to: "/schedules", label: "Lịch đăng", icon: Calendar },
+  { to: "/histories", label: "Lịch sử", icon: History },
+  { to: "/settings", label: "Cài đặt", icon: SettingsIcon },
 ];
 
 export default function Sidebar() {

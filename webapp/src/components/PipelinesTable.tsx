@@ -51,19 +51,19 @@ export default function PipelinesTable({ onEdit }: Props) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
       qc.invalidateQueries({ queryKey: ["videos"] });
-      toast.success(`Pipeline "${deleteTarget?.name ?? ""}" deleted`, {
-        description: "Pipeline runs and upload history were removed.",
+      toast.success(`Đã xóa lịch "${deleteTarget?.name ?? ""}"`, {
+        description: "Lịch sử chạy và đăng tải đã được xóa.",
       });
       setDeleteTarget(null);
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (e?.response?.status === 409 && detail?.code === "PIPELINE_RUNNING") {
-        toast.error("Pipeline is running", {
-          description: "Stop it and wait for the tick to finish before deleting.",
+        toast.error("Lịch đang chạy", {
+          description: "Hãy dừng lại và chờ lần chạy hiện tại kết thúc trước khi xóa.",
         });
       } else {
-        toast.error("Delete failed", { description: e.message });
+        toast.error("Xóa thất bại", { description: e.message });
       }
       setDeleteTarget(null);
     },
@@ -72,19 +72,19 @@ export default function PipelinesTable({ onEdit }: Props) {
   const runNowMut = useMutation({
     mutationFn: (id: number) => Pipelines.runNow(id),
     onSuccess: () => {
-      toast.success("Queued", { description: "Pipeline will run on the next tick." });
+      toast.success("Đã xếp hàng", { description: "Lịch sẽ chạy ở lần kế tiếp." });
       qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
     onError: (e: any) => {
       const detail = e?.response?.data?.detail;
       if (detail?.code === "PIPELINE_PAUSED") {
-        toast.error("Pipeline paused", { description: detail?.message ?? "Resume it first." });
+        toast.error("Lịch đang tạm dừng", { description: detail?.message ?? "Hãy tiếp tục trước." });
       } else if (detail?.code === "PIPELINE_RUNNING") {
-        toast.error("Pipeline is running", { description: "Wait for the tick to finish." });
+        toast.error("Lịch đang chạy", { description: "Chờ lần chạy hiện tại kết thúc." });
       } else if (detail?.code === "RUN_NOW_QUEUED") {
-        toast.info("Already queued", { description: "Wait for the next tick." });
+        toast.info("Đã xếp hàng rồi", { description: "Chờ lần chạy kế tiếp." });
       } else {
-        toast.error("Error", { description: e.message });
+        toast.error("Lỗi", { description: e.message });
       }
     },
   });
@@ -104,8 +104,8 @@ export default function PipelinesTable({ onEdit }: Props) {
     <>
       {activeCount > 5 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {activeCount} pipelines are running. Throughput may slow down.
-          Consider pausing some.
+          {activeCount} lịch đang chạy. Hệ thống có thể chậm lại.
+          Nên tạm dừng bớt một số.
         </div>
       )}
 
@@ -113,34 +113,34 @@ export default function PipelinesTable({ onEdit }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left p-3">Name</th>
-              <th className="text-left p-3">Channel</th>
-              <th className="text-left p-3">Accounts</th>
-              <th className="text-left p-3">Interval</th>
-              <th className="text-left p-3">Next fire</th>
-              <th className="text-left p-3">State</th>
-              <th className="p-3 text-right">Actions</th>
+              <th className="text-left p-3">Tên</th>
+              <th className="text-left p-3">Kênh</th>
+              <th className="text-left p-3">Tài khoản</th>
+              <th className="text-left p-3">Chu kỳ</th>
+              <th className="text-left p-3">Lần chạy tới</th>
+              <th className="text-left p-3">Trạng thái</th>
+              <th className="p-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading && (
               <tr>
                 <td className="p-4 text-slate-500" colSpan={7}>
-                  Loading…
+                  Đang tải…
                 </td>
               </tr>
             )}
             {isError && (
               <tr>
                 <td className="p-4 text-center text-red-400" colSpan={7}>
-                  Failed to load. Check API connection.
+                  Không thể tải. Kiểm tra kết nối.
                 </td>
               </tr>
             )}
             {!isLoading && !isError && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={7}>
-                  No pipelines yet.
+                  Chưa có lịch đăng nào.
                 </td>
               </tr>
             )}
@@ -173,14 +173,14 @@ export default function PipelinesTable({ onEdit }: Props) {
                             className="text-xs text-slate-600"
                             onClick={() => toggleState.mutate(p)}
                           >
-                            <Play size={14} className="inline" /> Resume
+                            <Play size={14} className="inline" /> Tiếp tục
                           </button>
                         );
                       }
                       if (locked) {
                         return (
-                          <span className="text-xs text-slate-500" title="Worker is processing this tick">
-                            Running…
+                          <span className="text-xs text-slate-500" title="Đang xử lý lần này">
+                            Đang chạy…
                           </span>
                         );
                       }
@@ -191,15 +191,15 @@ export default function PipelinesTable({ onEdit }: Props) {
                               type="button"
                               disabled
                               className="text-xs text-slate-400 cursor-not-allowed"
-                              title="Scheduler will run on the next tick"
+                              title="Sẽ chạy ở lần kế tiếp"
                             >
-                              Queued…
+                              Chờ chạy…
                             </button>
                             <button
                               className="text-xs text-slate-600"
                               onClick={() => toggleState.mutate(p)}
                             >
-                              <Pause size={14} className="inline" /> Pause
+                              <Pause size={14} className="inline" /> Tạm dừng
                             </button>
                           </>
                         );
@@ -209,15 +209,15 @@ export default function PipelinesTable({ onEdit }: Props) {
                           <button
                             className="text-xs text-slate-600"
                             onClick={() => runNowMut.mutate(p.id)}
-                            title="Run one tick immediately"
+                            title="Chạy ngay lần này"
                           >
-                            <RunNow size={14} className="inline" /> Run now
+                            <RunNow size={14} className="inline" /> Chạy ngay
                           </button>
                           <button
                             className="text-xs text-slate-600"
                             onClick={() => toggleState.mutate(p)}
                           >
-                            <Pause size={14} className="inline" /> Pause
+                            <Pause size={14} className="inline" /> Tạm dừng
                           </button>
                         </>
                       );
@@ -227,14 +227,14 @@ export default function PipelinesTable({ onEdit }: Props) {
                         className="text-xs text-brand-600"
                         onClick={() => onEdit(p)}
                       >
-                        <Pencil size={14} className="inline" /> Edit
+                        <Pencil size={14} className="inline" /> Sửa
                       </button>
                     )}
                     <button
                       className="text-xs text-red-600"
                       onClick={() => setDeleteTarget(p)}
                     >
-                      <Trash2 size={14} className="inline" /> Delete
+                      <Trash2 size={14} className="inline" /> Xóa
                     </button>
                   </td>
                 </tr>,
@@ -256,12 +256,11 @@ export default function PipelinesTable({ onEdit }: Props) {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`Delete pipeline "${deleteTarget?.name ?? ""}"?`}
+        title={`Xóa lịch "${deleteTarget?.name ?? ""}"?`}
         body={
           <p>
-            Pipeline runs and upload history will be permanently deleted with
-            the pipeline. This cannot be undone. If the pipeline is currently
-            running, stop it first.
+            Toàn bộ lịch sử chạy và đăng tải sẽ bị xóa vĩnh viễn. Không thể hoàn tác.
+            Nếu lịch đang chạy, hãy dừng lại trước.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}

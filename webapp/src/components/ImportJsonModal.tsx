@@ -39,9 +39,9 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       const detail = e?.response?.data?.detail;
       const status = e?.response?.status;
       if (status === 409 && typeof detail === "object" && detail.code === "ACCOUNT_EXISTS") {
-        setError("Account already exists. Tick 'Replace' and import again to overwrite.");
+        setError("Tài khoản đã tồn tại. Tích vào 'Ghi đè' và nhập lại để thay thế.");
       } else if (status === 403) {
-        setError("Request blocked (invalid Origin). Reload the webapp.");
+        setError("Yêu cầu bị chặn (Origin không hợp lệ). Hãy tải lại trang.");
       } else {
         setError(typeof detail === "string" ? detail : `Error: ${e.message}`);
       }
@@ -52,7 +52,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
     try {
       JSON.parse(text);
     } catch {
-      setError("Invalid JSON. Check your paste and try again.");
+      setError("JSON không hợp lệ. Kiểm tra lại và thử lại.");
       return;
     }
     setError(null);
@@ -75,7 +75,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Import JSON Cookie</h3>
+          <h3 className="text-lg font-semibold">Nhập Cookie JSON</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="close">
             <X size={18} />
           </button>
@@ -87,12 +87,12 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             className="input min-h-[120px] font-mono text-xs"
             value={text}
             onChange={(e) => { setText(e.target.value); setError(null); }}
-            placeholder="Paste Cookie-Editor JSON here…"
+            placeholder="Dán Cookie-Editor JSON vào đây…"
           />
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">Username</label>
+          <label className="text-xs uppercase tracking-wide text-slate-500">Tên đăng nhập</label>
           <input
             type="text"
             className="input"
@@ -101,13 +101,13 @@ export default function ImportJsonModal({ open, onClose }: Props) {
             placeholder="e.g. lmbk37"
           />
           <p className="text-xs text-slate-500">
-            Letters, numbers, dots, underscores only. Up to 32 characters.
+            Chỉ gồm chữ cái, số, dấu chấm, gạch dưới. Tối đa 32 ký tự.
           </p>
         </div>
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-          Replace if the username already exists
+          Ghi đè nếu tên đăng nhập đã tồn tại
         </label>
 
         {error && (
@@ -117,9 +117,9 @@ export default function ImportJsonModal({ open, onClose }: Props) {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-secondary" onClick={onClose}>Hủy</button>
           <button className="btn-primary" disabled={submitDisabled} onClick={handleSubmit}>
-            {mut.isPending ? "Importing…" : "Import"}
+            {mut.isPending ? "Đang nhập…" : "Nhập"}
           </button>
         </div>
       </div>

@@ -45,7 +45,7 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
     try {
       JSON.parse(text);
     } catch {
-      setError("Invalid JSON. Check your paste and try again.");
+      setError("JSON không hợp lệ. Kiểm tra lại và thử lại.");
       return;
     }
     setError(null);
@@ -69,7 +69,7 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {isUpdate ? `Update cookie "${cookie!.name}"` : "Add Douyin Cookie"}
+            {isUpdate ? `Cập nhật cookie "${cookie!.name}"` : "Thêm Cookie Douyin"}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="close">
             <X size={18} />
@@ -78,13 +78,13 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
 
         {!isUpdate && (
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Name</label>
+            <label className="text-xs uppercase tracking-wide text-slate-500">Tên</label>
             <input
               type="text"
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. My Douyin account"
+              placeholder="VD: Tài khoản Douyin của tôi"
               maxLength={128}
             />
           </div>
@@ -96,7 +96,7 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
             className="input min-h-[120px] font-mono text-xs"
             value={text}
             onChange={(e) => { setText(e.target.value); setError(null); }}
-            placeholder="Paste Cookie-Editor JSON here…"
+            placeholder="Dán Cookie-Editor JSON vào đây…"
           />
         </div>
 
@@ -107,9 +107,9 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-secondary" onClick={onClose}>Hủy</button>
           <button className="btn-primary" disabled={submitDisabled} onClick={handleSubmit}>
-            {mut.isPending ? "Saving…" : isUpdate ? "Update" : "Add"}
+            {mut.isPending ? "Đang lưu…" : isUpdate ? "Cập nhật" : "Thêm"}
           </button>
         </div>
       </div>

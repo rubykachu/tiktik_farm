@@ -47,11 +47,11 @@ export default function HistoriesPage() {
     mutationFn: (id: number) => api.delete(`/videos/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["videos"] });
-      toast.success("Upload history entry deleted");
+      toast.success("Đã xóa bản ghi đăng tải");
       setDeleteTarget(null);
     },
     onError: (e: any) => {
-      toast.error("Delete failed", { description: e?.response?.data?.detail || e.message });
+      toast.error("Xóa thất bại", { description: e?.response?.data?.detail || e.message });
       setDeleteTarget(null);
     },
   });
@@ -59,9 +59,9 @@ export default function HistoriesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Histories</h2>
+        <h2 className="text-2xl font-semibold">Lịch sử</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Upload history per pipeline and run.
+          Lịch sử đăng tải theo lịch và lần chạy.
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export default function HistoriesPage() {
           value={accountFilter}
           onChange={(e) => setAccountFilter(e.target.value)}
         >
-          <option value="">All accounts</option>
+          <option value="">Tất cả tài khoản</option>
           {accounts?.map((a) => (
             <option key={a.id} value={a.id}>
               {a.display_name || a.username}
@@ -84,16 +84,16 @@ export default function HistoriesPage() {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
-          <option value="">All status</option>
-          <option value="succeeded">Succeeded</option>
-          <option value="failed">Failed</option>
+          <option value="">Tất cả trạng thái</option>
+          <option value="succeeded">Thành công</option>
+          <option value="failed">Thất bại</option>
         </select>
         <select
           className="input w-auto"
           value={pipelineFilter}
           onChange={(e) => setPipelineFilter(e.target.value)}
         >
-          <option value="">All pipelines</option>
+          <option value="">Tất cả lịch đăng</option>
           {pipelines?.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -107,31 +107,31 @@ export default function HistoriesPage() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="text-left p-3">Time</th>
-              <th className="text-left p-3">Account</th>
+              <th className="text-left p-3">Thời gian</th>
+              <th className="text-left p-3">Tài khoản</th>
               <th className="text-left p-3">YouTube</th>
               <th className="text-left p-3">TikTok</th>
               <th className="text-left p-3">Caption</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Attempts</th>
-              <th className="p-3 text-right">Actions</th>
+              <th className="text-left p-3">Trạng thái</th>
+              <th className="text-left p-3">Số lần thử</th>
+              <th className="p-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading && (
               <tr>
-                <td className="p-4 text-slate-500" colSpan={8}>Loading…</td>
+                <td className="p-4 text-slate-500" colSpan={8}>Đang tải…</td>
               </tr>
             )}
             {isError && (
               <tr>
-                <td className="p-4 text-center text-red-400" colSpan={8}>Failed to load. Check API connection.</td>
+                <td className="p-4 text-center text-red-400" colSpan={8}>Không thể tải. Kiểm tra kết nối.</td>
               </tr>
             )}
             {!isLoading && !isError && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={8}>
-                  No upload history yet.
+                  Chưa có lịch sử đăng tải nào.
                 </td>
               </tr>
             )}
@@ -155,7 +155,7 @@ export default function HistoriesPage() {
                 <td className="p-3">
                   {v.tiktok_url ? (
                     <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      View
+                      Xem
                     </a>
                   ) : (
                     "—"
@@ -178,7 +178,7 @@ export default function HistoriesPage() {
                     className="text-xs text-red-600"
                     onClick={() => setDeleteTarget(v)}
                   >
-                    <Trash2 size={14} className="inline" /> Delete
+                    <Trash2 size={14} className="inline" /> Xóa
                   </button>
                 </td>
               </tr>
@@ -189,11 +189,11 @@ export default function HistoriesPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete upload record?"
+        title="Xóa bản ghi đăng tải?"
         body={
           <p>
-            This removes the upload record from the database.
-            The actual TikTok video is NOT affected.
+            Bản ghi này sẽ bị xóa khỏi hệ thống.
+            Video TikTok thực tế KHÔNG bị ảnh hưởng.
           </p>
         }
         onCancel={() => setDeleteTarget(null)}
