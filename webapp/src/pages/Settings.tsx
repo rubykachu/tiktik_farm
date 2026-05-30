@@ -255,19 +255,25 @@ function OllamaPanel({
   model: string | null;
   baseUrl: string | null;
 }) {
-  const displayModel = model ?? "llama3.2";
-  const displayUrl = baseUrl ?? "http://localhost:11434";
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
         <span className="font-medium text-slate-600">Model</span>
-        <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs">
-          {displayModel}
-        </code>
+        {model ? (
+          <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs">
+            {model}
+          </code>
+        ) : (
+          <span className="text-xs text-amber-600 italic">chưa cấu hình (OLLAMA_MODEL)</span>
+        )}
         <span className="font-medium text-slate-600">Base URL</span>
-        <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs break-all">
-          {displayUrl}
-        </code>
+        {baseUrl ? (
+          <code className="bg-white border border-slate-200 px-2 py-0.5 rounded text-xs break-all">
+            {baseUrl}
+          </code>
+        ) : (
+          <span className="text-xs text-amber-600 italic">chưa cấu hình (OLLAMA_BASE_URL)</span>
+        )}
       </div>
       <p className="text-xs text-slate-500">
         Cấu hình qua biến môi trường{" "}
@@ -276,12 +282,14 @@ function OllamaPanel({
         <code className="bg-white border border-slate-200 px-1 rounded">OLLAMA_BASE_URL</code>
         . Cần khởi động lại sau khi thay đổi.
       </p>
-      <p className="text-xs text-slate-500">
-        Cài model:{" "}
-        <code className="bg-white border border-slate-200 px-1 rounded">
-          ollama pull {displayModel}
-        </code>
-      </p>
+      {model && (
+        <p className="text-xs text-slate-500">
+          Cài model:{" "}
+          <code className="bg-white border border-slate-200 px-1 rounded">
+            ollama pull {model}
+          </code>
+        </p>
+      )}
     </div>
   );
 }

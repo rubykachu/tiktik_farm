@@ -409,7 +409,7 @@ def _is_azure(model_id: str) -> bool:
 
 # Loopback hostnames that are safe to reach from the API server even over
 # plain http (typical for self-hosted Ollama / vLLM on the same box).
-_LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+_LOOPBACK_HOSTNAMES = frozenset({"host.docker.internal", "localhost", "127.0.0.1", "::1"})
 
 
 def _validate_api_base(v: Optional[str]) -> Optional[str]:

@@ -56,11 +56,13 @@ class TestGetSettingsOllama:
         assert "ollama_model" in body
         assert "ollama_base_url" in body
 
-    def test_ollama_defaults_when_env_not_set(self, client):
+    def test_ollama_returns_none_when_env_not_set(self, client, monkeypatch):
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         r = client.get("/api/settings", headers=HEADERS_OK)
         body = r.json()
-        assert body["ollama_model"] == "llama3.2"
-        assert body["ollama_base_url"] == "http://localhost:11434"
+        assert body["ollama_model"] is None
+        assert body["ollama_base_url"] is None
 
     def test_ollama_reads_env_vars(self, client, monkeypatch):
         monkeypatch.setenv("OLLAMA_MODEL", "mistral")

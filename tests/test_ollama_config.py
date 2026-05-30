@@ -74,13 +74,13 @@ class TestSetLlmMode:
 
 
 class TestGetOllamaConfig:
-    def test_defaults_when_no_env(self, monkeypatch):
+    def test_returns_none_when_no_env(self, monkeypatch):
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
         monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
         from api.services.llm_config import get_ollama_config
         model, base_url = get_ollama_config()
-        assert model == "llama3.2"
-        assert base_url == "http://localhost:11434"
+        assert model is None
+        assert base_url is None
 
     def test_reads_env_vars(self, monkeypatch):
         monkeypatch.setenv("OLLAMA_MODEL", "mistral")
@@ -89,6 +89,14 @@ class TestGetOllamaConfig:
         model, base_url = get_ollama_config()
         assert model == "mistral"
         assert base_url == "http://127.0.0.1:11434"
+
+    def test_reads_host_docker_internal(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:latest")
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+        from api.services.llm_config import get_ollama_config
+        model, base_url = get_ollama_config()
+        assert model == "llama3.2:latest"
+        assert base_url == "http://host.docker.internal:11434"
 
     def test_invalid_base_url_raises(self, monkeypatch):
         monkeypatch.setenv("OLLAMA_BASE_URL", "http://internal-server:11434")

@@ -65,20 +65,22 @@ def set_llm_mode(mode: Literal["cloud", "offline"]) -> None:
     _set_app_setting("llm.mode", mode)
 
 
-def get_ollama_config() -> tuple[str, str]:
+def get_ollama_config() -> tuple[Optional[str], Optional[str]]:
     """Read env vars. Not DB-backed — changes require restart.
 
-    Raises RuntimeError if OLLAMA_BASE_URL fails SSRF validation.
+    Returns (None, None) when vars are absent. Raises RuntimeError if
+    OLLAMA_BASE_URL is set but fails SSRF validation.
     """
-    model = os.getenv("OLLAMA_MODEL", "llama3.2")
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    try:
-        _validate_api_base(base_url)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"OLLAMA_BASE_URL={base_url!r} failed validation: {exc}. "
-            "Use http://localhost:11434 or a loopback address."
-        ) from exc
+    model = os.getenv("OLLAMA_MODEL") or None
+    base_url = os.getenv("OLLAMA_BASE_URL") or None
+    if base_url:
+        try:
+            _validate_api_base(base_url)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"OLLAMA_BASE_URL={base_url!r} failed validation: {exc}. "
+                "Use http://localhost:11434 or http://host.docker.internal:11434."
+            ) from exc
     return model, base_url
 
 

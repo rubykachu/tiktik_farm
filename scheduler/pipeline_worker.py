@@ -312,14 +312,37 @@ def _maybe_upload_delay_after_record(
     time.sleep(delay_min * 60)
 
 
+def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
+    """Return a warning string if pipeline uses {ai_title} but LLM is misconfigured.
+
+    Only checks static config — runtime failures (e.g. Ollama unreachable) are
+    caught per-video inside _rewrite_with_llm and logged separately.
+    """
+    if not (pipeline.caption_ai_prompt and template_uses_ai_title(pipeline.caption_template)):
+        return None
+    if not is_llm_enabled():
+        return "AI tiêu đề được cấu hình nhưng tính năng LLM đang tắt trong Cài đặt"
+    if get_llm_mode() == "offline":
+        model, base_url = get_ollama_config()
+        if not model or not base_url:
+            return "AI tiêu đề được cấu hình nhưng OLLAMA_MODEL/OLLAMA_BASE_URL chưa được thiết lập"
+    else:
+        if get_default_llm_model() is None:
+            return "AI tiêu đề được cấu hình nhưng chưa có model AI mặc định trong Cài đặt"
+    return None
+
+
 def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
     """Return the rewritten title, or `title` on any failure path."""
     if not is_llm_enabled():
-        log.info("LLM globally disabled; using raw title: %s", title)
+        log.warning("LLM globally disabled; using raw title: %s", title)
         return title
 
     if get_llm_mode() == "offline":
         model, base_url = get_ollama_config()
+        if not model or not base_url:
+            log.warning("OLLAMA_MODEL/OLLAMA_BASE_URL not set; using raw title")
+            return title
         try:
             rewritten = llm.rewrite_title_offline(
                 prompt,
@@ -598,6 +621,10 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         s.commit()
         s.refresh(run)
         run_id = run.id
+
+    ai_warn = _ai_config_warn(pipeline)
+    if ai_warn:
+        log.warning("Pipeline %d: %s", pipeline.id, ai_warn)
 
     # Disk check applies to both YouTube and Douyin (both write to /tmp)
     if not _check_disk_space():
@@ -996,6 +1023,11 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
     started_str = (run.started_at or now_utc()).astimezone(tz).strftime("%H:%M")
 
     parts = [f"📋 [{pipeline.name}] — {started_str}", ""]
+
+    ai_warn = _ai_config_warn(pipeline)
+    if ai_warn:
+        parts.append(f"⚠️ {ai_warn}")
+        parts.append("")
 
     if run.error_text:
         parts.append(f"❌ Lỗi hệ thống: {truncate(run.error_text, 200)}")

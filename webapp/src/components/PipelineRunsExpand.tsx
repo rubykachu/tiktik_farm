@@ -42,8 +42,7 @@ interface DayGroup {
   date: string; // "YYYY-MM-DD"
   runs: PipelineRunItem[];
   totalUploaded: number;
-  hasError: boolean;
-  hasRunning: boolean;
+  latestRun: PipelineRunItem;
 }
 
 function groupByDay(runs: PipelineRunItem[]): DayGroup[] {
@@ -53,20 +52,23 @@ function groupByDay(runs: PipelineRunItem[]): DayGroup[] {
     if (!map.has(date)) map.set(date, []);
     map.get(date)!.push(r);
   }
-  return Array.from(map.entries()).map(([date, dayRuns]) => ({
-    date,
-    runs: dayRuns,
-    totalUploaded: dayRuns.reduce((s, r) => s + r.uploaded_count, 0),
-    hasError: dayRuns.some((r) => !!r.error_text),
-    hasRunning: dayRuns.some((r) => !r.finished_at),
-  }));
+  return Array.from(map.entries()).map(([date, dayRuns]) => {
+    const sorted = [...dayRuns].sort((a, b) => {
+      const ta = a.started_at ?? "";
+      const tb = b.started_at ?? "";
+      return tb.localeCompare(ta);
+    });
+    return {
+      date,
+      runs: dayRuns,
+      totalUploaded: dayRuns.reduce((s, r) => s + r.uploaded_count, 0),
+      latestRun: sorted[0],
+    };
+  });
 }
 
 function groupStatusLabel(g: DayGroup): { text: string; cls: string } {
-  if (g.hasRunning) return { text: "đang chạy", cls: "chip bg-blue-100 text-blue-700" };
-  if (g.hasError) return { text: "có lỗi", cls: "chip bg-red-100 text-red-700" };
-  if (g.totalUploaded === 0) return { text: "không đăng được", cls: "text-slate-400 italic" };
-  return { text: "hoàn thành", cls: "chip bg-emerald-100 text-emerald-700" };
+  return runStatusLabel(g.latestRun);
 }
 
 function runStatusLabel(r: PipelineRunItem): { text: string; cls: string } {
@@ -108,47 +110,55 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
       {errorModal && (
         <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
       )}
-      <table className="w-full text-xs ml-8">
+      <table className="w-full text-xs ml-8 border-separate border-spacing-0">
         <thead>
-          <tr className="text-slate-400">
-            <th className="text-left p-1">Tài khoản</th>
-            <th className="text-left p-1">YouTube</th>
-            <th className="text-left p-1">TikTok</th>
-            <th className="text-left p-1">Trạng thái</th>
-            <th className="text-left p-1">Lỗi</th>
+          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide text-[10px]">
+            <th className="text-left px-2 py-1.5 font-medium rounded-tl">Tài khoản</th>
+            <th className="text-left px-2 py-1.5 font-medium">Nguồn</th>
+            <th className="text-left px-2 py-1.5 font-medium">TikTok</th>
+            <th className="text-left px-2 py-1.5 font-medium">Trạng thái</th>
+            <th className="text-left px-2 py-1.5 font-medium rounded-tr">Lỗi</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((v) => (
-            <tr key={v.id} className="border-t border-slate-50">
-              <td className="p-1">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
-              <td className="p-1 max-w-[120px] truncate">
-                <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  {v.youtube_title || v.youtube_video_id}
-                </a>
-              </td>
-              <td className="p-1">
-                {v.tiktok_url ? (
-                  <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    {v.tiktok_video_id || "link"}
-                  </a>
-                ) : "—"}
-              </td>
-              <td className="p-1">
-                <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
-              </td>
-              <td className="p-1">
-                {v.error_text ? (
-                  <button
-                    className="max-w-[150px] truncate text-red-600 hover:underline text-left"
-                    onClick={() => setErrorModal(v.error_text || "")}
-                  >
-                    {v.error_text}
-                  </button>
-                ) : ""}
-              </td>
-            </tr>
-          ))}
+          {data.map((v, i) => {
+            const sourceLabel = v.youtube_title || v.youtube_video_id || v.douyin_aweme_id || "link";
+            return (
+              <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
+                <td className="px-2 py-1.5 max-w-[180px] truncate">
+                  {v.youtube_url ? (
+                    <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={String(sourceLabel)}>
+                      {sourceLabel}
+                    </a>
+                  ) : (
+                    <span className="text-slate-400">{sourceLabel}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  {v.tiktok_url ? (
+                    <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      {v.tiktok_video_id || "link"}
+                    </a>
+                  ) : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-2 py-1.5 whitespace-nowrap">
+                  <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
+                </td>
+                <td className="px-2 py-1.5">
+                  {v.error_text ? (
+                    <button
+                      className="max-w-[200px] truncate text-red-500 hover:text-red-700 hover:underline text-left"
+                      title={v.error_text}
+                      onClick={() => setErrorModal(v.error_text || "")}
+                    >
+                      {v.error_text}
+                    </button>
+                  ) : <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </>
@@ -223,7 +233,7 @@ function DayGroupRow({
   pipelineId: number;
   onClearDay: ClearRunsFn;
 }) {
-  const [open, setOpen] = useState(group.hasRunning); // auto-open if live
+  const [open, setOpen] = useState(!group.latestRun.finished_at); // auto-open if latest run still live
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
   const groupLabel = groupStatusLabel(group);
