@@ -22,7 +22,7 @@ Trang **`/histories`** (sidebar **Histories**) hiển thị dữ liệu từ b�
 | Field | Ghi chú |
 |-------|---------|
 | `account_id` | FK account |
-| `youtube_video_id`, `youtube_url`, `youtube_title` | Nguồn (title cap 500 server-side) |
+| `youtube_video_id`, `youtube_url`, `source_title` | Nguồn (title cap 500 server-side; dùng chung cho cả YouTube và Douyin) |
 | `tiktok_video_id`, `tiktok_url` | Kết quả (có thể null nếu TikTok không trả id nhưng upload coi như OK) |
 | `rendered_caption` | Caption đã render cho bản ghi này |
 | `status` | `succeeded` \| `failed` |

@@ -155,13 +155,13 @@ Mỗi bản ghi upload có thêm cột `ai_title` (TEXT, nullable):
 
 | Trường | Ý nghĩa |
 |--------|---------|
-| `youtube_title` | Tiêu đề gốc từ nguồn (YouTube hoặc Douyin — dùng chung cột). |
-| `ai_title` | Tiêu đề LLM đã viết lại, **trước khi** render vào `caption_template`. `NULL` khi không dùng AI. |
+| `source_title` | Tiêu đề gốc từ nguồn (YouTube hoặc Douyin — dùng chung cột). |
+| `ai_title` | Tiêu đề LLM đã viết lại, **trước khi** render vào `caption_template`. `NULL` khi không dùng AI hoặc LLM trả về giống title gốc. |
 | `rendered_caption` | Caption cuối cùng sau khi render template (đã có từ trước). |
 
-- Douyin: trước đây `youtube_title` bị bỏ trống — nay lưu `video.title` vào cột này.
-- **UI** (bảng video trong drill-down run): thêm cột **Title** và **AI Title**; hiển thị `—` khi null.
-- **Telegram**: khi `ai_title` khác `youtube_title`, tin nhắn hiển thị `<source_title> → <ai_title>` để dễ theo dõi kết quả LLM.
+- Douyin: trước đây source title bị bỏ trống — nay lưu `video.title` vào `source_title`.
+- **UI** (bảng video trong drill-down run): cột **Title** (`source_title`) và **AI Title** (`ai_title`); hiển thị `—` khi null.
+- **Telegram**: khi `ai_title` khác `source_title`, tin nhắn hiển thị `<source_title> → <ai_title>` để dễ theo dõi kết quả LLM.
 
 ### `pushed_notify_at` trên `PipelineRun`
 
