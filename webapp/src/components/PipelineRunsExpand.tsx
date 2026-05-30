@@ -162,12 +162,12 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
                   </td>
                   <td className="px-3 py-1.5 truncate text-slate-700">
                     {v.source_title
-                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => setErrorModal(v.source_title!)}>{v.source_title}</button>
+                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => v.source_title && setErrorModal(v.source_title)}>{v.source_title}</button>
                       : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5 truncate text-slate-700">
                     {v.ai_title
-                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => setErrorModal(v.ai_title!)}>{v.ai_title}</button>
+                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => v.ai_title && setErrorModal(v.ai_title)}>{v.ai_title}</button>
                       : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5 truncate">

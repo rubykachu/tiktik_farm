@@ -131,9 +131,13 @@ def apply_schema_patches(engine: Engine) -> None:
                     conn.exec_driver_sql(
                         "ALTER TABLE video_uploads RENAME COLUMN youtube_title TO source_title"
                     )
+                    # keep vu_cols consistent so guards below see the post-rename schema
                     vu_cols = (vu_cols - {"youtube_title"}) | {"source_title"}
-                except Exception:
-                    pass
+                except Exception as e:
+                    if "duplicate column" in str(e).lower():
+                        pass  # concurrent worker already applied
+                    else:
+                        raise
             if "douyin_aweme_id" not in vu_cols:
                 try:
                     conn.exec_driver_sql(

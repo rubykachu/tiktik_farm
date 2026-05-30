@@ -5,6 +5,7 @@ and Telegram summary.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import shutil
 import tempfile
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
@@ -333,9 +335,10 @@ def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
 
 
 def _sanitize_llm_title(value: str) -> str:
-    """Strip control characters from LLM output and cap at 500 chars."""
-    import unicodedata
-    return "".join(c for c in value if not unicodedata.category(c).startswith("C"))[:500]
+    """Strip Unicode control/format chars from LLM output and cap at 500 chars."""
+    return "".join(itertools.islice(
+        (c for c in value if not unicodedata.category(c).startswith("C")), 500
+    ))
 
 
 def _rewrite_with_llm(
