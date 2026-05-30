@@ -19,6 +19,7 @@ export default function AccountsPage() {
   const { data, isLoading, isError } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
+  const [updateCookieTarget, setUpdateCookieTarget] = useState<{ id: number; username: string } | null>(null);
 
   // Douyin tab state
   const { data: cookies, isLoading: cookiesLoading, isError: cookiesError } = useQuery({
@@ -68,7 +69,7 @@ export default function AccountsPage() {
         <div>
           <h2 className="text-2xl font-semibold">Tài khoản</h2>
           <p className="text-sm text-slate-500 mt-1">
-            Quản lý tài khoản TikTok và cookie Douyin.
+            Quản lý tài khoản TikTok và tài khoản Douyin.
           </p>
         </div>
         {tab === "tiktok" && (
@@ -80,7 +81,7 @@ export default function AccountsPage() {
         {tab === "douyin" && (
           <button className="btn-secondary" onClick={() => { setEditCookie(null); setCookieModalOpen(true); }}>
             <FileJson size={16} />
-            Thêm Cookie Douyin
+            Thêm Tài khoản Douyin
           </button>
         )}
       </div>
@@ -91,7 +92,7 @@ export default function AccountsPage() {
           Tài khoản TikTok
         </button>
         <button className={tabClass(tab === "douyin")} onClick={() => setTab("douyin")}>
-          Cookie Douyin
+          Tài khoản Douyin
         </button>
       </div>
 
@@ -104,28 +105,27 @@ export default function AccountsPage() {
                   <th className="text-left p-3">Tên đăng nhập</th>
                   <th className="text-left p-3">Tên hiển thị</th>
                   <th className="text-left p-3">Phiên đăng nhập</th>
-                  <th className="text-left p-3">Dùng lần cuối</th>
                   <th className="p-3 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={5}>
+                    <td className="p-4 text-slate-500" colSpan={4}>
                       Đang tải…
                     </td>
                   </tr>
                 )}
                 {isError && (
                   <tr>
-                    <td className="p-4 text-center text-red-400" colSpan={5}>
+                    <td className="p-4 text-center text-red-400" colSpan={4}>
                       Không thể tải. Kiểm tra kết nối.
                     </td>
                   </tr>
                 )}
                 {!isLoading && !isError && data && data.length === 0 && (
                   <tr>
-                    <td className="p-6 text-center text-slate-500" colSpan={5}>
+                    <td className="p-6 text-center text-slate-500" colSpan={4}>
                       Chưa có tài khoản nào. Nhấn "Thêm Cookie TikTok" để thêm.
                     </td>
                   </tr>
@@ -146,10 +146,13 @@ export default function AccountsPage() {
                         {a.has_valid_session ? "Hợp lệ" : "Cần đăng nhập lại"}
                       </span>
                     </td>
-                    <td className="p-3 text-slate-500">
-                      {a.last_used_at ? new Date(a.last_used_at).toLocaleString() : "—"}
-                    </td>
                     <td className="p-3 text-right space-x-2">
+                      <button
+                        className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
+                        onClick={() => setUpdateCookieTarget({ id: a.id, username: a.username })}
+                      >
+                        <Edit2 size={14} /> Cập nhật
+                      </button>
                       <button
                         className="inline-flex items-center gap-1 text-red-600 text-xs font-medium"
                         onClick={() => setDeleteTarget({ id: a.id, username: a.username })}
@@ -193,7 +196,7 @@ export default function AccountsPage() {
               {!cookiesLoading && !cookiesError && cookies && cookies.length === 0 && (
                 <tr>
                   <td className="p-6 text-center text-slate-500" colSpan={3}>
-                    Chưa có cookie nào. Nhấn "Thêm Cookie Douyin" để thêm.
+                    Chưa có tài khoản nào. Nhấn "Thêm Tài khoản Douyin" để thêm.
                   </td>
                 </tr>
               )}
@@ -225,8 +228,9 @@ export default function AccountsPage() {
       )}
 
       <ImportJsonModal
-        open={jsonModalOpen}
-        onClose={() => setJsonModalOpen(false)}
+        open={jsonModalOpen || updateCookieTarget !== null}
+        onClose={() => { setJsonModalOpen(false); setUpdateCookieTarget(null); }}
+        updateAccount={updateCookieTarget}
       />
 
       <DouyinCookieModal

@@ -69,7 +69,7 @@ export default function DouyinCookieModal({ open, onClose, cookie }: Props) {
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {isUpdate ? `Cập nhật cookie "${cookie!.name}"` : "Thêm Cookie Douyin"}
+            {isUpdate ? `Cập nhật cookie "${cookie!.name}"` : "Thêm Tài khoản Douyin"}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="close">
             <X size={18} />

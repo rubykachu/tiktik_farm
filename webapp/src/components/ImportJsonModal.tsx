@@ -6,12 +6,14 @@ import { Accounts } from "../api/client";
 type Props = {
   open: boolean;
   onClose: () => void;
+  updateAccount?: { id: number; username: string } | null;
 };
 
 const USERNAME_RE = /^[A-Za-z0-9_.]{1,32}$/;
 
-export default function ImportJsonModal({ open, onClose }: Props) {
+export default function ImportJsonModal({ open, onClose, updateAccount }: Props) {
   const qc = useQueryClient();
+  const isUpdate = !!updateAccount;
   const [text, setText] = useState("");
   const [username, setUsername] = useState("");
   const [replace, setReplace] = useState(false);
@@ -23,8 +25,11 @@ export default function ImportJsonModal({ open, onClose }: Props) {
       setUsername("");
       setReplace(false);
       setError(null);
+    } else if (updateAccount) {
+      setUsername(updateAccount.username);
+      setReplace(true);
     }
-  }, [open]);
+  }, [open, updateAccount]);
 
   const mut = useMutation({
     mutationFn: () => {
@@ -59,7 +64,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
     mut.mutate();
   }
 
-  const submitDisabled = !text.trim() || !USERNAME_RE.test(username) || mut.isPending;
+  const submitDisabled = !text.trim() || !USERNAME_RE.test(username) || mut.isPending || (isUpdate && !replace);
 
   if (!open) return null;
 
@@ -75,7 +80,9 @@ export default function ImportJsonModal({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Nhập Cookie JSON</h3>
+          <h3 className="text-lg font-semibold">
+            {isUpdate ? `Cập nhật Cookie TikTok "${updateAccount!.username}"` : "Nhập Cookie JSON"}
+          </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="close">
             <X size={18} />
           </button>
@@ -91,24 +98,25 @@ export default function ImportJsonModal({ open, onClose }: Props) {
           />
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">Tên đăng nhập</label>
-          <input
-            type="text"
-            className="input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="e.g. lmbk37"
-          />
-          <p className="text-xs text-slate-500">
-            Chỉ gồm chữ cái, số, dấu chấm, gạch dưới. Tối đa 32 ký tự.
-          </p>
-        </div>
+        {!isUpdate && (
+          <div className="space-y-1">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Tên</label>
+            <input
+              type="text"
+              className="input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. lmbk37"
+            />
+          </div>
+        )}
 
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-          Ghi đè nếu tên đăng nhập đã tồn tại
-        </label>
+        {!isUpdate && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+            Ghi đè nếu tên đăng nhập đã tồn tại
+          </label>
+        )}
 
         {error && (
           <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -119,7 +127,7 @@ export default function ImportJsonModal({ open, onClose }: Props) {
         <div className="flex justify-end gap-2 pt-2">
           <button className="btn-secondary" onClick={onClose}>Hủy</button>
           <button className="btn-primary" disabled={submitDisabled} onClick={handleSubmit}>
-            {mut.isPending ? "Đang nhập…" : "Nhập"}
+            {mut.isPending ? "Đang lưu…" : isUpdate ? "Cập nhật" : "Nhập"}
           </button>
         </div>
       </div>
