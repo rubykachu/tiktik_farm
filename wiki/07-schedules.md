@@ -30,10 +30,61 @@ Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
 
 ### Lặp lại & thời điểm bắn
 
-- `first_fire_at` / `next_fire_at` (UTC). Khi **scheduled** tick xong, advance:  
-  `next_fire_at = max(prev_next + interval, now + interval)` — tránh "bão tick" sau downtime dài.
+Pipeline có **2 chế độ** tuỳ vào có bật "Chạy nhiều lần trong ngày?" hay không:
+
+#### Chế độ 1 — không có window (đơn giản)
+
+```
+first_fire_at = 08:00 UTC, interval = 6 giờ
+→ 08:00 → 14:00 → 20:00 → 02:00 → ...
+```
+
+Sau mỗi tick: `next_fire_at = max(prev + interval, now + interval)` — tránh "bão tick" sau downtime.
+
+#### Chế độ 2 — có window ("Chạy nhiều lần trong ngày")
+
+| Field | Ý nghĩa |
+|---|---|
+| `first_fire_at` | Giờ mở window (time-of-day lấy từ đây, ví dụ 08:00 UTC) |
+| `window_end_time` | Giờ đóng window mỗi ngày ("HH:MM" **UTC**, ví dụ "12:00") |
+| `window_delay_minutes` | Khoảng cách giữa các fire trong window (phút) |
+| `interval_value/unit` | Khoảng cách giữa các **ngày** (nên là `days`) |
+
+```
+first_fire_at = 08:00 UTC, window_end_time = "12:00", delay = 30 min, interval = 1 ngày
+
+Ngày 1:  08:00 → 08:30 → 09:00 → ... → 11:30 → 12:00 → DỪNG
+Ngày 2:  08:00 → 08:30 → ...   (reopen tại first_fire_at time-of-day)
+Ngày 3:  08:00 → ...
+```
+
+Logic advance sau mỗi tick (scheduled):
+
+```
+candidate = prev + window_delay_minutes
+
+if candidate <= window_close AND candidate > now:
+    next_fire_at = candidate          # còn trong window → fire tiếp
+else:
+    # Window đóng → reopen ngày kế tại giờ first_fire_at (KHÔNG dùng prev)
+    nxt = prev.replace(giờ=first_fire_at) + interval
+    skip các ngày bị lỡ (downtime) cho đến khi nxt > now
+    next_fire_at = nxt
+```
+
+> **Tại sao anchor theo `first_fire_at`, không dùng `prev + interval`?**  
+> `prev` = lần fire cuối trong window (gần window-end). `prev + interval` → ngày mai mở lại tại giờ window-end — sai.  
+> `first_fire_at` giữ giờ mở window cố định mọi ngày.
+
 - **Run now** (`POST .../run-now`): **không** lùi/tiến `next_fire_at`; chỉ xử lý cờ `run_now_requested_at`.
 - **Pause**: `state=paused` — worker **không** claim. **Resume**: `state=active`, `next_fire_at=now`. Resume **không** bypass `lock_until`.
+
+#### Lưu ý timezone cho window
+
+- `first_fire_at`: frontend convert local → UTC qua `toISOString()` — đúng.
+- `window_end_time`: frontend convert local HH:MM → UTC HH:MM trước khi gửi API; convert ngược lại khi hiển thị edit form.
+- Scheduler dùng `now_utc()` (`datetime.now(timezone.utc)`) — luôn UTC, không phụ thuộc container TZ.
+- **Khi edit pipeline cũ** (tạo trước khi có fix timezone): mở Edit → Save lại để ghi đúng UTC vào DB.
 
 ### Khóa & chạy ngay (chống race)
 
