@@ -450,6 +450,7 @@ def list_runs(
             "summary_text": r.summary_text,
             "error_text": r.error_text,
             "status_text": r.status_text,
+            "pushed_notify_at": r.pushed_notify_at.isoformat() if r.pushed_notify_at else None,
         }
         for r in rows
     ]
@@ -507,6 +508,7 @@ def list_run_videos(
             "tiktok_video_id": v.tiktok_video_id,
             "tiktok_url": v.tiktok_url,
             "rendered_caption": v.rendered_caption,
+            "ai_title": v.ai_title,
             "status": v.status,
             "attempt_count": v.attempt_count,
             "error_text": v.error_text,

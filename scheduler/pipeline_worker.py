@@ -415,6 +415,8 @@ def _record_douyin_upload(
     tiktok_video_id: Optional[str] = None,
     tiktok_url: Optional[str] = None,
     rendered_caption: Optional[str] = None,
+    ai_title: Optional[str] = None,
+    video_title: Optional[str] = None,
     attempt_count: int = 1,
     error_text: Optional[str] = None,
 ) -> None:
@@ -424,11 +426,13 @@ def _record_douyin_upload(
         account_id=account_id,
         youtube_video_id="",
         youtube_url="",
+        youtube_title=video_title,
         douyin_aweme_id=aweme_id,
         status=status,
         tiktok_video_id=tiktok_video_id,
         tiktok_url=tiktok_url,
         rendered_caption=rendered_caption,
+        ai_title=ai_title,
         attempt_count=attempt_count,
         error_text=error_text,
     )
@@ -569,6 +573,8 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                     tiktok_video_id=tiktok_id,
                     tiktok_url=tiktok_url,
                     rendered_caption=caption,
+                    ai_title=ai_title if use_ai_title and ai_title != video.title else None,
+                    video_title=video.title,
                     attempt_count=attempt_count,
                     error_text=error_msg,
                 )
@@ -799,6 +805,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     tiktok_video_id=tiktok_id,
                     tiktok_url=tiktok_url,
                     rendered_caption=caption,
+                    ai_title=ai_title if use_ai_title and ai_title != video_title else None,
                     attempt_count=attempt_count,
                     error_text=error_msg,
                 )
@@ -872,6 +879,7 @@ def _record_upload(
     tiktok_video_id: Optional[str] = None,
     tiktok_url: Optional[str] = None,
     rendered_caption: Optional[str] = None,
+    ai_title: Optional[str] = None,
     attempt_count: int = 1,
     error_text: Optional[str] = None,
 ) -> None:
@@ -886,6 +894,7 @@ def _record_upload(
         tiktok_video_id=tiktok_video_id,
         tiktok_url=tiktok_url,
         rendered_caption=rendered_caption,
+        ai_title=ai_title,
         attempt_count=attempt_count,
         error_text=error_text,
     )
@@ -1063,13 +1072,15 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
 
         video_lines: list[str] = []
         for v in uploads:
-            title = truncate(v.youtube_title or "video", 60)
+            source_title = truncate(v.youtube_title or "video", 60)
+            ai = truncate(v.ai_title, 60) if v.ai_title and v.ai_title != v.youtube_title else None
+            display_title = f"{source_title} → {ai}" if ai else source_title
             if v.status == "succeeded" and v.tiktok_url:
-                video_lines.append(f"  ✅ {title}\n     {v.tiktok_url}")
+                video_lines.append(f"  ✅ {display_title}\n     {v.tiktok_url}")
             elif v.error_text:
-                video_lines.append(f"  ❌ {title}\n     {truncate(v.error_text, 80)}")
+                video_lines.append(f"  ❌ {display_title}\n     {truncate(v.error_text, 80)}")
             else:
-                video_lines.append(f"  ⏭️ {title}")
+                video_lines.append(f"  ⏭️ {display_title}")
 
         body: list[str] = []
         used = len(header)
@@ -1089,6 +1100,13 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
 
     try:
         telegram.send_message(pipeline.telegram_bot_token, pipeline.telegram_chat_id, text)
+        if run.id is not None:
+            with Session(_api_db.engine) as s:
+                db_run = s.get(PipelineRun, run.id)
+                if db_run:
+                    db_run.pushed_notify_at = now_utc()
+                    s.add(db_run)
+                    s.commit()
     except Exception as e:
         log.warning("Telegram notify failed for pipeline %d: %s", pipeline.id, e)
 

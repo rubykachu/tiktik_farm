@@ -93,6 +93,7 @@ export interface PipelineRunItem {
   summary_text: string;
   error_text: string | null;
   status_text: string | null;
+  pushed_notify_at: string | null;
 }
 
 export interface VideoUploadItem {
@@ -105,6 +106,7 @@ export interface VideoUploadItem {
   tiktok_video_id: string | null;
   tiktok_url: string | null;
   rendered_caption: string | null;
+  ai_title: string | null;
   status: string;
   attempt_count: number;
   error_text: string | null;

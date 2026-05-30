@@ -87,6 +87,10 @@ def apply_schema_patches(engine: Engine) -> None:
                 conn.exec_driver_sql(
                     "ALTER TABLE pipeline_runs ADD COLUMN status_text TEXT"
                 )
+            if "pushed_notify_at" not in pr_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE pipeline_runs ADD COLUMN pushed_notify_at TEXT"
+                )
 
         # video_uploads: douyin_aweme_id for Phase 4
         has_video_uploads = conn.exec_driver_sql(
@@ -98,6 +102,10 @@ def apply_schema_patches(engine: Engine) -> None:
             if "douyin_aweme_id" not in vu_cols:
                 conn.exec_driver_sql(
                     "ALTER TABLE video_uploads ADD COLUMN douyin_aweme_id TEXT"
+                )
+            if "ai_title" not in vu_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE video_uploads ADD COLUMN ai_title TEXT"
                 )
 
         # Azure support: api_base + api_version on llm_models. Guard against

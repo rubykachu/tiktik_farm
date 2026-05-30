@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { Bell, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
@@ -116,6 +116,8 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
             <tr className="bg-slate-100 text-slate-500 uppercase tracking-wide text-[10px]">
               <th className="text-left px-3 py-1.5 font-medium">Tài khoản</th>
               <th className="text-left px-3 py-1.5 font-medium">Nguồn</th>
+              <th className="text-left px-3 py-1.5 font-medium">Title</th>
+              <th className="text-left px-3 py-1.5 font-medium">AI Title</th>
               <th className="text-left px-3 py-1.5 font-medium">TikTok</th>
               <th className="text-left px-3 py-1.5 font-medium">Trạng thái</th>
               <th className="text-left px-3 py-1.5 font-medium">Lỗi</th>
@@ -130,7 +132,7 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
               return (
                 <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
                   <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
-                  <td className="px-3 py-1.5 max-w-[200px] truncate">
+                  <td className="px-3 py-1.5 max-w-[160px] truncate">
                     {sourceHref ? (
                       <a href={sourceHref} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={String(sourceLabel)}>
                         {sourceLabel}
@@ -138,6 +140,12 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
                     ) : (
                       <span className="text-slate-400">{sourceLabel}</span>
                     )}
+                  </td>
+                  <td className="px-3 py-1.5 max-w-[160px] truncate text-slate-700" title={v.youtube_title ?? undefined}>
+                    {v.youtube_title || <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5 max-w-[160px] truncate text-slate-700" title={v.ai_title ?? undefined}>
+                    {v.ai_title || <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-1.5">
                     {v.tiktok_url ? (
@@ -220,10 +228,17 @@ function RunRow({
             <span className={status.cls}>{status.text}</span>
           )}
         </td>
+        <td className="py-1.5 px-1 w-5 text-center">
+          {run.pushed_notify_at ? (
+            <span title={new Date(run.pushed_notify_at).toLocaleString()}>
+              <Bell size={10} className="text-blue-400 inline" />
+            </span>
+          ) : null}
+        </td>
       </tr>
       {expanded && (
         <tr className="bg-blue-50/40 border-l-4 border-blue-300">
-          <td colSpan={8} className="pb-2 pt-0">
+          <td colSpan={9} className="pb-2 pt-0">
             <VideosList pipelineId={pipelineId} runId={run.id} />
           </td>
         </tr>
@@ -260,7 +275,7 @@ function DayGroupRow({
         <td className="py-2 px-2 font-semibold text-slate-700 text-[11px]" colSpan={2}>
           {group.date}
         </td>
-        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={3}>
+        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={4}>
           <span>{group.runs.length} lần chạy</span>
           {group.totalUploaded > 0 && (
             <span className="ml-2 font-medium text-emerald-600">{group.totalUploaded} đã đăng</span>
@@ -294,6 +309,7 @@ function DayGroupRow({
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Bỏ qua</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thất bại</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Trạng thái</th>
+            <th className="py-1 px-1 w-5" />
           </tr>
           {group.runs.map((r) => (
             <RunRow
@@ -306,7 +322,7 @@ function DayGroupRow({
           ))}
           {/* Bottom border to close the day group */}
           <tr className="border-l-4 border-slate-200">
-            <td colSpan={8} className="h-1 bg-slate-50" />
+            <td colSpan={9} className="h-1 bg-slate-50" />
           </tr>
         </Fragment>
       )}
