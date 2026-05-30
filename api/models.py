@@ -134,7 +134,7 @@ class VideoUpload(SQLModel, table=True):
 
     youtube_video_id: str = Field(max_length=64)
     youtube_url: str
-    youtube_title: Optional[str] = Field(default=None, max_length=500)
+    source_title: Optional[str] = Field(default=None, max_length=500)
     douyin_aweme_id: Optional[str] = Field(default=None, max_length=64)
 
     tiktok_video_id: Optional[str] = Field(default=None, max_length=64)

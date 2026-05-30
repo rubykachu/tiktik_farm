@@ -147,9 +147,9 @@ export default function HistoriesPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 hover:underline"
-                    title={v.youtube_title || v.youtube_url}
+                    title={v.source_title || v.youtube_url}
                   >
-                    {v.youtube_title || v.youtube_video_id}
+                    {v.source_title || v.youtube_video_id}
                   </a>
                 </td>
                 <td className="p-3">

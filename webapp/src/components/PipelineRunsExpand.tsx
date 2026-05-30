@@ -10,6 +10,12 @@ function asUtc(s: string): Date {
   return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
 }
 
+function statusLabel(s: string): string {
+  if (s === "succeeded") return "thành công";
+  if (s === "failed") return "thất bại";
+  return s;
+}
+
 type ClearRunsFn = (runIds: number[]) => void;
 
 type Props = { pipelineId: number };
@@ -115,7 +121,16 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
         <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
       )}
       <div className="ml-10 my-1 rounded border border-slate-200 overflow-hidden bg-white">
-        <table className="w-full text-xs border-separate border-spacing-0">
+        <table className="w-full text-xs border-separate border-spacing-0 table-fixed">
+          <colgroup>
+            <col className="w-[10%]" />
+            <col className="w-[12%]" />
+            <col className="w-[22%]" />
+            <col className="w-[22%]" />
+            <col className="w-[10%]" />
+            <col className="w-[9%]" />
+            <col className="w-[15%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-100 text-slate-500 uppercase tracking-wide text-[10px]">
               <th className="text-left px-3 py-1.5 font-medium">Tài khoản</th>
@@ -132,11 +147,11 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
               const sourceHref = v.douyin_aweme_id
                 ? `https://www.douyin.com/video/${v.douyin_aweme_id}`
                 : v.youtube_url || null;
-              const sourceLabel = v.youtube_title || v.youtube_video_id || v.douyin_aweme_id || "link";
+              const sourceLabel = v.source_title || v.youtube_video_id || v.douyin_aweme_id || "link";
               return (
                 <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                  <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
-                  <td className="px-3 py-1.5 max-w-[160px] truncate">
+                  <td className="px-3 py-1.5 text-slate-700 truncate">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
+                  <td className="px-3 py-1.5 truncate">
                     {sourceHref ? (
                       <a href={sourceHref} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={String(sourceLabel)}>
                         {sourceLabel}
@@ -145,21 +160,25 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
                       <span className="text-slate-400">{sourceLabel}</span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 max-w-[160px] truncate text-slate-700" title={v.youtube_title ?? undefined}>
-                    {v.youtube_title || <span className="text-slate-300">—</span>}
+                  <td className="px-3 py-1.5 truncate text-slate-700">
+                    {v.source_title
+                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => setErrorModal(v.source_title!)}>{v.source_title}</button>
+                      : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-1.5 max-w-[160px] truncate text-slate-700" title={v.ai_title ?? undefined}>
-                    {v.ai_title || <span className="text-slate-300">—</span>}
+                  <td className="px-3 py-1.5 truncate text-slate-700">
+                    {v.ai_title
+                      ? <button className="truncate w-full text-left hover:text-blue-600 cursor-pointer" onClick={() => setErrorModal(v.ai_title!)}>{v.ai_title}</button>
+                      : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-1.5">
+                  <td className="px-3 py-1.5 truncate">
                     {v.tiktok_url ? (
-                      <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={v.tiktok_video_id || "link"}>
                         {v.tiktok_video_id || "link"}
                       </a>
                     ) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-1.5 whitespace-nowrap">
-                    <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
+                  <td className="px-3 py-1.5">
+                    <span className={"chip text-[10px] " + statusBadge(v.status)}>{statusLabel(v.status)}</span>
                   </td>
                   <td className="px-3 py-1.5">
                     {v.error_text ? (

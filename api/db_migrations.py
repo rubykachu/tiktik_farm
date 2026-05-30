@@ -126,6 +126,14 @@ def apply_schema_patches(engine: Engine) -> None:
         if has_video_uploads:
             vu_rows = conn.exec_driver_sql("PRAGMA table_info(video_uploads)").fetchall()
             vu_cols = {row[1] for row in vu_rows}
+            if "youtube_title" in vu_cols and "source_title" not in vu_cols:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE video_uploads RENAME COLUMN youtube_title TO source_title"
+                    )
+                    vu_cols = (vu_cols - {"youtube_title"}) | {"source_title"}
+                except Exception:
+                    pass
             if "douyin_aweme_id" not in vu_cols:
                 try:
                     conn.exec_driver_sql(

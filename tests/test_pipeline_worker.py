@@ -775,12 +775,12 @@ class TestTelegramSummary:
             pid = p.id
 
             v1 = VideoUpload(
-                run_id=run_id, account_id=1, youtube_title="My Great Video",
+                run_id=run_id, account_id=1, source_title="My Great Video",
                 youtube_video_id="aaa111", youtube_url="https://youtube.com/watch?v=aaa",
                 tiktok_url="https://tiktok.com/@x/video/123", status="succeeded",
             )
             v2 = VideoUpload(
-                run_id=run_id, account_id=1, youtube_title="Failed Video",
+                run_id=run_id, account_id=1, source_title="Failed Video",
                 youtube_video_id="bbb222", youtube_url="https://youtube.com/watch?v=bbb",
                 error_text="upload_timeout", status="failed",
             )
@@ -830,7 +830,7 @@ class TestTelegramSummary:
                 s.add(VideoUpload(
                     run_id=run_id, account_id=1,
                     youtube_video_id=f"vid{i:04d}",
-                    youtube_title=f"Very Long Video Title Number {i} - Extended Edition",
+                    source_title=f"Very Long Video Title Number {i} - Extended Edition",
                     tiktok_url=f"https://tiktok.com/@x/video/{i}",
                     status="succeeded",
                     youtube_url=f"https://youtube.com/watch?v=vid{i}",
@@ -930,7 +930,7 @@ class TestTelegramSummary:
                 s.add(VideoUpload(
                     run_id=run_id, account_id=1,
                     youtube_video_id=f"v{i:04d}",
-                    youtube_title=f"Video Title That Is Exactly Sixty Characters Long {i:03d}",
+                    source_title=f"Video Title That Is Exactly Sixty Characters Long {i:03d}",
                     tiktok_url=f"https://tiktok.com/@channel/video/{i:020d}",
                     status="succeeded",
                     youtube_url=f"https://youtube.com/watch?v=v{i}",

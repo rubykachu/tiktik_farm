@@ -101,7 +101,7 @@ export interface VideoUploadItem {
   account_id: number;
   youtube_video_id: string;
   youtube_url: string;
-  youtube_title: string | null;
+  source_title: string | null;
   douyin_aweme_id: string | null;
   tiktok_video_id: string | null;
   tiktok_url: string | null;

@@ -70,7 +70,7 @@ def _seed():
             account_id=1,
             youtube_video_id="vid1",
             youtube_url="https://youtube.com/watch?v=vid1",
-            youtube_title="Title 1",
+            source_title="Title 1",
             status="succeeded",
             attempt_count=1,
             created_at=now,

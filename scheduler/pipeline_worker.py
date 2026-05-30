@@ -432,7 +432,7 @@ def _record_douyin_upload(
         account_id=account_id,
         youtube_video_id="",
         youtube_url="",
-        youtube_title=video_title,
+        source_title=video_title,
         douyin_aweme_id=aweme_id,
         status=status,
         tiktok_video_id=tiktok_video_id,
@@ -895,7 +895,7 @@ def _record_upload(
         account_id=account_id,
         youtube_video_id=video_id,
         youtube_url=video_url,
-        youtube_title=video_title,
+        source_title=video_title,
         status=status,
         tiktok_video_id=tiktok_video_id,
         tiktok_url=tiktok_url,
@@ -1078,8 +1078,8 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
 
         video_lines: list[str] = []
         for v in uploads:
-            source_title = truncate(v.youtube_title or "video", 60)
-            ai = truncate(v.ai_title, 60) if v.ai_title and v.ai_title != v.youtube_title else None
+            source_title = truncate(v.source_title or "video", 60)
+            ai = truncate(v.ai_title, 60) if v.ai_title and v.ai_title != v.source_title else None
             display_title = f"{source_title} → {ai}" if ai else source_title
             if v.status == "succeeded" and v.tiktok_url:
                 video_lines.append(f"  ✅ {display_title}\n     {v.tiktok_url}")
