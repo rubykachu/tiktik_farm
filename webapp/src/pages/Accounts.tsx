@@ -102,30 +102,31 @@ export default function AccountsPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="text-left p-3">Tên đăng nhập</th>
-                  <th className="text-left p-3">Tên hiển thị</th>
+                  <th className="text-left p-3">Tên</th>
                   <th className="text-left p-3">Phiên đăng nhập</th>
+                  <th className="text-left p-3">Ngày tạo</th>
+                  <th className="text-left p-3">Ngày cập nhật</th>
                   <th className="p-3 text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={4}>
+                    <td className="p-4 text-slate-500" colSpan={5}>
                       Đang tải…
                     </td>
                   </tr>
                 )}
                 {isError && (
                   <tr>
-                    <td className="p-4 text-center text-red-400" colSpan={4}>
+                    <td className="p-4 text-center text-red-400" colSpan={5}>
                       Không thể tải. Kiểm tra kết nối.
                     </td>
                   </tr>
                 )}
                 {!isLoading && !isError && data && data.length === 0 && (
                   <tr>
-                    <td className="p-6 text-center text-slate-500" colSpan={4}>
+                    <td className="p-6 text-center text-slate-500" colSpan={5}>
                       Chưa có tài khoản nào. Nhấn "Thêm Cookie TikTok" để thêm.
                     </td>
                   </tr>
@@ -133,7 +134,6 @@ export default function AccountsPage() {
                 {data?.map((a) => (
                   <tr key={a.id} className="hover:bg-slate-50">
                     <td className="p-3 font-medium">{a.username}</td>
-                    <td className="p-3 text-slate-600">{a.display_name ?? "—"}</td>
                     <td className="p-3">
                       <span
                         className={
@@ -146,6 +146,8 @@ export default function AccountsPage() {
                         {a.has_valid_session ? "Hợp lệ" : "Cần đăng nhập lại"}
                       </span>
                     </td>
+                    <td className="p-3 text-slate-500">{new Date(a.created_at).toLocaleString()}</td>
+                    <td className="p-3 text-slate-500">{new Date(a.updated_at).toLocaleString()}</td>
                     <td className="p-3 text-right space-x-2">
                       <button
                         className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
@@ -175,27 +177,28 @@ export default function AccountsPage() {
               <tr>
                 <th className="text-left p-3">Tên</th>
                 <th className="text-left p-3">Ngày tạo</th>
+                <th className="text-left p-3">Ngày cập nhật</th>
                 <th className="p-3 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {cookiesLoading && (
                 <tr>
-                  <td className="p-4 text-slate-500" colSpan={3}>
+                  <td className="p-4 text-slate-500" colSpan={4}>
                     Đang tải…
                   </td>
                 </tr>
               )}
               {cookiesError && (
                 <tr>
-                  <td className="p-4 text-center text-red-400" colSpan={3}>
+                  <td className="p-4 text-center text-red-400" colSpan={4}>
                     Không thể tải. Kiểm tra kết nối.
                   </td>
                 </tr>
               )}
               {!cookiesLoading && !cookiesError && cookies && cookies.length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-slate-500" colSpan={3}>
+                  <td className="p-6 text-center text-slate-500" colSpan={4}>
                     Chưa có tài khoản nào. Nhấn "Thêm Tài khoản Douyin" để thêm.
                   </td>
                 </tr>
@@ -203,9 +206,8 @@ export default function AccountsPage() {
               {cookies?.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="p-3 font-medium">{c.name}</td>
-                  <td className="p-3 text-slate-500">
-                    {new Date(c.created_at).toLocaleString()}
-                  </td>
+                  <td className="p-3 text-slate-500">{new Date(c.created_at).toLocaleString()}</td>
+                  <td className="p-3 text-slate-500">{new Date(c.updated_at).toLocaleString()}</td>
                   <td className="p-3 text-right space-x-2">
                     <button
                       className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
