@@ -112,6 +112,7 @@ class PipelineRun(SQLModel, table=True):
     summary_text: str = Field(default="")
     error_text: Optional[str] = Field(default=None)
     status_text: Optional[str] = Field(default=None)
+    pushed_notify_at: Optional[datetime] = Field(default=None)
 
 
 class VideoUpload(SQLModel, table=True):
@@ -139,6 +140,7 @@ class VideoUpload(SQLModel, table=True):
     tiktok_video_id: Optional[str] = Field(default=None, max_length=64)
     tiktok_url: Optional[str] = Field(default=None)
     rendered_caption: Optional[str] = Field(default=None)
+    ai_title: Optional[str] = Field(default=None, max_length=500)
 
     status: str = Field(max_length=16)  # 'succeeded' | 'failed'
     attempt_count: int = Field(default=1)
