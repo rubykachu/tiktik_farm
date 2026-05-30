@@ -120,7 +120,7 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
       {errorModal && (
         <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
       )}
-      <div className="ml-10 my-1 rounded border border-slate-200 overflow-hidden bg-white">
+      <div className="mx-2 my-1 rounded border border-slate-200 overflow-hidden bg-white">
         <table className="w-full text-xs border-separate border-spacing-0 table-fixed">
           <colgroup>
             <col className="w-[10%]" />
@@ -317,7 +317,6 @@ function DayGroupRow({
             </button>
           )}
         </td>
-        <td className="py-2 px-1 w-5" />
       </tr>
 
       {/* Run rows for this day */}
@@ -384,14 +383,14 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
     <div className="bg-slate-50 border-t py-2">
       <table className="w-full text-xs table-fixed">
         <colgroup>
-          <col className="w-6" />
-          <col className="w-28" />
-          <col className="w-16" />
-          <col className="w-16" />
-          <col className="w-16" />
-          <col className="w-16" />
-          <col className="w-20" />
-          <col className="w-16" />
+          <col className="w-[4%]" />
+          <col className="w-[21%]" />
+          <col className="w-[12%]" />
+          <col className="w-[12%]" />
+          <col className="w-[12%]" />
+          <col className="w-[12%]" />
+          <col className="w-[15%]" />
+          <col className="w-[12%]" />
         </colgroup>
         <tbody>
           {groups.map((g) => (
