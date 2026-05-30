@@ -12,6 +12,12 @@ export interface LLMTestResult {
   message: string;
 }
 
+export interface PromptTestResult {
+  original_title: string;
+  ai_title: string;
+  description_snippet: string;
+}
+
 export const Settings = {
   get: () => api.get<AppSettings>("/settings").then((r) => r.data),
   patch: (payload: Partial<AppSettings>) =>
@@ -29,5 +35,8 @@ export const Settings = {
         ...(api_base ? { api_base } : {}),
         ...(api_version ? { api_version } : {}),
       })
+      .then((r) => r.data),
+  testPrompt: (url: string, prompt: string) =>
+    api.post<PromptTestResult>("/settings/llm/test-prompt", { url, prompt })
       .then((r) => r.data),
 };

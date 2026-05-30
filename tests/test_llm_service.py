@@ -87,7 +87,7 @@ class TestRewriteTitleHappy:
                 model_id="gemini/x", api_key_encrypted=encrypt("k"),
             )
         kw = mock.call_args.kwargs
-        assert kw["max_tokens"] == 200
+        assert kw["max_tokens"] == llm.MAX_OUTPUT_TOKENS
         assert kw["timeout"] == llm.DEFAULT_TIMEOUT
 
 

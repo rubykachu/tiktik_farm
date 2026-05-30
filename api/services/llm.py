@@ -30,8 +30,8 @@ litellm.success_callback = []
 litellm.failure_callback = []
 
 DESCRIPTION_MAX_CHARS = 2000  # ~500 input tokens → cheap on Gemini Flash
-DEFAULT_TIMEOUT = 30          # seconds; bigger blows up tick latency
-MAX_OUTPUT_TOKENS = 200       # ~one TikTok caption line
+DEFAULT_TIMEOUT = 60          # seconds; longer captions + local Ollama need headroom
+MAX_OUTPUT_TOKENS = 1200      # ~4000 chars, the TikTok caption limit
 
 
 class LLMNotConfigured(Exception):

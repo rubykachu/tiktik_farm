@@ -10,6 +10,7 @@ import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { DouyinCookies } from "../api/douyin_cookies";
 import { Telegram, TelegramChatItem } from "../api/telegram";
+import { Settings } from "../api/settings";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Required").max(128),
@@ -348,6 +349,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     onError: handleServerError,
   });
 
+  const testPromptMut = useMutation({
+    mutationFn: ({ url, prompt }: { url: string; prompt: string }) =>
+      Settings.testPrompt(url, prompt),
+  });
+
   function handleServerError(err: any) {
     const detail = err?.response?.data?.detail;
     if (Array.isArray(detail)) {
@@ -440,6 +446,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [multipleRuns, setMultipleRuns] = useState(false);
+  const [testUrl, setTestUrl] = useState("");
   const [telegramDetectLoading, setTelegramDetectLoading] = useState(false);
   const [telegramDetectChats, setTelegramDetectChats] = useState<
     TelegramChatItem[] | null
@@ -875,7 +882,31 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </button>
               {aiSectionOpen && (
                 <div className="space-y-2 pl-4 border-l-2 border-slate-200">
-                  <label className="label">Prompt AI</label>
+                  <label className="label">
+                    Prompt AI{" "}
+                    <button
+                      type="button"
+                      className="ml-1 text-xs text-brand-600 hover:underline font-normal"
+                      onClick={() =>
+                        setValue(
+                          "caption_ai_prompt",
+                          `You are a TikTok caption writer.
+
+Read the video TITLE and DESCRIPTION below, then write an engaging English caption for reposting on TikTok.
+
+Rules:
+- Base the caption on BOTH the title and the description — capture what the video is actually about. If a description is given, use it as the main source of detail.
+- Stay accurate to the source content; do not invent facts.
+- Write natural, engaging English that hooks viewers and encourages watching.
+- Keep it concise but complete. The TikTok caption limit is 4000 characters — you do not need to fill it, just be compelling.
+- You may add a few relevant hashtags at the end.
+- Return only the caption text, with no explanation, labels, or surrounding quotes.`,
+                        )
+                      }
+                    >
+                      Dùng mẫu
+                    </button>
+                  </label>
                   <textarea
                     className="input min-h-[80px]"
                     maxLength={2000}
@@ -885,6 +916,44 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                   {errors.caption_ai_prompt && (
                     <p className="field-error">{errors.caption_ai_prompt.message}</p>
                   )}
+                  <div className="space-y-2 border border-slate-200 rounded-md p-3 bg-white">
+                    <p className="text-xs font-medium text-slate-600">
+                      Thử nghiệm prompt{" "}
+                      <span className="font-normal text-slate-400">(chỉ URL YouTube)</span>
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="input flex-1 text-xs"
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        value={testUrl}
+                        onChange={(e) => setTestUrl(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs whitespace-nowrap"
+                        disabled={!testUrl.trim() || !captionAiPrompt?.trim() || testPromptMut.isPending}
+                        onClick={() => testPromptMut.mutate({ url: testUrl, prompt: captionAiPrompt || "" })}
+                      >
+                        {testPromptMut.isPending ? "Đang chạy…" : "Thử nghiệm"}
+                      </button>
+                    </div>
+                    {testPromptMut.data && (
+                      <div className="space-y-1 text-xs">
+                        <div className="text-slate-500">Tiêu đề gốc: <span className="text-slate-700">{testPromptMut.data.original_title}</span></div>
+                        <div className="text-emerald-700 font-medium">AI title: {testPromptMut.data.ai_title}</div>
+                        {testPromptMut.data.description_snippet && (
+                          <details className="text-slate-400">
+                            <summary className="cursor-pointer">Mô tả nguồn</summary>
+                            <p className="mt-1 whitespace-pre-wrap">{testPromptMut.data.description_snippet}</p>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                    {testPromptMut.isError && (
+                      <p className="text-xs text-red-600">{(testPromptMut.error as any)?.response?.data?.detail || "Thử nghiệm thất bại"}</p>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500">
                     Kết quả được dùng qua biến{" "}
                     <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code> trong caption.

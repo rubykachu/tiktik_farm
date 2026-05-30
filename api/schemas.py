@@ -557,3 +557,14 @@ class LLMTestRequest(BaseModel):
 class LLMTestResponse(BaseModel):
     ok: bool
     message: str
+
+
+class PromptTestRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    prompt: str = Field(min_length=1, max_length=2000)
+
+
+class PromptTestResponse(BaseModel):
+    original_title: str
+    ai_title: str
+    description_snippet: str

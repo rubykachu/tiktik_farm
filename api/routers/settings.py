@@ -2,12 +2,14 @@
 connectivity probe for Settings → Test connection."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.db import get_session
 from api.schemas import (
     LLMTestRequest,
     LLMTestResponse,
+    PromptTestRequest,
+    PromptTestResponse,
     SettingsRead,
     SettingsUpdate,
 )
@@ -57,3 +59,64 @@ def test_llm(payload: LLMTestRequest):
         api_version=payload.api_version or None,
     )
     return LLMTestResponse(ok=ok, message=msg)
+
+
+@router.post("/llm/test-prompt", response_model=PromptTestResponse)
+def test_prompt(payload: PromptTestRequest):
+    from api.services.youtube_channel import get_video_info
+    from api.services.llm_config import get_default_llm_model
+
+    from api.schemas import is_douyin_url
+
+    if not is_llm_enabled():
+        raise HTTPException(status_code=400, detail="Tính năng LLM đang tắt trong Cài đặt")
+
+    if is_douyin_url(payload.url):
+        raise HTTPException(
+            status_code=422,
+            detail="Thử nghiệm prompt chỉ hỗ trợ URL YouTube. "
+            "Douyin yêu cầu tải video kèm xác thực cookie nên không thể xem trước.",
+        )
+
+    try:
+        info = get_video_info(payload.url)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Không thể tải thông tin video: {e}")
+
+    title = info["title"]
+    description = info["description"]
+
+    try:
+        if get_llm_mode() == "offline":
+            model, base_url = get_ollama_config()
+            if not model or not base_url:
+                raise HTTPException(status_code=400, detail="OLLAMA_MODEL/OLLAMA_BASE_URL chưa được cấu hình")
+            ai_title = llm.rewrite_title_offline(
+                payload.prompt, title=title, description=description,
+                model=model, base_url=base_url,
+            )
+        else:
+            default = get_default_llm_model()
+            if not default:
+                raise HTTPException(status_code=400, detail="Chưa có model AI mặc định trong Cài đặt")
+            ai_title = llm.rewrite_title(
+                payload.prompt, title=title, description=description,
+                model_id=default.model_id,
+                api_key_encrypted=default.api_key_encrypted,
+                api_base=default.api_base,
+                api_version=default.api_version,
+            )
+    except HTTPException:
+        raise
+    except llm.LLMCallFailed as e:
+        raise HTTPException(status_code=502, detail=f"LLM thất bại: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM thất bại: {e}")
+
+    return PromptTestResponse(
+        original_title=title,
+        ai_title=ai_title or title,
+        description_snippet=(description[:300] + "…") if len(description) > 300 else description,
+    )

@@ -57,6 +57,21 @@ def list_top_n(channel_url: str, n: int = 5) -> list[dict]:
     return results
 
 
+def get_video_info(video_url: str) -> dict:
+    """Fetch title and description without downloading. Returns {title, description}."""
+    if not is_youtube_url(video_url):
+        raise ValueError(f"Not a valid YouTube URL: {video_url}")
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+    if not info:
+        raise ValueError("Could not fetch video info")
+    return {
+        "title": info.get("title", ""),
+        "description": info.get("description", ""),
+    }
+
+
 def download(
     video_url: str,
     output_dir: str,
