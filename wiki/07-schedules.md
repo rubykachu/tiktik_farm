@@ -135,7 +135,7 @@ Pipeline có trường `channel_description` (tùy chọn, ≤ 2000 ký tự) đ
 ```
 <caption_ai_prompt>
 
-Description channel: <channel_description>
+Channel description: <channel_description>
 ```
 
 - `channel_description` trống → system prompt giữ nguyên, không thêm gì.
@@ -144,6 +144,32 @@ Description channel: <channel_description>
 - **Test-prompt preview** (nút "Thử nghiệm" trong form) cũng truyền `channel_description` để preview khớp với lúc chạy thật.
 
 **UI:** Section **Tải xuống** trong modal pipeline, bên dưới trường URL kênh.
+
+---
+
+## Run log — `ai_title` và `pushed_notify_at`
+
+### `ai_title` trên `VideoUpload`
+
+Mỗi bản ghi upload có thêm cột `ai_title` (TEXT, nullable):
+
+| Trường | Ý nghĩa |
+|--------|---------|
+| `youtube_title` | Tiêu đề gốc từ nguồn (YouTube hoặc Douyin — dùng chung cột). |
+| `ai_title` | Tiêu đề LLM đã viết lại, **trước khi** render vào `caption_template`. `NULL` khi không dùng AI. |
+| `rendered_caption` | Caption cuối cùng sau khi render template (đã có từ trước). |
+
+- Douyin: trước đây `youtube_title` bị bỏ trống — nay lưu `video.title` vào cột này.
+- **UI** (bảng video trong drill-down run): thêm cột **Title** và **AI Title**; hiển thị `—` khi null.
+- **Telegram**: khi `ai_title` khác `youtube_title`, tin nhắn hiển thị `<source_title> → <ai_title>` để dễ theo dõi kết quả LLM.
+
+### `pushed_notify_at` trên `PipelineRun`
+
+Cột `pushed_notify_at` (TEXT/datetime, nullable) ghi thời điểm Telegram notification gửi thành công cho run đó.
+
+- Được set chỉ khi `telegram.send_message()` thành công — lỗi gửi Telegram giữ giá trị `NULL`.
+- **UI** (bảng run): icon 🔔 nhỏ (Bell) sau cột Trạng thái khi `pushed_notify_at` không null; hover hiện timestamp.
+- Không ảnh hưởng logic tick — lỗi ghi `pushed_notify_at` không làm fail run.
 
 ---
 

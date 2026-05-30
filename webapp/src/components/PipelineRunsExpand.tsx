@@ -6,6 +6,10 @@ import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
 import { toast } from "sonner";
 
+function asUtc(s: string): Date {
+  return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+}
+
 type ClearRunsFn = (runIds: number[]) => void;
 
 type Props = { pipelineId: number };
@@ -206,9 +210,8 @@ function RunRow({
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </td>
         <td className="py-1.5 px-2 text-slate-600 tabular-nums">
-          {run.started_at ? new Date(run.started_at).toLocaleTimeString() : "—"}
+          {run.started_at ? asUtc(run.started_at).toLocaleTimeString() : "—"}
         </td>
-        <td className="py-1.5 px-2 text-slate-500">{run.trigger_reason}</td>
         <td className="py-1.5 px-2 tabular-nums">{run.pulled_count}</td>
         <td className="py-1.5 px-2 tabular-nums">{run.uploaded_count}</td>
         <td className="py-1.5 px-2 tabular-nums">{run.skipped_dup_count + run.skipped_exhausted_count}</td>
@@ -230,7 +233,7 @@ function RunRow({
         </td>
         <td className="py-1.5 px-1 w-5 text-center">
           {run.pushed_notify_at ? (
-            <span title={new Date(run.pushed_notify_at).toLocaleString()}>
+            <span title={asUtc(run.pushed_notify_at).toLocaleString()}>
               <Bell size={10} className="text-blue-400 inline" />
             </span>
           ) : null}
@@ -238,7 +241,7 @@ function RunRow({
       </tr>
       {expanded && (
         <tr className="bg-blue-50/40 border-l-4 border-blue-300">
-          <td colSpan={9} className="pb-2 pt-0">
+          <td colSpan={8} className="pb-2 pt-0">
             <VideosList pipelineId={pipelineId} runId={run.id} />
           </td>
         </tr>
@@ -275,14 +278,14 @@ function DayGroupRow({
         <td className="py-2 px-2 font-semibold text-slate-700 text-[11px]" colSpan={2}>
           {group.date}
         </td>
-        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={4}>
+        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={3}>
           <span>{group.runs.length} lần chạy</span>
           {group.totalUploaded > 0 && (
             <span className="ml-2 font-medium text-emerald-600">{group.totalUploaded} đã đăng</span>
           )}
         </td>
         <td className="py-2 px-2" colSpan={1}>
-          <span className={`text-[10px] ${groupLabel.cls}`}>{groupLabel.text}</span>
+          <span className={`text-[10px] whitespace-nowrap ${groupLabel.cls}`}>{groupLabel.text}</span>
         </td>
         <td className="py-2 px-2 text-right" onClick={(e) => e.stopPropagation()}>
           {finishedIds.length > 0 && (
@@ -303,7 +306,6 @@ function DayGroupRow({
           <tr className="bg-slate-50 border-l-4 border-slate-200">
             <th className="py-1 pl-8 pr-1 w-6" />
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thời gian</th>
-            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Kích hoạt</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Đã tải về</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Đã đăng</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Bỏ qua</th>
@@ -322,7 +324,7 @@ function DayGroupRow({
           ))}
           {/* Bottom border to close the day group */}
           <tr className="border-l-4 border-slate-200">
-            <td colSpan={9} className="h-1 bg-slate-50" />
+            <td colSpan={8} className="h-1 bg-slate-50" />
           </tr>
         </Fragment>
       )}
@@ -359,8 +361,18 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
   const groups = groupByDay(data);
 
   return (
-    <div className="bg-slate-50 border-t px-4 py-2">
-      <table className="w-full text-xs">
+    <div className="bg-slate-50 border-t py-2">
+      <table className="w-full text-xs table-fixed">
+        <colgroup>
+          <col className="w-6" />
+          <col className="w-28" />
+          <col className="w-16" />
+          <col className="w-16" />
+          <col className="w-16" />
+          <col className="w-16" />
+          <col className="w-24" />
+          <col className="w-5" />
+        </colgroup>
         <tbody>
           {groups.map((g) => (
             <DayGroupRow
