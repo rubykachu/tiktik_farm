@@ -72,6 +72,7 @@ class ChannelPipeline(SQLModel, table=True):
     upload_delay_minutes: Optional[int] = Field(default=0, ge=0, le=30)
 
     caption_ai_prompt: Optional[str] = Field(default=None)
+    channel_description: Optional[str] = Field(default=None)
 
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)

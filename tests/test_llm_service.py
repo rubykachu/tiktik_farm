@@ -123,6 +123,69 @@ class TestRewriteTitleErrors:
         assert "rate limit" in str(exc.value)
 
 
+class TestBuildSystemPrompt:
+    def test_empty_channel_description_returns_prompt_unchanged(self):
+        from api.services.llm import _build_system_prompt
+        prompt = "You are a TikTok caption writer."
+        assert _build_system_prompt(prompt, "") == prompt
+        assert _build_system_prompt(prompt) == prompt
+
+    def test_whitespace_only_channel_description_treated_as_empty(self):
+        from api.services.llm import _build_system_prompt
+        prompt = "base prompt"
+        assert _build_system_prompt(prompt, "   ") == prompt
+
+    def test_non_empty_channel_description_appended_to_prompt(self):
+        from api.services.llm import _build_system_prompt
+        out = _build_system_prompt("base", "kênh review xe điện")
+        assert "base" in out
+        assert "Description channel:" in out
+        assert "kênh review xe điện" in out
+
+    def test_long_channel_description_truncated(self):
+        from api.services.llm import _build_system_prompt, CHANNEL_DESC_MAX_CHARS
+        long_desc = "a" * (CHANNEL_DESC_MAX_CHARS + 500)
+        out = _build_system_prompt("base", long_desc)
+        assert "a" * (CHANNEL_DESC_MAX_CHARS + 1) not in out
+
+
+class TestRewriteTitleWithChannelDescription:
+    def test_channel_description_injected_into_system_message(self, isolated_secret):
+        from api.services import llm
+        from api.services.secrets import encrypt
+
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title(
+                "base prompt",
+                title="t",
+                description="d",
+                model_id="gemini/x",
+                api_key_encrypted=encrypt("k"),
+                channel_description="channel about food",
+            )
+        system_msg = mock.call_args.kwargs["messages"][0]["content"]
+        assert "Description channel:" in system_msg
+        assert "channel about food" in system_msg
+
+    def test_empty_channel_description_keeps_system_message_unchanged(self, isolated_secret):
+        from api.services import llm
+        from api.services.secrets import encrypt
+
+        prompt = "base prompt"
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title(
+                prompt,
+                title="t",
+                description="d",
+                model_id="gemini/x",
+                api_key_encrypted=encrypt("k"),
+            )
+        system_msg = mock.call_args.kwargs["messages"][0]["content"]
+        assert system_msg == prompt
+
+
 class TestTestCompletion:
     def test_returns_ok_on_success(self, isolated_secret):
         from api.services import llm

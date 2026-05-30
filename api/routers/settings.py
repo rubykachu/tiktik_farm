@@ -89,6 +89,7 @@ def test_prompt(payload: PromptTestRequest):
     description = info["description"]
 
     try:
+        channel_description = payload.channel_description or ""
         if get_llm_mode() == "offline":
             model, base_url = get_ollama_config()
             if not model or not base_url:
@@ -96,6 +97,7 @@ def test_prompt(payload: PromptTestRequest):
             ai_title = llm.rewrite_title_offline(
                 payload.prompt, title=title, description=description,
                 model=model, base_url=base_url,
+                channel_description=channel_description,
             )
         else:
             default = get_default_llm_model()
@@ -107,6 +109,7 @@ def test_prompt(payload: PromptTestRequest):
                 api_key_encrypted=default.api_key_encrypted,
                 api_base=default.api_base,
                 api_version=default.api_version,
+                channel_description=channel_description,
             )
     except HTTPException:
         raise

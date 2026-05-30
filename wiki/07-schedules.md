@@ -116,10 +116,34 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 | `{title}` | Tiêu đề video YouTube |
 | `{title_hashtag}` | Các token `#...` extract từ title, nối bằng space |
 | `{now}` | Thời điểm render, TZ `Asia/Ho_Chi_Minh`, format `YYYY-MM-DD HH:mm` |
+| `{ai_title}` | Caption do LLM viết (yêu cầu bật AI prompt) |
 
 - Biến lạ → **422** khi create/patch pipeline (Pydantic validation).
 - Sau khi thay biến: **dedupe hashtag** không phân biệt hoa thường, **giữ lần xuất hiện đầu** theo thứ tự trong chuỗi.
 - Output cắt **2200** ký tự.
+
+---
+
+## AI rewrite caption — `channel_description`
+
+Pipeline có trường `channel_description` (tùy chọn, ≤ 2000 ký tự) để **mô tả channel nguồn** (user tự nhập).
+
+**Mục đích:** khi tiêu đề/mô tả video từ nguồn mơ hồ hoặc vô nghĩa (ví dụ: `copyright ABC`), LLM không có context để sinh caption đúng, có thể vô tình giữ lại chữ ký bản quyền. `channel_description` cung cấp context nền về chủ đề channel để LLM bỏ qua nội dung sai lệch và sinh caption phù hợp.
+
+**Cách inject:** field được ghép vào **system prompt** (cuối `caption_ai_prompt`) với format:
+
+```
+<caption_ai_prompt>
+
+Description channel: <channel_description>
+```
+
+- `channel_description` trống → system prompt giữ nguyên, không thêm gì.
+- Truncate ở **1000 ký tự** khi inject để bảo vệ token budget.
+- Không phải biến trong `caption_template` (không thêm vào ALLOWED_VARS).
+- **Test-prompt preview** (nút "Thử nghiệm" trong form) cũng truyền `channel_description` để preview khớp với lúc chạy thật.
+
+**UI:** Section **Tải xuống** trong modal pipeline, bên dưới trường URL kênh.
 
 ---
 
@@ -166,7 +190,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
     - *Lặp lại mỗi* N `ngày` hoặc `phút` (**không còn `hours`**)
     - *Chạy lúc* HH:MM — chỉ hiện khi unit là `days`
     - Checkbox **"Chạy nhiều lần trong ngày?"** — khi bật hiện thêm *Chạy đến lúc* + *Lặp lại mỗi N phút* (thay thế field "Window end" cũ). Tắt → tự clear 2 field. Edit pipeline có window đã set → checkbox tự bật.
-  - **Tải xuống**: source type (chỉ hiện khi tạo mới), Douyin cookie (nếu Douyin), URL kênh, số video mỗi lần chạy, thời gian chờ giữa các video, max duration
+  - **Tải xuống**: source type (chỉ hiện khi tạo mới), Douyin cookie (nếu Douyin), URL kênh, mô tả channel (tùy chọn — context cho AI), số video mỗi lần chạy, thời gian chờ giữa các video, max duration
   - **Đăng tải**: danh sách tài khoản TikTok, caption template, AI rewrite (collapsible), tùy chọn nâng cao — comment/duet/stitch/riêng tư (collapsible)
   - **Thông báo**: Telegram bot token + chat ID + auto-detect + gửi tin test
 - Validation chạy khi **submit** (không phải khi blur từng field).

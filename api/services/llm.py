@@ -30,6 +30,7 @@ litellm.success_callback = []
 litellm.failure_callback = []
 
 DESCRIPTION_MAX_CHARS = 2000  # ~500 input tokens → cheap on Gemini Flash
+CHANNEL_DESC_MAX_CHARS = 1000  # cap channel_description injection to protect token budget
 DEFAULT_TIMEOUT = 60          # seconds; longer captions + local Ollama need headroom
 MAX_OUTPUT_TOKENS = 1200      # ~4000 chars, the TikTok caption limit
 
@@ -47,6 +48,17 @@ def _decrypt_required(api_key_encrypted: str) -> str:
     if not plain:
         raise LLMNotConfigured("LLM API key missing or unreadable")
     return plain
+
+
+def _build_system_prompt(prompt: str, channel_description: str = "") -> str:
+    """Append channel context block to system prompt when provided."""
+    cd = truncate(channel_description.strip(), CHANNEL_DESC_MAX_CHARS, suffix="")
+    if not cd:
+        return prompt
+    return (
+        f"{prompt}\n\n"
+        f"Description channel: {cd}"
+    )
 
 
 def _extra_kwargs(
@@ -71,8 +83,10 @@ def rewrite_title(
     api_key_encrypted: str,
     api_base: str | None = None,
     api_version: str | None = None,
+    channel_description: str = "",
 ) -> str:
     api_key = _decrypt_required(api_key_encrypted)
+    system_msg = _build_system_prompt(prompt, channel_description)
     user_msg = (
         f"Title: {title}\n"
         f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
@@ -82,7 +96,7 @@ def rewrite_title(
             model=model_id,
             api_key=api_key,
             messages=[
-                {"role": "system", "content": prompt},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=MAX_OUTPUT_TOKENS,
@@ -104,8 +118,10 @@ def rewrite_title_offline(
     *,
     model: str,
     base_url: str,
+    channel_description: str = "",
 ) -> str:
     """Call a local Ollama instance. No API key required."""
+    system_msg = _build_system_prompt(prompt, channel_description)
     user_msg = (
         f"Title: {title}\n"
         f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
@@ -115,7 +131,7 @@ def rewrite_title_offline(
             model=f"ollama/{model}",
             api_base=base_url,
             messages=[
-                {"role": "system", "content": prompt},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=MAX_OUTPUT_TOKENS,

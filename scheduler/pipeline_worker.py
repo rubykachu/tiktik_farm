@@ -332,7 +332,9 @@ def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
     return None
 
 
-def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
+def _rewrite_with_llm(
+    prompt: str, title: str, description: str, channel_description: str = ""
+) -> str:
     """Return the rewritten title, or `title` on any failure path."""
     if not is_llm_enabled():
         log.warning("LLM globally disabled; using raw title: %s", title)
@@ -350,6 +352,7 @@ def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
                 description=description,
                 model=model,
                 base_url=base_url,
+                channel_description=channel_description,
             )
         except llm.LLMCallFailed as e:
             log.warning("Ollama rewrite skipped: %s", e)
@@ -369,6 +372,7 @@ def _rewrite_with_llm(prompt: str, title: str, description: str) -> str:
             api_key_encrypted=default.api_key_encrypted,
             api_base=default.api_base,
             api_version=default.api_version,
+            channel_description=channel_description,
         )
     except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
         log.warning("LLM rewrite skipped: %s", e)
@@ -519,6 +523,7 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                             pipeline.caption_ai_prompt or "",
                             video.title,
                             video.description,
+                            pipeline.channel_description or "",
                         )
                         if rewritten and rewritten != video.title:
                             ai_title_by_aweme[aweme_id] = rewritten
@@ -741,6 +746,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                             pipeline.caption_ai_prompt or "",
                             video_title,
                             description,
+                            pipeline.channel_description or "",
                         )
                         # Only cache on success. A transient LLM failure must
                         # not poison the cache for the rest of the tick.

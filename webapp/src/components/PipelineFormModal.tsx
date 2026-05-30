@@ -25,6 +25,7 @@ const baseSchema = z.object({
   max_duration_seconds: z.coerce.number().int().min(1).optional().or(z.literal("")),
   caption_template: z.string().min(1, "Required").max(2200),
   caption_ai_prompt: z.string().max(2000).optional().default(""),
+  channel_description: z.string().max(2000).optional().default(""),
   allow_comment: z.coerce.number().min(0).max(1),
   allow_duet: z.coerce.number().min(0).max(1),
   allow_stitch: z.coerce.number().min(0).max(1),
@@ -207,6 +208,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   max_duration_seconds: "" as any,
   caption_template: "{title}",
   caption_ai_prompt: "",
+  channel_description: "",
   allow_comment: 1,
   allow_duet: 0,
   allow_stitch: 0,
@@ -313,6 +315,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         max_duration_seconds: pipeline.max_duration_seconds ?? ("" as any),
         caption_template: pipeline.caption_template,
         caption_ai_prompt: pipeline.caption_ai_prompt ?? "",
+        channel_description: pipeline.channel_description ?? "",
         allow_comment: uploadOpts.allow_comment as 0 | 1,
         allow_duet: uploadOpts.allow_duet as 0 | 1,
         allow_stitch: uploadOpts.allow_stitch as 0 | 1,
@@ -349,9 +352,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
     onError: handleServerError,
   });
 
+  const channelDescriptionValue = watch("channel_description");
+
   const testPromptMut = useMutation({
     mutationFn: ({ url, prompt }: { url: string; prompt: string }) =>
-      Settings.testPrompt(url, prompt),
+      Settings.testPrompt(url, prompt, channelDescriptionValue || undefined),
   });
 
   function handleServerError(err: any) {
@@ -379,6 +384,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         ? undefined
         : Number(data.max_duration_seconds);
     const aiPrompt = (data.caption_ai_prompt || "").trim() || null;
+    const channelDescription = (data.channel_description || "").trim() || null;
     const windowEndTime = (data.window_end_time || "").trim()
       ? localHHMMtoUTC(data.window_end_time.trim())
       : null;
@@ -406,6 +412,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt,
+        channel_description: channelDescription,
         upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur ?? null,
@@ -431,6 +438,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         first_fire_at: firstFireAt,
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt ?? undefined,
+        channel_description: channelDescription ?? undefined,
         upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur,
@@ -751,6 +759,21 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               />
               {errors.channel_url && (
                 <p className="field-error">{errors.channel_url.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="label">
+                Mô tả channel{" "}
+                <span className="text-slate-400 font-normal">(tùy chọn — dùng cho AI)</span>
+              </label>
+              <textarea
+                className="input min-h-[60px]"
+                maxLength={2000}
+                {...register("channel_description")}
+                placeholder="Ví dụ: Kênh review xe điện và công nghệ Trung Quốc. Dùng để giúp AI hiểu context khi tiêu đề/mô tả nguồn mơ hồ."
+              />
+              {errors.channel_description && (
+                <p className="field-error">{errors.channel_description.message}</p>
               )}
             </div>
             <div>

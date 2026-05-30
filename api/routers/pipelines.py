@@ -54,6 +54,7 @@ def _to_read(row: ChannelPipeline) -> dict:
         "max_duration_seconds": row.max_duration_seconds,
         "upload_delay_minutes": row.upload_delay_minutes or 0,
         "caption_ai_prompt": row.caption_ai_prompt,
+        "channel_description": row.channel_description,
         "window_end_time": row.window_end_time,
         "window_delay_minutes": row.window_delay_minutes,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
@@ -142,6 +143,7 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         max_duration_seconds=payload.max_duration_seconds,
         upload_delay_minutes=payload.upload_delay_minutes,
         caption_ai_prompt=(payload.caption_ai_prompt or None),
+        channel_description=payload.channel_description or None,
         window_end_time=payload.window_end_time or None,
         window_delay_minutes=payload.window_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
@@ -250,6 +252,9 @@ def update_pipeline(
         changed = True
     if "caption_ai_prompt" in payload.model_fields_set:
         row.caption_ai_prompt = payload.caption_ai_prompt or None
+        changed = True
+    if "channel_description" in payload.model_fields_set:
+        row.channel_description = payload.channel_description or None
         changed = True
     if "window_end_time" in payload.model_fields_set:
         row.window_end_time = payload.window_end_time or None

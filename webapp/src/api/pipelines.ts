@@ -17,6 +17,7 @@ export interface Pipeline {
   max_duration_seconds: number | null;
   upload_delay_minutes: number;
   caption_ai_prompt: string | null;
+  channel_description: string | null;
   window_end_time: string | null;
   window_delay_minutes: number | null;
   douyin_cookie_id: number | null;
@@ -48,6 +49,7 @@ export interface PipelineCreate {
   max_duration_seconds?: number | null;
   upload_delay_minutes?: number;
   caption_ai_prompt?: string | null;
+  channel_description?: string | null;
   window_end_time?: string | null;
   window_delay_minutes?: number | null;
   telegram_bot_token?: string;
@@ -69,6 +71,7 @@ export interface PipelineUpdate {
   max_duration_seconds?: number | null;
   upload_delay_minutes?: number;
   caption_ai_prompt?: string | null;
+  channel_description?: string | null;
   window_end_time?: string | null;
   window_delay_minutes?: number | null;
   telegram_bot_token?: string;

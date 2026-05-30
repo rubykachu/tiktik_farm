@@ -36,7 +36,10 @@ export const Settings = {
         ...(api_version ? { api_version } : {}),
       })
       .then((r) => r.data),
-  testPrompt: (url: string, prompt: string) =>
-    api.post<PromptTestResult>("/settings/llm/test-prompt", { url, prompt })
-      .then((r) => r.data),
+  testPrompt: (url: string, prompt: string, channel_description?: string) =>
+    api.post<PromptTestResult>("/settings/llm/test-prompt", {
+      url,
+      prompt,
+      ...(channel_description ? { channel_description } : {}),
+    }).then((r) => r.data),
 };
