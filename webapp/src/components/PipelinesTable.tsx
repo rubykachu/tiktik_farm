@@ -20,8 +20,11 @@ function asUtcDate(s: string): Date {
   return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
 }
 
+const UNIT_VI: Record<string, string> = { minutes: "phút", hours: "giờ", days: "ngày", weeks: "tuần" };
+
 function intervalLabel(p: Pipeline): string {
-  return `${p.interval_value} ${p.interval_unit}`;
+  const unit = UNIT_VI[p.interval_unit] ?? p.interval_unit;
+  return `${p.interval_value} ${unit}`;
 }
 
 function channelLabel(p: Pipeline): string {
@@ -137,7 +140,16 @@ export default function PipelinesTable({ onEdit }: Props) {
       )}
 
       <div className="card p-0 overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[10%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[8%]" />
+            <col className="w-[18%]" />
+            <col className="w-[10%]" />
+            <col className="w-[24%]" />
+          </colgroup>
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="text-left p-3">Tên</th>
@@ -202,7 +214,7 @@ export default function PipelinesTable({ onEdit }: Props) {
                     {asUtcDate(p.next_fire_at).toLocaleString()}
                   </td>
                   <td className="p-3">
-                    <span className={"chip " + stateClass(p.state)}>{p.state}</span>
+                    <span className={"chip " + stateClass(p.state)}>{p.state === "active" ? "hoạt động" : "tạm dừng"}</span>
                   </td>
                   <td className="p-3 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     {(() => {

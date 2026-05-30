@@ -503,7 +503,7 @@ def list_run_videos(
             "account_id": v.account_id,
             "youtube_video_id": v.youtube_video_id,
             "youtube_url": v.youtube_url,
-            "source_title": v.youtube_title,
+            "source_title": v.source_title,
             "douyin_aweme_id": v.douyin_aweme_id,
             "tiktok_video_id": v.tiktok_video_id,
             "tiktok_url": v.tiktok_url,
