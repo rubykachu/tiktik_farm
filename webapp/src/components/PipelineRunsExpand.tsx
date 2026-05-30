@@ -331,7 +331,7 @@ function DayGroupRow({
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Bỏ qua</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thất bại</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Trạng thái</th>
-            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Notify</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thông báo</th>
           </tr>
           {group.runs.map((r) => (
             <RunRow
