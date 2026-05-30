@@ -332,6 +332,12 @@ def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
     return None
 
 
+def _sanitize_llm_title(value: str) -> str:
+    """Strip control characters from LLM output and cap at 500 chars."""
+    import unicodedata
+    return "".join(c for c in value if not unicodedata.category(c).startswith("C"))[:500]
+
+
 def _rewrite_with_llm(
     prompt: str, title: str, description: str, channel_description: str = ""
 ) -> str:
@@ -357,7 +363,7 @@ def _rewrite_with_llm(
         except llm.LLMCallFailed as e:
             log.warning("Ollama rewrite skipped: %s", e)
             return title
-        return rewritten or title
+        return _sanitize_llm_title(rewritten) if rewritten else title
 
     default = get_default_llm_model()
     if default is None:
@@ -377,7 +383,7 @@ def _rewrite_with_llm(
     except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
         log.warning("LLM rewrite skipped: %s", e)
         return title
-    return rewritten or title
+    return _sanitize_llm_title(rewritten) if rewritten else title
 
 
 def _load_douyin_cookie(pipeline: ChannelPipeline) -> Optional[dict]:

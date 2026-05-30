@@ -47,35 +47,56 @@ def apply_schema_patches(engine: Engine) -> None:
             rows = conn.exec_driver_sql("PRAGMA table_info(channel_pipelines)").fetchall()
             col_names = {row[1] for row in rows}
             if "upload_delay_minutes" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN "
-                    "upload_delay_minutes INTEGER NOT NULL DEFAULT 0"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "upload_delay_minutes INTEGER NOT NULL DEFAULT 0"
+                    )
+                except Exception:
+                    pass
             if "caption_ai_prompt" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN caption_ai_prompt TEXT"
+                    )
+                except Exception:
+                    pass
             if "source_type" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN "
-                    "source_type TEXT NOT NULL DEFAULT 'youtube'"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "source_type TEXT NOT NULL DEFAULT 'youtube'"
+                    )
+                except Exception:
+                    pass
             if "douyin_cookie_id" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN douyin_cookie_id INTEGER"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN douyin_cookie_id INTEGER"
+                    )
+                except Exception:
+                    pass
             if "window_end_time" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN window_end_time TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN window_end_time TEXT"
+                    )
+                except Exception:
+                    pass
             if "window_delay_minutes" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN window_delay_minutes INTEGER"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN window_delay_minutes INTEGER"
+                    )
+                except Exception:
+                    pass
             if "channel_description" not in col_names:
-                conn.exec_driver_sql(
-                    "ALTER TABLE channel_pipelines ADD COLUMN channel_description TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN channel_description TEXT"
+                    )
+                except Exception:
+                    pass
 
         has_pipeline_runs = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"
@@ -84,13 +105,19 @@ def apply_schema_patches(engine: Engine) -> None:
             pr_rows = conn.exec_driver_sql("PRAGMA table_info(pipeline_runs)").fetchall()
             pr_cols = {row[1] for row in pr_rows}
             if "status_text" not in pr_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE pipeline_runs ADD COLUMN status_text TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE pipeline_runs ADD COLUMN status_text TEXT"
+                    )
+                except Exception:
+                    pass
             if "pushed_notify_at" not in pr_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE pipeline_runs ADD COLUMN pushed_notify_at TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE pipeline_runs ADD COLUMN pushed_notify_at TEXT"
+                    )
+                except Exception:
+                    pass
 
         # video_uploads: douyin_aweme_id for Phase 4
         has_video_uploads = conn.exec_driver_sql(
@@ -100,13 +127,19 @@ def apply_schema_patches(engine: Engine) -> None:
             vu_rows = conn.exec_driver_sql("PRAGMA table_info(video_uploads)").fetchall()
             vu_cols = {row[1] for row in vu_rows}
             if "douyin_aweme_id" not in vu_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE video_uploads ADD COLUMN douyin_aweme_id TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE video_uploads ADD COLUMN douyin_aweme_id TEXT"
+                    )
+                except Exception:
+                    pass
             if "ai_title" not in vu_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE video_uploads ADD COLUMN ai_title TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE video_uploads ADD COLUMN ai_title TEXT"
+                    )
+                except Exception:
+                    pass
 
         # Azure support: api_base + api_version on llm_models. Guard against
         # a legacy DB that predates the table (init_db not called yet in some
@@ -118,13 +151,19 @@ def apply_schema_patches(engine: Engine) -> None:
             llm_rows = conn.exec_driver_sql("PRAGMA table_info(llm_models)").fetchall()
             llm_cols = {row[1] for row in llm_rows}
             if "api_base" not in llm_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE llm_models ADD COLUMN api_base TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE llm_models ADD COLUMN api_base TEXT"
+                    )
+                except Exception:
+                    pass
             if "api_version" not in llm_cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE llm_models ADD COLUMN api_version TEXT"
-                )
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE llm_models ADD COLUMN api_version TEXT"
+                    )
+                except Exception:
+                    pass
 
 
 def seed_app_settings(engine: Engine) -> None:
