@@ -157,7 +157,9 @@ function toMinutes(hhmm: string): number {
 }
 
 function toLocalTime(iso?: string): string {
-  const d = iso ? new Date(iso) : new Date();
+  // Naive datetime strings from API have no timezone suffix — treat as UTC
+  const str = iso && !/Z|[+-]\d{2}:\d{2}$/.test(iso) ? iso + "Z" : iso;
+  const d = str ? new Date(str) : new Date();
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
@@ -167,6 +169,20 @@ function getTimezoneLabel(): string {
   const h = Math.floor(Math.abs(offset) / 60).toString().padStart(2, "0");
   const m = (Math.abs(offset) % 60).toString().padStart(2, "0");
   return `GMT${sign}${h}:${m}`;
+}
+
+function localHHMMtoUTC(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return `${d.getUTCHours().toString().padStart(2, "0")}:${d.getUTCMinutes().toString().padStart(2, "0")}`;
+}
+
+function utcHHMMtoLocal(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date();
+  d.setUTCHours(h, m, 0, 0);
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
 function timeToNextOccurrence(timeStr: string): Date {
@@ -301,7 +317,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         allow_stitch: uploadOpts.allow_stitch as 0 | 1,
         visibility_type: uploadOpts.visibility_type as 0 | 1,
         account_ids: accountIds,
-        window_end_time: pipeline.window_end_time ?? "",
+        window_end_time: pipeline.window_end_time ? utcHHMMtoLocal(pipeline.window_end_time) : "",
         window_delay_minutes: (pipeline.window_delay_minutes ?? "") as any,
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
@@ -357,7 +373,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         ? undefined
         : Number(data.max_duration_seconds);
     const aiPrompt = (data.caption_ai_prompt || "").trim() || null;
-    const windowEndTime = (data.window_end_time || "").trim() || null;
+    const windowEndTime = (data.window_end_time || "").trim()
+      ? localHHMMtoUTC(data.window_end_time.trim())
+      : null;
     const windowDelayMinutes =
       data.window_delay_minutes === "" || data.window_delay_minutes === undefined
         ? null

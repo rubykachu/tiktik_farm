@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, Play as RunNow, Pencil, Trash2 } from "lucide-react";
 import { Pipelines, Pipeline } from "../api/pipelines";
+import { Accounts } from "../api/client";
 import { toast } from "sonner";
 import ConfirmDialog from "./ConfirmDialog";
 import PipelineRunsExpand from "./PipelineRunsExpand";
@@ -15,15 +16,28 @@ const stateClass = (s: string) =>
     ? "bg-emerald-100 text-emerald-700"
     : "bg-amber-100 text-amber-700";
 
+function asUtcDate(s: string): Date {
+  return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
+}
+
 function intervalLabel(p: Pipeline): string {
   return `${p.interval_value} ${p.interval_unit}`;
 }
 
-function accountCount(p: Pipeline): number {
+function channelLabel(p: Pipeline): string {
+  const url = p.channel_url;
+  if (p.source_type !== "douyin") {
+    const m = url.match(/@[\w.-]+/);
+    if (m) return m[0];
+  }
+  return url.length > 9 ? "…" + url.slice(-8) : url;
+}
+
+function accountIds(p: Pipeline): number[] {
   try {
-    return (JSON.parse(p.account_ids_json) as number[]).length;
+    return JSON.parse(p.account_ids_json) as number[];
   } catch {
-    return 0;
+    return [];
   }
 }
 
@@ -34,6 +48,19 @@ export default function PipelinesTable({ onEdit }: Props) {
     queryFn: Pipelines.list,
     refetchInterval: 5000,
   });
+
+  const { data: accountsData } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: Accounts.list,
+  });
+
+  const accountLabel = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const a of accountsData ?? []) {
+      m.set(a.id, (a.display_name || a.username).trim() || a.username);
+    }
+    return m;
+  }, [accountsData]);
 
   const [deleteTarget, setDeleteTarget] = useState<Pipeline | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -115,7 +142,7 @@ export default function PipelinesTable({ onEdit }: Props) {
             <tr>
               <th className="text-left p-3">Tên</th>
               <th className="text-left p-3">Kênh</th>
-              <th className="text-left p-3">Tài khoản</th>
+              <th className="text-left p-3">T/khoản TikTok</th>
               <th className="text-left p-3">Chu kỳ</th>
               <th className="text-left p-3">Lần chạy tới</th>
               <th className="text-left p-3">Trạng thái</th>
@@ -152,13 +179,27 @@ export default function PipelinesTable({ onEdit }: Props) {
                   onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                 >
                   <td className="p-3 font-medium">{p.name}</td>
-                  <td className="p-3 text-slate-600 max-w-xs truncate" title={p.channel_url}>
-                    {p.channel_url}
+                  <td className="p-3 text-slate-600 max-w-xs truncate">
+                    <a
+                      href={p.channel_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                      title={p.channel_url}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {channelLabel(p)}
+                    </a>
                   </td>
-                  <td className="p-3 text-slate-600">{accountCount(p)}</td>
+                  <td className="p-3 text-slate-600 text-xs">
+                    {accountIds(p).map((id) => {
+                      const name = accountLabel.get(id) ?? `#${id}`;
+                      return name.length > 8 ? name.slice(0, 8) + "…" : name;
+                    }).join(", ") || "—"}
+                  </td>
                   <td className="p-3 text-slate-600">{intervalLabel(p)}</td>
                   <td className="p-3 text-slate-600 text-xs">
-                    {new Date(p.next_fire_at).toLocaleString()}
+                    {asUtcDate(p.next_fire_at).toLocaleString()}
                   </td>
                   <td className="p-3">
                     <span className={"chip " + stateClass(p.state)}>{p.state}</span>
@@ -197,7 +238,7 @@ export default function PipelinesTable({ onEdit }: Props) {
                             </button>
                             <button
                               className="text-xs text-slate-600"
-                              onClick={() => toggleState.mutate(p)}
+                              onClick={() => window.confirm(`Tạm dừng lịch "${p.name}"?`) && toggleState.mutate(p)}
                             >
                               <Pause size={14} className="inline" /> Tạm dừng
                             </button>
@@ -208,14 +249,14 @@ export default function PipelinesTable({ onEdit }: Props) {
                         <>
                           <button
                             className="text-xs text-slate-600"
-                            onClick={() => runNowMut.mutate(p.id)}
+                            onClick={() => window.confirm(`Chạy ngay lịch "${p.name}"?`) && runNowMut.mutate(p.id)}
                             title="Chạy ngay lần này"
                           >
                             <RunNow size={14} className="inline" /> Chạy ngay
                           </button>
                           <button
                             className="text-xs text-slate-600"
-                            onClick={() => toggleState.mutate(p)}
+                            onClick={() => window.confirm(`Tạm dừng lịch "${p.name}"?`) && toggleState.mutate(p)}
                           >
                             <Pause size={14} className="inline" /> Tạm dừng
                           </button>

@@ -460,11 +460,17 @@ class TestAdvanceNextFire:
 
 
 class TestWindowScheduling:
-    def _make_window_pipeline(self, session: Session, next_fire_at: datetime) -> ChannelPipeline:
+    def _make_window_pipeline(
+        self,
+        session: Session,
+        next_fire_at: datetime,
+        first_fire_at: datetime | None = None,
+    ) -> ChannelPipeline:
         return _make_pipeline(
             session,
             interval_value=1,
             interval_unit="days",
+            first_fire_at=first_fire_at or next_fire_at,
             next_fire_at=next_fire_at,
             window_end_time="00:30",
             window_delay_minutes=5,
@@ -501,10 +507,16 @@ class TestWindowScheduling:
             assert result == expected
 
     def test_past_window_jumps_to_next_cycle(self):
-        # next_fire_at = 00:30, delay=5 → candidate 00:35 > window_close 00:30 → use interval
-        base = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+        # Window opens at first_fire_at time-of-day (00:00) and closes 00:30.
+        # next_fire_at = 00:30 (last in-window fire), delay=5 → candidate 00:35
+        # > window_close → jump to next cycle. Next day must reopen at the
+        # window START (00:00), NOT drift to the window-end (00:30).
+        first_fire = datetime(2099, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
+        base = datetime(2099, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
         with Session(_api_db.engine) as s:
-            pipeline = self._make_window_pipeline(s, next_fire_at=base)
+            pipeline = self._make_window_pipeline(
+                s, next_fire_at=base, first_fire_at=first_fire
+            )
             s.expunge(pipeline)
 
         advance_next_fire(pipeline, "scheduled")
@@ -512,8 +524,29 @@ class TestWindowScheduling:
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
             result = _ensure_aware(fresh.next_fire_at)
-            # base is in 2026 (past), so candidate_a = base+1day wins over candidate_b=now+1day
-            assert result == datetime(2026, 6, 2, 0, 30, 0, tzinfo=timezone.utc)
+            assert result == datetime(2099, 6, 2, 0, 0, 0, tzinfo=timezone.utc)
+
+    def test_past_window_skips_missed_cycles_after_downtime(self):
+        # Window closed days ago (downtime) → reopen at the next window START
+        # strictly after now, anchored to first_fire_at time-of-day (00:00),
+        # without firing every missed day (no tick storm).
+        now = now_utc()
+        first_fire = now - timedelta(days=5)
+        base = first_fire + timedelta(minutes=30)  # last in-window fire
+        with Session(_api_db.engine) as s:
+            pipeline = self._make_window_pipeline(
+                s, next_fire_at=base, first_fire_at=first_fire
+            )
+            s.expunge(pipeline)
+
+        advance_next_fire(pipeline, "scheduled")
+
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            result = _ensure_aware(fresh.next_fire_at)
+            assert result > now
+            assert result <= now + timedelta(days=1)
+            assert (result.hour, result.minute) == (first_fire.hour, first_fire.minute)
 
     def test_no_window_unchanged(self):
         # Pipeline without window fields → original interval logic
@@ -1217,13 +1250,15 @@ class TestClaimOrdering:
 
 
 class TestCheckDiskSpace:
+    @patch("scheduler.pipeline_worker.os.makedirs")
     @patch("scheduler.pipeline_worker.os.statvfs")
-    def test_uses_pipeline_tmp_dir_when_set(self, mock_statvfs, monkeypatch):
+    def test_uses_pipeline_tmp_dir_when_set(self, mock_statvfs, mock_makedirs, monkeypatch):
         monkeypatch.setenv("PIPELINE_TMP_DIR", "/data/pipeline_tmp")
         mock_statvfs.return_value = MagicMock(f_bavail=1_000_000, f_frsize=4096)
 
         _check_disk_space()
 
+        mock_makedirs.assert_called_once_with("/data/pipeline_tmp", exist_ok=True)
         mock_statvfs.assert_called_once_with("/data/pipeline_tmp")
 
     @patch("scheduler.pipeline_worker.os.statvfs")

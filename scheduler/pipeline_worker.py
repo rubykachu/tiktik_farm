@@ -241,6 +241,7 @@ class LockHeartbeat:
 def _check_disk_space() -> bool:
     """Return False if disk free < 1GB."""
     path = os.environ.get("PIPELINE_TMP_DIR") or tempfile.gettempdir()
+    os.makedirs(path, exist_ok=True)
     stat = os.statvfs(path)
     free_bytes = stat.f_bavail * stat.f_frsize
     return free_bytes >= 1_073_741_824
@@ -930,13 +931,26 @@ def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str) -> None:
         if trigger_reason == "scheduled":
             prev = _ensure_aware(fresh.next_fire_at)
             in_window = _next_fire_in_window(fresh, prev)
-            if in_window is not None:
+            if in_window is not None and in_window > now:
                 fresh.next_fire_at = in_window
             else:
                 interval = _interval_to_timedelta(fresh.interval_value, fresh.interval_unit)
-                candidate_a = prev + interval
-                candidate_b = now + interval
-                fresh.next_fire_at = max(candidate_a, candidate_b)
+                if fresh.window_end_time:
+                    # Window closed → reopen next cycle at first_fire_at's
+                    # time-of-day. Anchoring to first_fire_at (not prev, which
+                    # is the last in-window fire) stops the daily window-start
+                    # from drifting toward window_end_time.
+                    ffa = _ensure_aware(fresh.first_fire_at)
+                    nxt = prev.replace(
+                        hour=ffa.hour, minute=ffa.minute, second=0, microsecond=0
+                    ) + interval
+                    while nxt <= now:  # skip missed cycles after downtime
+                        nxt += interval
+                    fresh.next_fire_at = nxt
+                else:
+                    candidate_a = prev + interval
+                    candidate_b = now + interval
+                    fresh.next_fire_at = max(candidate_a, candidate_b)
         elif trigger_reason == "manual":
             # CAS: only clear if value hasn't changed during tick
             claimed_at = pipeline.run_now_requested_at

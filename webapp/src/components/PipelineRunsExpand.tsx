@@ -1,9 +1,12 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
+import { toast } from "sonner";
+
+type ClearRunsFn = (runIds: number[]) => void;
 
 type Props = { pipelineId: number };
 
@@ -214,14 +217,17 @@ function RunRow({
 function DayGroupRow({
   group,
   pipelineId,
+  onClearDay,
 }: {
   group: DayGroup;
   pipelineId: number;
+  onClearDay: ClearRunsFn;
 }) {
   const [open, setOpen] = useState(group.hasRunning); // auto-open if live
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
   const groupLabel = groupStatusLabel(group);
+  const finishedIds = group.runs.filter((r) => r.finished_at).map((r) => r.id);
 
   return (
     <Fragment>
@@ -242,8 +248,19 @@ function DayGroupRow({
             <span className="ml-2 text-emerald-700">{group.totalUploaded} đã đăng</span>
           )}
         </td>
-        <td className="p-1" colSpan={2}>
+        <td className="p-1" colSpan={1}>
           <span className={`text-[10px] ${groupLabel.cls}`}>{groupLabel.text}</span>
+        </td>
+        <td className="p-1 text-right" onClick={(e) => e.stopPropagation()}>
+          {finishedIds.length > 0 && (
+            <button
+              className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+              onClick={() => onClearDay(finishedIds)}
+              title={`Xóa ${finishedIds.length} log ngày ${group.date}`}
+            >
+              <Trash2 size={12} /> Xóa
+            </button>
+          )}
         </td>
       </tr>
 
@@ -278,6 +295,7 @@ function DayGroupRow({
 const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at);
 
 export default function PipelineRunsExpand({ pipelineId }: Props) {
+  const qc = useQueryClient();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["pipeline-runs", pipelineId],
     queryFn: () => Pipelines.listRuns(pipelineId),
@@ -285,6 +303,15 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
       const runs = query.state.data;
       return runs && hasRunning(runs) ? 5000 : false;
     },
+  });
+
+  const clearMut = useMutation({
+    mutationFn: (runIds: number[]) => Pipelines.clearRuns(pipelineId, runIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pipeline-runs", pipelineId] });
+      toast.success("Đã xóa log");
+    },
+    onError: (e: any) => toast.error("Xóa log thất bại", { description: e.message }),
   });
 
   if (isLoading) return <div className="p-3 text-xs text-slate-400">Đang tải…</div>;
@@ -298,7 +325,12 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
       <table className="w-full text-xs">
         <tbody>
           {groups.map((g) => (
-            <DayGroupRow key={g.date} group={g} pipelineId={pipelineId} />
+            <DayGroupRow
+              key={g.date}
+              group={g}
+              pipelineId={pipelineId}
+              onClearDay={(runIds) => clearMut.mutate(runIds)}
+            />
           ))}
         </tbody>
       </table>

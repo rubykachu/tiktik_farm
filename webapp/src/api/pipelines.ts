@@ -122,4 +122,9 @@ export const Pipelines = {
     api.get<PipelineRunItem[]>(`/pipelines/${pipelineId}/runs`, { params: { page } }).then((r) => r.data),
   listRunVideos: (pipelineId: number, runId: number) =>
     api.get<VideoUploadItem[]>(`/pipelines/${pipelineId}/runs/${runId}/videos`).then((r) => r.data),
+  clearRuns: (pipelineId: number, runIds: number[]) => {
+    const params = new URLSearchParams();
+    runIds.forEach((id) => params.append("run_ids", String(id)));
+    return api.delete(`/pipelines/${pipelineId}/runs?${params}`);
+  },
 };

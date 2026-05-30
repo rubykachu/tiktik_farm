@@ -11,7 +11,7 @@ export default function App() {
     <div className="min-h-screen flex">
       <Toaster position="top-right" richColors closeButton />
       <Sidebar />
-      <main className="flex-1 p-8 max-w-6xl">
+      <main className="flex-1 p-8 max-w-7xl">
         <Routes>
           <Route path="/" element={<Navigate to="/accounts" replace />} />
           <Route path="/accounts" element={<AccountsPage />} />

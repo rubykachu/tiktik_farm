@@ -450,6 +450,26 @@ def list_runs(
     ]
 
 
+@router.delete("/{pipeline_id}/runs", status_code=status.HTTP_204_NO_CONTENT)
+def clear_runs(
+    pipeline_id: int,
+    run_ids: list[int] = Query(default=[]),
+    session: Session = Depends(get_session),
+):
+    pipeline = session.get(ChannelPipeline, pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="pipeline not found")
+    q = (
+        delete(PipelineRun)
+        .where(PipelineRun.pipeline_id == pipeline_id)
+        .where(PipelineRun.finished_at.isnot(None))
+    )
+    if run_ids:
+        q = q.where(PipelineRun.id.in_(run_ids))
+    session.execute(q)
+    session.commit()
+
+
 @router.get("/{pipeline_id}/runs/{run_id}/videos")
 def list_run_videos(
     pipeline_id: int,
