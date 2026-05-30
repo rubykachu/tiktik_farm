@@ -142,3 +142,33 @@ class TestDeleteDouyinCookie:
     def test_delete_nonexistent_returns_404(self, client):
         resp = client.delete("/api/douyin-cookies/9999")
         assert resp.status_code == 404
+
+    def test_delete_in_use_by_pipeline_returns_409(self, client):
+        from datetime import datetime, timezone
+
+        from api.models import ChannelPipeline
+
+        cookie_bytes = json.dumps(VALID_COOKIE_LIST).encode()
+        create_resp = client.post(
+            "/api/douyin-cookies",
+            data={"name": "Linked"},
+            files={"file": ("cookies.json", cookie_bytes, "application/json")},
+        )
+        cookie_id = create_resp.json()["id"]
+
+        now = datetime.now(timezone.utc)
+        with Session(_api_db.engine) as s:
+            s.add(ChannelPipeline(
+                name="Douyin Billad", channel_url="https://www.douyin.com/user/x",
+                fetch_count=5, source_type="douyin", douyin_cookie_id=cookie_id,
+                interval_value=1, interval_unit="days",
+                first_fire_at=now, next_fire_at=now, caption_template="{title}",
+            ))
+            s.commit()
+
+        del_resp = client.delete(f"/api/douyin-cookies/{cookie_id}")
+        assert del_resp.status_code == 409
+        assert del_resp.json()["detail"]["code"] == "COOKIE_IN_USE"
+
+        # Cookie still present after the rejected delete.
+        assert len(client.get("/api/douyin-cookies").json()) == 1

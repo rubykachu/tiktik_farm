@@ -744,7 +744,7 @@ class TestTelegramSummary:
             v1 = VideoUpload(
                 run_id=run_id, account_id=1, youtube_title="My Great Video",
                 youtube_video_id="aaa111", youtube_url="https://youtube.com/watch?v=aaa",
-                tiktok_url="https://tiktok.com/@x/video/123", status="done",
+                tiktok_url="https://tiktok.com/@x/video/123", status="succeeded",
             )
             v2 = VideoUpload(
                 run_id=run_id, account_id=1, youtube_title="Failed Video",
@@ -799,7 +799,7 @@ class TestTelegramSummary:
                     youtube_video_id=f"vid{i:04d}",
                     youtube_title=f"Very Long Video Title Number {i} - Extended Edition",
                     tiktok_url=f"https://tiktok.com/@x/video/{i}",
-                    status="done",
+                    status="succeeded",
                     youtube_url=f"https://youtube.com/watch?v=vid{i}",
                 ))
             s.commit()
@@ -899,7 +899,7 @@ class TestTelegramSummary:
                     youtube_video_id=f"v{i:04d}",
                     youtube_title=f"Video Title That Is Exactly Sixty Characters Long {i:03d}",
                     tiktok_url=f"https://tiktok.com/@channel/video/{i:020d}",
-                    status="done",
+                    status="succeeded",
                     youtube_url=f"https://youtube.com/watch?v=v{i}",
                 ))
             s.commit()
@@ -961,7 +961,7 @@ class TestPipelineRunContext:
             pid = p.id
             db_run = PipelineRun(
                 pipeline_id=pid, started_at=now, trigger_reason="scheduled",
-                error_text="worker_crash",
+                error_text="worker crashed",
             )
             s.add(db_run)
             s.commit()
@@ -1012,6 +1012,101 @@ class TestPipelineRunContext:
 
         mock_notify.assert_not_called()
 
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    def test_timeout_calls_emergency_finalize_exactly_once(self, mock_finalize, mock_notify):
+        """Timeout path: _emergency_finalize called exactly once (not twice from double-catch)."""
+        from concurrent.futures import TimeoutError as FutTimeout
+
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=50)
+
+        mock_future = MagicMock()
+        mock_future.result.side_effect = FutTimeout()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+
+        with patch("scheduler.pipeline_worker.ThreadPoolExecutor", return_value=mock_executor):
+            with pytest.raises(Exception):
+                with _pipeline_run_context(pipeline, "scheduled"):
+                    pass
+
+        mock_finalize.assert_called_once_with(pipeline.id)
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    def test_timeout_raises_for_caller(self, mock_finalize, mock_notify):
+        """Timeout path: TimeoutError propagates out so pipeline_tick can advance_next_fire."""
+        from concurrent.futures import TimeoutError as FutTimeout
+
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=51)
+
+        mock_future = MagicMock()
+        mock_future.result.side_effect = FutTimeout()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+
+        with patch("scheduler.pipeline_worker.ThreadPoolExecutor", return_value=mock_executor):
+            with pytest.raises(Exception):
+                with _pipeline_run_context(pipeline, "scheduled"):
+                    pass
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    def test_timeout_telegram_not_sent_when_no_run_in_db(self, mock_finalize, mock_notify):
+        """Timeout before any PipelineRun persisted → run stays None → Telegram not called."""
+        from concurrent.futures import TimeoutError as FutTimeout
+
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=52)
+
+        mock_future = MagicMock()
+        mock_future.result.side_effect = FutTimeout()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+
+        with patch("scheduler.pipeline_worker.ThreadPoolExecutor", return_value=mock_executor):
+            with patch("scheduler.pipeline_worker.Session") as mock_session_cls:
+                mock_session = MagicMock()
+                mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_session)
+                mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+                mock_session.exec.return_value.first.return_value = None
+
+                with pytest.raises(Exception):
+                    with _pipeline_run_context(pipeline, "scheduled"):
+                        pass
+
+        mock_notify.assert_not_called()
+
+    @patch("scheduler.pipeline_worker.send_telegram_summary")
+    @patch("scheduler.pipeline_worker._emergency_finalize")
+    def test_timeout_telegram_sent_when_run_exists_in_db(self, mock_finalize, mock_notify):
+        """Timeout after PipelineRun persisted → outer except fetches it → Telegram called."""
+        from concurrent.futures import TimeoutError as FutTimeout
+
+        now = now_utc()
+        pipeline = _make_tg_pipeline(now, id=53)
+        db_run = PipelineRun(id=77, pipeline_id=53, started_at=now, trigger_reason="scheduled")
+
+        mock_future = MagicMock()
+        mock_future.result.side_effect = FutTimeout()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+
+        with patch("scheduler.pipeline_worker.ThreadPoolExecutor", return_value=mock_executor):
+            with patch("scheduler.pipeline_worker.Session") as mock_session_cls:
+                mock_session = MagicMock()
+                mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_session)
+                mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+                mock_session.exec.return_value.first.return_value = db_run
+
+                with pytest.raises(Exception):
+                    with _pipeline_run_context(pipeline, "scheduled"):
+                        pass
+
+        mock_notify.assert_called_once_with(pipeline, db_run)
+
 
 class TestEmergencyFinalize:
     """Tests for _emergency_finalize crash recovery."""
@@ -1043,9 +1138,9 @@ class TestEmergencyFinalize:
             r1 = s.get(PipelineRun, run1_id)
             r2 = s.get(PipelineRun, run2_id)
             assert r1.finished_at is not None
-            assert r1.error_text == "worker_crash"
+            assert r1.error_text == "worker crashed"
             assert r2.finished_at is not None
-            assert r2.error_text == "worker_crash"
+            assert r2.error_text == "worker crashed"
 
     def test_preserves_existing_error_text(self):
         now = now_utc()

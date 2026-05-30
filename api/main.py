@@ -67,6 +67,9 @@ def create_app() -> FastAPI:
         apply_schema_patches(_db.engine)
         apply_indexes(_db.engine)
         seed_app_settings(_db.engine)
+        # Fail-closed: a bad OLLAMA_BASE_URL (SSRF) must refuse to start, not boot silently.
+        from api.services.llm_config import get_ollama_config
+        get_ollama_config()
 
     @app.get("/health", tags=["meta"])
     def health():

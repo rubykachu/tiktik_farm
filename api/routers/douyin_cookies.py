@@ -3,7 +3,7 @@
 GET  /api/douyin-cookies          — list (id, name, created_at; no cookie_json)
 POST /api/douyin-cookies          — create from Cookie-Editor JSON upload
 PUT  /api/douyin-cookies/{id}     — re-upload cookie file (updates cookie_json)
-DELETE /api/douyin-cookies/{id}   — delete (pipelines that reference this ID will warn in UI)
+DELETE /api/douyin-cookies/{id}   — delete (409 if a pipeline still references this ID)
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
-from api.models import DouyinCookie
+from api.models import ChannelPipeline, DouyinCookie
 from api.schemas import DouyinCookieRead
 from api.services import secrets
 from api.services.douyin_cookie_import import (
@@ -75,5 +75,19 @@ def delete_cookie(cookie_id: int, session: Session = Depends(get_session)):
     row = session.get(DouyinCookie, cookie_id)
     if not row:
         raise HTTPException(status_code=404, detail="douyin cookie not found")
+    in_use = session.exec(
+        select(ChannelPipeline.name).where(
+            ChannelPipeline.douyin_cookie_id == cookie_id
+        )
+    ).first()
+    if in_use is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "COOKIE_IN_USE",
+                "message": f"Cookie is in use by pipeline '{in_use}'. "
+                "Reassign or delete that pipeline first.",
+            },
+        )
     session.delete(row)
     session.commit()

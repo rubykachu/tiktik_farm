@@ -40,6 +40,7 @@ Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
 - Worker claim: CAS set `lock_until = now + 10 phút`.
 - **LockHeartbeat**: thread cứ **5 phút** bump `lock_until` (CAS theo giá trị lock hiện tại).
 - `POST /run-now`:  
+  - `state != active` (đang paused) → **409** `PIPELINE_PAUSED`.  
   - `lock_until > now` → **409** `PIPELINE_RUNNING`.  
   - Đã có `run_now_requested_at` → **409** `RUN_NOW_QUEUED` (tránh double-queue; user đợi tick xong rồi bấm lại).  
   - Khác → **202**, set `run_now_requested_at`.
@@ -65,7 +66,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 | `{title_hashtag}` | Các token `#...` extract từ title, nối bằng space |
 | `{now}` | Thời điểm render, TZ `Asia/Ho_Chi_Minh`, format `YYYY-MM-DD HH:mm` |
 
-- Biến lạ → **400** khi create/patch pipeline.
+- Biến lạ → **422** khi create/patch pipeline (Pydantic validation).
 - Sau khi thay biến: **dedupe hashtag** không phân biệt hoa thường, **giữ lần xuất hiện đầu** theo thứ tự trong chuỗi.
 - Output cắt **2200** ký tự.
 
@@ -98,7 +99,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 | POST | `/api/pipelines` | Tạo; mặc định `state=active`. Muốn tạo paused → PATCH ngay sau đó. |
 | GET | `/api/pipelines/{id}` | Chi tiết |
 | PATCH | `/api/pipelines/{id}` | Sửa; Resume set `next_fire_now` trong server khi `paused`→`active` |
-| DELETE | `/api/pipelines/{id}` | Xóa; CASCADE `PipelineRun`; `VideoUpload` giữ lại (`pipeline_id`/`run_id` → NULL) |
+| DELETE | `/api/pipelines/{id}` | Xóa; CASCADE **hard-delete** cả `PipelineRun` lẫn `VideoUpload` của pipeline (mất lịch sử upload — chấp nhận để tránh row mồ côi) |
 | POST | `/api/pipelines/{id}/run-now` | 202 hoặc 409 (xem trên) |
 | GET | `/api/pipelines/{id}/runs?page=&size=` | Lịch sử tick; `size` ≤ **200**, mặc định 50 |
 | GET | `/api/pipelines/{id}/runs/{run_id}/videos` | Tối đa **500** bản ghi `VideoUpload` của tick đó |
@@ -118,7 +119,7 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
   - **Đăng tải**: danh sách tài khoản TikTok, caption template, AI rewrite (collapsible), tùy chọn nâng cao — comment/duet/stitch/riêng tư (collapsible)
   - **Thông báo**: Telegram bot token + chat ID + auto-detect + gửi tin test
 - Validation chạy khi **submit** (không phải khi blur từng field).
-- Pipeline cũ lưu `interval_unit=hours` → khi mở Edit tự coerce thành `days`.
+- Pipeline cũ lưu `interval_unit=hours` → khi mở Edit tự coerce thành `days`. API `PATCH` **vẫn chấp nhận** `interval_unit=hours` (giữ pipeline cũ chạy); chỉ UI bỏ option tạo mới bằng `hours`.
 - Bảng: Run now, Stop/Resume, Edit, Delete (modal).
 - **Drill-down**: mở hàng pipeline → lazy load `runs`; mở hàng run → video con. Poll ~5s khi có run chưa `finished_at`.
 - **Xem lỗi chi tiết**: click vào chip lỗi hoặc cột error của run → modal hiện full stack trace (scrollable).

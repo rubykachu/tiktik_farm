@@ -23,7 +23,7 @@ Mục tiêu: tránh trùng nội dung khi đăng nhiều account / nhiều kênh
 
 **Khi LLM lỗi** (key sai, rate limit, network, response rỗng…), worker **không fail run**. Caption fallback dùng raw YouTube title; lỗi chỉ ghi log. Tiêu chí: 1 hiccup LLM không được làm hỏng cả tick.
 
-**Caching trong 1 tick**: nhiều account đăng cùng 1 video → chỉ 1 lần gọi LLM (cache theo `video_id` trong phạm vi tick).
+**Caching trong 1 tick**: nhiều account đăng cùng 1 video → cache rewrite theo `video_id` trong phạm vi tick. Chỉ cache khi rewrite **thành công** (khác raw title); nếu LLM lỗi/fallback raw title, account kế tiếp sẽ gọi lại — tránh 1 hiccup poison cache cả tick.
 
 ---
 

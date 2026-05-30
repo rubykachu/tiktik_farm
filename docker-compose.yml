@@ -29,7 +29,6 @@ services:
     environment:
       - TIKTOK_API_DB_PATH=/data/tiktok.db
       - TIKTOK_CONFIG_PATH=/app/config.txt
-      - API_PUBLIC_URL=http://api:8000
     volumes:
       - ./data:/data
       - ./config.txt:/app/config.txt:ro

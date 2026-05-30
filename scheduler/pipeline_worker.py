@@ -42,7 +42,19 @@ HEARTBEAT_INTERVAL = 300  # 5 min
 ORPHAN_STALE_AFTER = timedelta(minutes=15)
 MAX_UPLOAD_ATTEMPTS = 3
 SUMMARY_MAX = 4096
-MAX_PIPELINE_SECONDS = int(os.getenv("MAX_PIPELINE_SECONDS", "1800"))  # 30 min default
+def _parse_max_pipeline_seconds() -> int:
+    raw = os.getenv("MAX_PIPELINE_SECONDS", "1800")
+    try:
+        val = int(raw)
+    except ValueError:
+        log.warning("MAX_PIPELINE_SECONDS=%r is not an integer, using 1800", raw)
+        return 1800
+    if val <= 0:
+        log.warning("MAX_PIPELINE_SECONDS=%d must be positive, using 1800", val)
+        return 1800
+    return val
+
+MAX_PIPELINE_SECONDS = _parse_max_pipeline_seconds()
 
 
 # ─── E1: Orphan reaper ─────────────────────────────────────────────────────
@@ -1000,7 +1012,7 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
         video_lines: list[str] = []
         for v in uploads:
             title = truncate(v.youtube_title or "video", 60)
-            if v.status == "done" and v.tiktok_url:
+            if v.status == "succeeded" and v.tiktok_url:
                 video_lines.append(f"  ✅ {title}\n     {v.tiktok_url}")
             elif v.error_text:
                 video_lines.append(f"  ❌ {title}\n     {truncate(v.error_text, 80)}")
@@ -1037,19 +1049,18 @@ def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
     """Run pipeline with timeout, always send Telegram summary in finally (even on crash)."""
     run: Optional[PipelineRun] = None
     try:
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            fut = ex.submit(run_pipeline, pipeline, trigger_reason)
-            try:
-                run = fut.result(timeout=MAX_PIPELINE_SECONDS)
-            except FutureTimeoutError:
-                log.error(
-                    "Pipeline %d exceeded %ds timeout — finalizing and moving on",
-                    pipeline.id, MAX_PIPELINE_SECONDS,
-                )
-                _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
-                raise TimeoutError(
-                    f"pipeline {pipeline.id} exceeded {MAX_PIPELINE_SECONDS}s"
-                )
+        ex = ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(run_pipeline, pipeline, trigger_reason)
+        try:
+            run = fut.result(timeout=MAX_PIPELINE_SECONDS)
+        except FutureTimeoutError:
+            log.error(
+                "Pipeline %d exceeded %ds timeout — finalizing and moving on",
+                pipeline.id, MAX_PIPELINE_SECONDS,
+            )
+            raise TimeoutError(f"pipeline {pipeline.id} exceeded {MAX_PIPELINE_SECONDS}s")
+        finally:
+            ex.shutdown(wait=False)
         yield run
     except Exception:
         log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)
@@ -1106,7 +1117,7 @@ def _emergency_finalize(pipeline_id: int) -> None:
                     PipelineRun.finished_at.is_(None),  # type: ignore[union-attr]
                     PipelineRun.error_text.is_(None),  # type: ignore[union-attr]
                 )
-                .values(finished_at=now_utc(), error_text="worker_crash")
+                .values(finished_at=now_utc(), error_text="worker crashed")
                 .execution_options(synchronize_session=False)
             )
             s.exec(

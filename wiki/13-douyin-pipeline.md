@@ -23,13 +23,15 @@ Mở rộng pipeline để hỗ trợ **nguồn Douyin** (抖音) bên cạnh Yo
 
 ## 2. DouyinCookie — quản lý cookie xác thực
 
-Douyin API không public — mỗi request cần cookie session hợp lệ từ tài khoản đã đăng nhập. Cookie lưu mã hóa Fernet (cùng cơ chế với LLM API key).
+Douyin API không public — mỗi request cần cookie session hợp lệ từ tài khoản đã đăng nhập. Toàn bộ cookie được lưu thành **một** JSON blob mã hóa Fernet (cùng cơ chế với LLM API key) — không tách từng trường ra cột riêng.
 
 ### 2.1. Các trường cookie cần thiết
 
+Nằm trong file JSON export (xem 2.2). `ttwid` **bắt buộc**; các trường khác optional.
+
 | Cookie | Mô tả |
 |---|---|
-| `ttwid` | Session identity token |
+| `ttwid` | Session identity token (**bắt buộc**) |
 | `msToken` | Short-lived request token (vendor tự refresh nếu cần) |
 | `odin_tt` | Device/user binding |
 | `passport_csrf_token` | CSRF protection |
@@ -37,34 +39,34 @@ Douyin API không public — mỗi request cần cookie session hợp lệ từ 
 
 ### 2.2. Lấy cookie từ browser
 
-1. Đăng nhập Douyin trên Chrome/Firefox.
-2. Mở DevTools → tab **Application** → **Cookies** → `douyin.com`.
-3. Copy từng giá trị cookie ở trên.
-4. Vào **Settings → Douyin Cookies** trong app → **Add cookie** → paste vào từng ô.
+App nhận **file JSON** export từ extension **Cookie-Editor** (không paste từng ô):
 
-Cookie Douyin hết hạn sau **~30 ngày**. Khi hết hạn, vendor trả lỗi và pipeline tick sẽ ghi `error_text`. Cần vào Settings → Edit cookie → update giá trị mới.
+1. Đăng nhập Douyin trên Chrome/Firefox.
+2. Cài extension **Cookie-Editor** → mở trên tab `douyin.com` → **Export** → **Export as JSON** (lưu file `.json`).
+3. Vào **Settings → Douyin Cookies** trong app → **Add cookie** → đặt `name` + **upload file JSON** vừa export.
+
+Cookie Douyin hết hạn sau **~30 ngày**. Khi hết hạn, vendor trả lỗi và pipeline tick sẽ ghi `error_text`. Cần vào Settings → Edit cookie → **upload file JSON mới**.
 
 ### 2.3. API
 
+POST/PUT nhận `multipart/form-data` (file upload), không phải JSON body.
+
 | Method | Path | Mô tả |
 |---|---|---|
-| GET | `/api/douyin-cookies` | List (không trả plaintext cookie values) |
-| POST | `/api/douyin-cookies` | Tạo mới |
-| GET | `/api/douyin-cookies/{id}` | Chi tiết (không trả plaintext) |
-| PATCH | `/api/douyin-cookies/{id}` | Cập nhật; ô trống → giữ giá trị cũ |
-| DELETE | `/api/douyin-cookies/{id}` | Xóa; 409 nếu có pipeline đang dùng |
+| GET | `/api/douyin-cookies` | List (chỉ `id`, `name`, timestamps — không trả cookie) |
+| POST | `/api/douyin-cookies` | Tạo mới: form `name` + `file` (Cookie-Editor JSON) |
+| PUT | `/api/douyin-cookies/{id}` | Cập nhật: **upload lại full file**, thay nguyên blob (không merge từng trường) |
+| DELETE | `/api/douyin-cookies/{id}` | Xóa; **409 `COOKIE_IN_USE`** nếu còn pipeline tham chiếu |
+
+> Không có endpoint `GET /{id}` (detail) — cookie value không bao giờ đọc ngược qua API.
 
 ### 2.4. Schema DB
 
 ```sql
 CREATE TABLE douyin_cookies (
   id INTEGER PRIMARY KEY,
-  label VARCHAR(128) NOT NULL,
-  ttwid_encrypted TEXT NOT NULL,
-  ms_token_encrypted TEXT NOT NULL,
-  odin_tt_encrypted TEXT NOT NULL,
-  passport_csrf_token_encrypted TEXT NOT NULL,
-  sid_guard_encrypted TEXT NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  cookie_json_encrypted TEXT NOT NULL,  -- Fernet ciphertext của toàn bộ cookie JSON
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL
 );
@@ -158,7 +160,7 @@ Dedup key: `(account_id, douyin_aweme_id)` — index `ix_video_upload_account_aw
 
 - Worker gọi LLM với `desc` làm input.
 - LLM rewrite thành caption TikTok theo prompt.
-- Cache theo `aweme_id` trong phạm vi tick (nhiều account đăng cùng video → 1 lần gọi LLM).
+- Cache theo `aweme_id` trong phạm vi tick (nhiều account đăng cùng video → 1 lần gọi LLM). Chỉ cache khi rewrite thành công; LLM lỗi/fallback → account kế tiếp gọi lại.
 
 Xem [12-settings](12-settings.md) để cấu hình LLM model.
 
@@ -237,8 +239,8 @@ Log vendor xuất hiện **sau khi** subprocess hoàn tất (không stream real-
 Triệu chứng: `PipelineRun.error_text` chứa lỗi xác thực, `pulled_count=0`. Xử lý:
 
 1. Đăng nhập lại Douyin trên browser.
-2. Copy cookies mới.
-3. Vào **Settings → Douyin Cookies** → Edit → cập nhật từng giá trị.
+2. Export cookies mới qua Cookie-Editor (Export as JSON).
+3. Vào **Settings → Douyin Cookies** → Edit → upload lại file JSON.
 4. Tick tiếp theo sẽ tự dùng cookie mới.
 
 ### 8.4. Video quá dài (compilation)

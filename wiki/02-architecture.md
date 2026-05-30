@@ -185,7 +185,8 @@ v2/
 ├── docker/base.Dockerfile
 ├── docker-compose.yml
 ├── cli.py                — legacy CLI
-├── config.txt
+├── config.txt            — config uploader legacy (Config class đọc trực tiếp; KHÔNG phải .env)
+├── .env                  — chỉ `TIKTOK_LOGIN_URL` (login flow); .env.example = mẫu biến v2 API/scheduler
 └── requirements.txt
 ```
 

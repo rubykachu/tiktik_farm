@@ -22,7 +22,7 @@ from api.db import get_session, now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, _validate_window_fields, is_douyin_url
 from api.services.caption import template_uses_ai_title
-from api.services.llm_config import get_default_llm_model, is_llm_enabled
+from api.services.llm_config import get_default_llm_model, get_llm_mode, is_llm_enabled
 from api.services.youtube_validate import is_youtube_url
 
 
@@ -79,7 +79,9 @@ def _validate_ai_title_preconditions(template: str, prompt: Optional[str]) -> No
             status_code=422,
             detail="Enable LLM in Settings before using {ai_title}",
         )
-    if get_default_llm_model() is None:
+    # Cloud mode needs a default LLM row. Local (Ollama) mode does not —
+    # it reads OLLAMA_* env vars, so skip this precondition there.
+    if get_llm_mode() == "cloud" and get_default_llm_model() is None:
         raise HTTPException(
             status_code=422,
             detail="Configure a default LLM in Settings before using {ai_title}",

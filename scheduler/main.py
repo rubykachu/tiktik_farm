@@ -13,6 +13,7 @@ from api import db as _db
 from api.db import init_db
 from api.db_migrations import apply_indexes, apply_schema_patches, seed_app_settings
 from api.logging import install_global_scrub_filter
+from api.services.llm_config import get_ollama_config
 from scheduler import worker
 from tiktok_uploader.Config import Config
 
@@ -32,6 +33,8 @@ def main() -> None:
     apply_schema_patches(_db.engine)
     apply_indexes(_db.engine)
     seed_app_settings(_db.engine)
+    # Fail-closed: a bad OLLAMA_BASE_URL (SSRF) must refuse to start, not boot silently.
+    get_ollama_config()
     poll = float(os.getenv("SCHEDULER_POLL_SECONDS", "30"))
     worker.loop(poll_interval=poll)
 
