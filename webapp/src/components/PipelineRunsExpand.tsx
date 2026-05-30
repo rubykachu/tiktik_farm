@@ -260,7 +260,7 @@ function RunRow({
       </tr>
       {expanded && (
         <tr className="bg-blue-50/40 border-l-4 border-blue-300">
-          <td colSpan={8} className="pb-2 pt-0">
+          <td colSpan={9} className="pb-2 pt-0">
             <VideosList pipelineId={pipelineId} runId={run.id} />
           </td>
         </tr>
@@ -294,19 +294,19 @@ function DayGroupRow({
         <td className="py-2 pl-3 pr-1 text-slate-500">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </td>
-        <td className="py-2 px-2 font-semibold text-slate-700 text-[11px]" colSpan={2}>
+        <td className="py-2 px-2 font-semibold text-slate-700 text-sm" colSpan={2}>
           {group.date}
         </td>
-        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={3}>
+        <td className="py-2 px-2 text-xs text-slate-500" colSpan={3}>
           <span>{group.runs.length} lần chạy</span>
           {group.totalUploaded > 0 && (
             <span className="ml-2 font-medium text-emerald-600">{group.totalUploaded} đã đăng</span>
           )}
         </td>
         <td className="py-2 px-2" colSpan={1}>
-          <span className={`text-[10px] whitespace-nowrap ${groupLabel.cls}`}>{groupLabel.text}</span>
+          <span className={`text-xs whitespace-nowrap ${groupLabel.cls}`}>{groupLabel.text}</span>
         </td>
-        <td className="py-2 px-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <td className="py-2 pl-2 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
           {finishedIds.length > 0 && (
             <button
               className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 ml-auto"
@@ -317,6 +317,7 @@ function DayGroupRow({
             </button>
           )}
         </td>
+        <td className="py-2 px-1 w-5" />
       </tr>
 
       {/* Run rows for this day */}
@@ -343,7 +344,7 @@ function DayGroupRow({
           ))}
           {/* Bottom border to close the day group */}
           <tr className="border-l-4 border-slate-200">
-            <td colSpan={8} className="h-1 bg-slate-50" />
+            <td colSpan={9} className="h-1 bg-slate-50" />
           </tr>
         </Fragment>
       )}
@@ -389,8 +390,8 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
           <col className="w-16" />
           <col className="w-16" />
           <col className="w-16" />
-          <col className="w-24" />
-          <col className="w-5" />
+          <col className="w-20" />
+          <col className="w-16" />
         </colgroup>
         <tbody>
           {groups.map((g) => (
