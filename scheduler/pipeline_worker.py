@@ -321,14 +321,14 @@ def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
     if not (pipeline.caption_ai_prompt and template_uses_ai_title(pipeline.caption_template)):
         return None
     if not is_llm_enabled():
-        return "AI tiêu đề được cấu hình nhưng tính năng LLM đang tắt trong Cài đặt"
+        return "Tiêu đề được cấu hình nhưng tính năng AI đang tắt trong Cài đặt"
     if get_llm_mode() == "offline":
         model, base_url = get_ollama_config()
         if not model or not base_url:
-            return "AI tiêu đề được cấu hình nhưng OLLAMA_MODEL/OLLAMA_BASE_URL chưa được thiết lập"
+            return "Tiêu đề được cấu hình nhưng OLLAMA_MODEL/OLLAMA_BASE_URL chưa được thiết lập"
     else:
         if get_default_llm_model() is None:
-            return "AI tiêu đề được cấu hình nhưng chưa có model AI mặc định trong Cài đặt"
+            return "Tiêu đề được cấu hình nhưng chưa có model AI mặc định trong Cài đặt"
     return None
 
 

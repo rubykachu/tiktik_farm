@@ -110,57 +110,62 @@ function VideosList({ pipelineId, runId }: { pipelineId: number; runId: number }
       {errorModal && (
         <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
       )}
-      <table className="w-full text-xs ml-8 border-separate border-spacing-0">
-        <thead>
-          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wide text-[10px]">
-            <th className="text-left px-2 py-1.5 font-medium rounded-tl">Tài khoản</th>
-            <th className="text-left px-2 py-1.5 font-medium">Nguồn</th>
-            <th className="text-left px-2 py-1.5 font-medium">TikTok</th>
-            <th className="text-left px-2 py-1.5 font-medium">Trạng thái</th>
-            <th className="text-left px-2 py-1.5 font-medium rounded-tr">Lỗi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((v, i) => {
-            const sourceLabel = v.youtube_title || v.youtube_video_id || v.douyin_aweme_id || "link";
-            return (
-              <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                <td className="px-2 py-1.5 text-slate-700 whitespace-nowrap">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
-                <td className="px-2 py-1.5 max-w-[180px] truncate">
-                  {v.youtube_url ? (
-                    <a href={v.youtube_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={String(sourceLabel)}>
-                      {sourceLabel}
-                    </a>
-                  ) : (
-                    <span className="text-slate-400">{sourceLabel}</span>
-                  )}
-                </td>
-                <td className="px-2 py-1.5">
-                  {v.tiktok_url ? (
-                    <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      {v.tiktok_video_id || "link"}
-                    </a>
-                  ) : <span className="text-slate-300">—</span>}
-                </td>
-                <td className="px-2 py-1.5 whitespace-nowrap">
-                  <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
-                </td>
-                <td className="px-2 py-1.5">
-                  {v.error_text ? (
-                    <button
-                      className="max-w-[200px] truncate text-red-500 hover:text-red-700 hover:underline text-left"
-                      title={v.error_text}
-                      onClick={() => setErrorModal(v.error_text || "")}
-                    >
-                      {v.error_text}
-                    </button>
-                  ) : <span className="text-slate-300">—</span>}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="ml-10 my-1 rounded border border-slate-200 overflow-hidden bg-white">
+        <table className="w-full text-xs border-separate border-spacing-0">
+          <thead>
+            <tr className="bg-slate-100 text-slate-500 uppercase tracking-wide text-[10px]">
+              <th className="text-left px-3 py-1.5 font-medium">Tài khoản</th>
+              <th className="text-left px-3 py-1.5 font-medium">Nguồn</th>
+              <th className="text-left px-3 py-1.5 font-medium">TikTok</th>
+              <th className="text-left px-3 py-1.5 font-medium">Trạng thái</th>
+              <th className="text-left px-3 py-1.5 font-medium">Lỗi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((v, i) => {
+              const sourceHref = v.douyin_aweme_id
+                ? `https://www.douyin.com/video/${v.douyin_aweme_id}`
+                : v.youtube_url || null;
+              const sourceLabel = v.youtube_title || v.youtube_video_id || v.douyin_aweme_id || "link";
+              return (
+                <tr key={v.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                  <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap">{accountLabel.get(v.account_id) ?? `#${v.account_id}`}</td>
+                  <td className="px-3 py-1.5 max-w-[200px] truncate">
+                    {sourceHref ? (
+                      <a href={sourceHref} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" title={String(sourceLabel)}>
+                        {sourceLabel}
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">{sourceLabel}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {v.tiktok_url ? (
+                      <a href={v.tiktok_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        {v.tiktok_video_id || "link"}
+                      </a>
+                    ) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">
+                    <span className={"chip text-[10px] " + statusBadge(v.status)}>{v.status}</span>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    {v.error_text ? (
+                      <button
+                        className="max-w-[220px] truncate text-red-500 hover:text-red-700 hover:underline text-left"
+                        title={v.error_text}
+                        onClick={() => setErrorModal(v.error_text || "")}
+                      >
+                        {v.error_text}
+                      </button>
+                    ) : <span className="text-slate-300">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }
@@ -185,19 +190,22 @@ function RunRow({
       {errorModal && (
         <ErrorDetailModal text={errorModal} onClose={() => setErrorModal(null)} />
       )}
-      <tr className="cursor-pointer hover:bg-slate-100" onClick={onToggle}>
-        <td className="p-1 pl-6">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+      <tr
+        className={`cursor-pointer transition-colors border-l-4 ${expanded ? "bg-blue-50 border-blue-300" : "bg-white hover:bg-slate-50 border-slate-200"}`}
+        onClick={onToggle}
+      >
+        <td className="py-1.5 pl-8 pr-1 text-slate-400">
+          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </td>
-        <td className="p-1 text-slate-500">
+        <td className="py-1.5 px-2 text-slate-600 tabular-nums">
           {run.started_at ? new Date(run.started_at).toLocaleTimeString() : "—"}
         </td>
-        <td className="p-1">{run.trigger_reason}</td>
-        <td className="p-1">{run.pulled_count}</td>
-        <td className="p-1">{run.uploaded_count}</td>
-        <td className="p-1">{run.skipped_dup_count + run.skipped_exhausted_count}</td>
-        <td className="p-1">{run.failed_count}</td>
-        <td className="p-1 text-[10px]">
+        <td className="py-1.5 px-2 text-slate-500">{run.trigger_reason}</td>
+        <td className="py-1.5 px-2 tabular-nums">{run.pulled_count}</td>
+        <td className="py-1.5 px-2 tabular-nums">{run.uploaded_count}</td>
+        <td className="py-1.5 px-2 tabular-nums">{run.skipped_dup_count + run.skipped_exhausted_count}</td>
+        <td className="py-1.5 px-2 tabular-nums">{run.failed_count}</td>
+        <td className="py-1.5 px-2 text-[10px]">
           {isError ? (
             <button
               className={`${status.cls} cursor-pointer hover:opacity-75`}
@@ -214,8 +222,8 @@ function RunRow({
         </td>
       </tr>
       {expanded && (
-        <tr>
-          <td colSpan={8} className="p-0">
+        <tr className="bg-blue-50/40 border-l-4 border-blue-300">
+          <td colSpan={8} className="pb-2 pt-0">
             <VideosList pipelineId={pipelineId} runId={run.id} />
           </td>
         </tr>
@@ -243,32 +251,32 @@ function DayGroupRow({
     <Fragment>
       {/* Day header row */}
       <tr
-        className="cursor-pointer bg-slate-100 hover:bg-slate-200 font-medium"
+        className="cursor-pointer bg-slate-100 hover:bg-slate-200 border-l-4 border-slate-400"
         onClick={() => setOpen((o) => !o)}
       >
-        <td className="p-1">
+        <td className="py-2 pl-3 pr-1 text-slate-500">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </td>
-        <td className="p-1 text-[11px]" colSpan={2}>
+        <td className="py-2 px-2 font-semibold text-slate-700 text-[11px]" colSpan={2}>
           {group.date}
         </td>
-        <td className="p-1 text-[10px] text-slate-500" colSpan={3}>
-          {group.runs.length} lần chạy
+        <td className="py-2 px-2 text-[10px] text-slate-500" colSpan={3}>
+          <span>{group.runs.length} lần chạy</span>
           {group.totalUploaded > 0 && (
-            <span className="ml-2 text-emerald-700">{group.totalUploaded} đã đăng</span>
+            <span className="ml-2 font-medium text-emerald-600">{group.totalUploaded} đã đăng</span>
           )}
         </td>
-        <td className="p-1" colSpan={1}>
+        <td className="py-2 px-2" colSpan={1}>
           <span className={`text-[10px] ${groupLabel.cls}`}>{groupLabel.text}</span>
         </td>
-        <td className="p-1 text-right" onClick={(e) => e.stopPropagation()}>
+        <td className="py-2 px-2 text-right" onClick={(e) => e.stopPropagation()}>
           {finishedIds.length > 0 && (
             <button
-              className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+              className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 ml-auto"
               onClick={() => onClearDay(finishedIds)}
               title={`Xóa ${finishedIds.length} log ngày ${group.date}`}
             >
-              <Trash2 size={12} /> Xóa
+              <Trash2 size={11} /> Xóa
             </button>
           )}
         </td>
@@ -277,15 +285,15 @@ function DayGroupRow({
       {/* Run rows for this day */}
       {open && (
         <Fragment>
-          <tr className="bg-slate-50">
-            <th className="p-1 pl-6 w-6" />
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Thời gian</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Kích hoạt</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Đã tải về</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Đã đăng</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Bỏ qua</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Thất bại</th>
-            <th className="text-left p-1 text-[10px] text-slate-500 uppercase">Trạng thái</th>
+          <tr className="bg-slate-50 border-l-4 border-slate-200">
+            <th className="py-1 pl-8 pr-1 w-6" />
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thời gian</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Kích hoạt</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Đã tải về</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Đã đăng</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Bỏ qua</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thất bại</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Trạng thái</th>
           </tr>
           {group.runs.map((r) => (
             <RunRow
@@ -296,6 +304,10 @@ function DayGroupRow({
               onToggle={() => setExpandedRun(expandedRun === r.id ? null : r.id)}
             />
           ))}
+          {/* Bottom border to close the day group */}
+          <tr className="border-l-4 border-slate-200">
+            <td colSpan={8} className="h-1 bg-slate-50" />
+          </tr>
         </Fragment>
       )}
     </Fragment>
