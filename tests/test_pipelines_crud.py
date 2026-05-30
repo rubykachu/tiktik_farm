@@ -569,7 +569,7 @@ class TestWindowSchedulingAPI:
         assert r.status_code == 422, r.text
 
     # Blocker 2 regression: PATCH only one window field → 422 (half-set state blocked)
-    def test_patch_half_set_window_422(self, client):
+    def test_patch_half_set_window_422(self, client):  # noqa: keep name
         aid = _make_account(client)
         pid = client.post(
             "/api/pipelines",
@@ -583,3 +583,86 @@ class TestWindowSchedulingAPI:
             headers=HEADERS_OK,
         )
         assert r.status_code == 422, r.text
+
+
+# ─── channel_description field ───────────────────────────────────────────────
+
+
+class TestChannelDescription:
+    def test_create_and_read_round_trip(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, channel_description="food review channel"),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["channel_description"] == "food review channel"
+
+    def test_create_without_field_returns_null(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["channel_description"] is None
+
+    def test_patch_set_value(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines", json=_valid_payload(aid), headers=HEADERS_OK
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"channel_description": "tech channel"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["channel_description"] == "tech channel"
+
+    def test_patch_clear_to_none(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, channel_description="existing desc"),
+            headers=HEADERS_OK,
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"channel_description": None},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["channel_description"] is None
+
+    def test_patch_absent_preserves_existing(self, client):
+        aid = _make_account(client)
+        pid = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, channel_description="keep me"),
+            headers=HEADERS_OK,
+        ).json()["id"]
+        r = client.patch(
+            f"/api/pipelines/{pid}",
+            json={"fetch_count": 5},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["channel_description"] == "keep me"
+
+    def test_post_over_max_length_422(self, client):
+        aid = _make_account(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_valid_payload(aid, channel_description="x" * 2001),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422, r.text
+
+
+class TestMigrationIdempotency:
+    def test_apply_schema_patches_twice_no_error(self, client):
+        """apply_schema_patches on a DB that already has all columns must not raise."""
+        from api import db as _db
+        from api.db_migrations import apply_schema_patches
+        apply_schema_patches(_db.engine)  # second call — columns exist, silent no-op

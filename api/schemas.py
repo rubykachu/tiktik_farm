@@ -158,6 +158,7 @@ class PipelineCreate(BaseModel):
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
     upload_delay_minutes: int = Field(default=0, ge=0, le=30)
     caption_ai_prompt: Optional[str] = Field(default=None, max_length=2000)
+    # max_length=2000 must match CHANNEL_DESC_STORAGE_MAX in api/services/llm.py
     channel_description: Optional[str] = Field(default=None, max_length=2000)
     window_end_time: Optional[str] = None    # "HH:MM" UTC
     window_delay_minutes: Optional[int] = Field(default=None, ge=3)
@@ -247,6 +248,7 @@ class PipelineUpdate(BaseModel):
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
     upload_delay_minutes: Optional[int] = Field(default=None, ge=0, le=30)
     caption_ai_prompt: Optional[str] = Field(default=None, max_length=2000)
+    # max_length=2000 must match CHANNEL_DESC_STORAGE_MAX in api/services/llm.py
     channel_description: Optional[str] = Field(default=None, max_length=2000)
     window_end_time: Optional[str] = None    # "HH:MM" UTC, or null to clear
     window_delay_minutes: Optional[int] = Field(default=None, ge=3)
@@ -565,6 +567,7 @@ class LLMTestResponse(BaseModel):
 class PromptTestRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
     prompt: str = Field(min_length=1, max_length=2000)
+    # max_length=2000 must match CHANNEL_DESC_STORAGE_MAX in api/services/llm.py
     channel_description: Optional[str] = Field(default=None, max_length=2000)
 
 

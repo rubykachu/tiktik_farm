@@ -139,14 +139,31 @@ class TestBuildSystemPrompt:
         from api.services.llm import _build_system_prompt
         out = _build_system_prompt("base", "kênh review xe điện")
         assert "base" in out
-        assert "Description channel:" in out
+        assert "Channel description:" in out
         assert "kênh review xe điện" in out
 
     def test_long_channel_description_truncated(self):
-        from api.services.llm import _build_system_prompt, CHANNEL_DESC_MAX_CHARS
-        long_desc = "a" * (CHANNEL_DESC_MAX_CHARS + 500)
+        from api.services.llm import _build_system_prompt, CHANNEL_DESC_INJECT_MAX
+        long_desc = "a" * (CHANNEL_DESC_INJECT_MAX + 500)
         out = _build_system_prompt("base", long_desc)
-        assert "a" * (CHANNEL_DESC_MAX_CHARS + 1) not in out
+        assert "a" * (CHANNEL_DESC_INJECT_MAX + 1) not in out
+
+    def test_exact_boundary_not_truncated(self):
+        from api.services.llm import _build_system_prompt, CHANNEL_DESC_INJECT_MAX
+        exact = "a" * CHANNEL_DESC_INJECT_MAX
+        out = _build_system_prompt("base", exact)
+        assert exact in out
+
+    def test_label_is_channel_description(self):
+        from api.services.llm import _build_system_prompt
+        out = _build_system_prompt("base", "food channel")
+        assert "Channel description:" in out
+
+    def test_newlines_normalized_to_spaces(self):
+        from api.services.llm import _build_system_prompt
+        out = _build_system_prompt("base", "line1\nline2\r\ntabs\there")
+        assert "\n" not in out.split("Channel description:")[1]
+        assert "line1 line2" in out
 
 
 class TestRewriteTitleWithChannelDescription:
@@ -165,7 +182,7 @@ class TestRewriteTitleWithChannelDescription:
                 channel_description="channel about food",
             )
         system_msg = mock.call_args.kwargs["messages"][0]["content"]
-        assert "Description channel:" in system_msg
+        assert "Channel description:" in system_msg
         assert "channel about food" in system_msg
 
     def test_empty_channel_description_keeps_system_message_unchanged(self, isolated_secret):

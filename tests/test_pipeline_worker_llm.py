@@ -281,3 +281,60 @@ class TestLLMRewriteFallback:
 
         run_pipeline(p, "scheduled")
         mock_rewrite.assert_not_called()
+
+
+class TestChannelDescriptionForwarding:
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.llm.rewrite_title")
+    def test_channel_description_forwarded_to_llm(
+        self, mock_rewrite, mock_list, mock_download, mock_upload
+    ):
+        mock_list.return_value = [
+            {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
+        ]
+        mock_download.return_value = ("/tmp/x.mp4", "video description")
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_rewrite.return_value = "AI title"
+
+        from scheduler.pipeline_worker import run_pipeline
+
+        with Session(_api_db.engine) as s:
+            _account(s)
+            _default_llm(s)
+            p = _pipeline(s, channel_description="food review channel from China")
+            s.expunge(p)
+
+        run_pipeline(p, "scheduled")
+
+        assert mock_rewrite.called
+        call_kwargs = mock_rewrite.call_args.kwargs
+        assert call_kwargs.get("channel_description") == "food review channel from China"
+
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.llm.rewrite_title")
+    def test_null_channel_description_forwarded_as_empty_string(
+        self, mock_rewrite, mock_list, mock_download, mock_upload
+    ):
+        mock_list.return_value = [
+            {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
+        ]
+        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_rewrite.return_value = "AI title"
+
+        from scheduler.pipeline_worker import run_pipeline
+
+        with Session(_api_db.engine) as s:
+            _account(s)
+            _default_llm(s)
+            p = _pipeline(s, channel_description=None)
+            s.expunge(p)
+
+        run_pipeline(p, "scheduled")
+
+        call_kwargs = mock_rewrite.call_args.kwargs
+        assert call_kwargs.get("channel_description") == ""

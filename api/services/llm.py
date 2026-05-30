@@ -29,8 +29,9 @@ litellm.suppress_debug_info = True
 litellm.success_callback = []
 litellm.failure_callback = []
 
-DESCRIPTION_MAX_CHARS = 2000  # ~500 input tokens → cheap on Gemini Flash
-CHANNEL_DESC_MAX_CHARS = 1000  # cap channel_description injection to protect token budget
+DESCRIPTION_MAX_CHARS = 2000      # ~500 input tokens → cheap on Gemini Flash
+CHANNEL_DESC_STORAGE_MAX = 2000   # max chars stored in DB (matches schema max_length)
+CHANNEL_DESC_INJECT_MAX = 1000    # cap injected into system prompt to protect token budget
 DEFAULT_TIMEOUT = 60          # seconds; longer captions + local Ollama need headroom
 MAX_OUTPUT_TOKENS = 1200      # ~4000 chars, the TikTok caption limit
 
@@ -52,12 +53,19 @@ def _decrypt_required(api_key_encrypted: str) -> str:
 
 def _build_system_prompt(prompt: str, channel_description: str = "") -> str:
     """Append channel context block to system prompt when provided."""
-    cd = truncate(channel_description.strip(), CHANNEL_DESC_MAX_CHARS, suffix="")
+    import re as _re
+    # Normalize whitespace (collapse newlines/tabs to single spaces) before
+    # truncating so the injected block stays on one logical line.
+    cd = truncate(
+        _re.sub(r"\s+", " ", channel_description).strip(),
+        CHANNEL_DESC_INJECT_MAX,
+        suffix="",  # no ellipsis in system prompt — LLM doesn't need the marker
+    )
     if not cd:
         return prompt
     return (
         f"{prompt}\n\n"
-        f"Description channel: {cd}"
+        f"Channel description: {cd}"
     )
 
 

@@ -105,6 +105,41 @@ class TestRewriteTitleOfflineHappy:
         assert out == ""
 
 
+class TestRewriteTitleOfflineChannelDescription:
+    def test_channel_description_injected_into_system_message(self):
+        from api.services import llm
+
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title_offline(
+                "base prompt",
+                title="t",
+                description="d",
+                model="llama3.2",
+                base_url="http://localhost:11434",
+                channel_description="food review channel",
+            )
+        system_msg = mock.call_args.kwargs["messages"][0]["content"]
+        assert "Channel description:" in system_msg
+        assert "food review channel" in system_msg
+
+    def test_empty_channel_description_keeps_system_message_unchanged(self):
+        from api.services import llm
+
+        prompt = "base prompt"
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title_offline(
+                prompt,
+                title="t",
+                description="d",
+                model="llama3.2",
+                base_url="http://localhost:11434",
+            )
+        system_msg = mock.call_args.kwargs["messages"][0]["content"]
+        assert system_msg == prompt
+
+
 class TestRewriteTitleOfflineErrors:
     def test_litellm_exception_wrapped_as_llm_call_failed(self):
         from api.services import llm
