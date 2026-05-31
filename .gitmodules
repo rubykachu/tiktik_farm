@@ -1,0 +1,3 @@
+[submodule "vendor/douyin-downloader"]
+	path = vendor/douyin-downloader
+	url = https://github.com/jiji262/douyin-downloader.git
