@@ -970,8 +970,12 @@ def _next_fire_in_window(pipeline: ChannelPipeline, prev: datetime) -> Optional[
     return None
 
 
-def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str) -> None:
-    """Advance next_fire_at (scheduled) or clear run_now flag (manual)."""
+def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str, skip_window: bool = False) -> None:
+    """Advance next_fire_at (scheduled) or clear run_now flag (manual).
+
+    skip_window=True forces next-cycle scheduling even if still inside window
+    (used when a successful upload means no need to retry within the window).
+    """
     now = now_utc()
 
     with Session(_api_db.engine) as s:
@@ -981,7 +985,7 @@ def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str) -> None:
 
         if trigger_reason == "scheduled":
             prev = _ensure_aware(fresh.next_fire_at)
-            in_window = _next_fire_in_window(fresh, prev)
+            in_window = None if skip_window else _next_fire_in_window(fresh, prev)
             if in_window is not None and in_window > now:
                 fresh.next_fire_at = in_window
             else:
@@ -1174,8 +1178,9 @@ def pipeline_tick() -> bool:
     hb.start(pipeline.lock_until or now_utc() + LOCK_TTL)
 
     try:
-        with _pipeline_run_context(pipeline, trigger_reason):
-            advance_next_fire(pipeline, trigger_reason)
+        with _pipeline_run_context(pipeline, trigger_reason) as run:
+            skip_window = run is not None and run.uploaded_count > 0
+            advance_next_fire(pipeline, trigger_reason, skip_window=skip_window)
     except Exception:
         advance_next_fire(pipeline, trigger_reason)
     finally:

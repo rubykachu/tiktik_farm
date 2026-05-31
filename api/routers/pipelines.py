@@ -465,14 +465,18 @@ def clear_runs(
     pipeline = session.get(ChannelPipeline, pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="pipeline not found")
-    q = (
-        delete(PipelineRun)
+    run_q = (
+        select(PipelineRun.id)
         .where(PipelineRun.pipeline_id == pipeline_id)
         .where(PipelineRun.finished_at.isnot(None))
     )
     if run_ids:
-        q = q.where(PipelineRun.id.in_(run_ids))
-    session.execute(q)
+        run_q = run_q.where(PipelineRun.id.in_(run_ids))
+    target_ids = [row[0] for row in session.execute(run_q).all()]
+    if not target_ids:
+        return
+    session.execute(delete(VideoUpload).where(VideoUpload.run_id.in_(target_ids)))
+    session.execute(delete(PipelineRun).where(PipelineRun.id.in_(target_ids)))
     session.commit()
 
 

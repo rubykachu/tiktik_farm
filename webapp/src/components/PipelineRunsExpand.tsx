@@ -253,7 +253,7 @@ function RunRow({
         <td className="py-1.5 px-1 w-5 text-center">
           {run.pushed_notify_at ? (
             <span title={asUtc(run.pushed_notify_at).toLocaleString()}>
-              <Bell size={10} className="text-blue-400 inline" />
+              <Bell size={10} className="text-orange-500 inline" />
             </span>
           ) : null}
         </td>
@@ -330,7 +330,7 @@ function DayGroupRow({
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Bỏ qua</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thất bại</th>
             <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Trạng thái</th>
-            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide">Thông báo</th>
+            <th className="text-left py-1 px-2 text-[10px] text-slate-400 font-medium uppercase tracking-wide text-center">Thông báo</th>
           </tr>
           {group.runs.map((r) => (
             <RunRow
