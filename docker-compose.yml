@@ -31,9 +31,12 @@ services:
       - TIKTOK_CONFIG_PATH=/app/config.txt
       - OLLAMA_MODEL=${OLLAMA_MODEL:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - HOST=${HOST:-}
     volumes:
       - ./data:/data
       - ./config.txt:/app/config.txt:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /data  # so Config() resolves CookiesDir/VideosDirPath on the volume
     ports:
       - "127.0.0.1:8000:8000"
@@ -56,6 +59,8 @@ services:
       - SCHEDULER_CONCURRENCY=4
       - PIPELINE_TMP_DIR=/data/pipeline_tmp
       - DOUYIN_TMP_DIR=/data/douyin_tmp
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
       - ./config.txt:/app/config.txt:ro
