@@ -321,12 +321,38 @@ Sau đó set env vars trong `.env`:
 
 ```env
 OLLAMA_MODEL=llama3.2
-OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
 
-Restart api + scheduler để pickup env mới. Vào Settings → chuyển sang **Local (Ollama)**.
+Recreate api + scheduler để pickup env mới (`make recreate-api` — `restart` không đọc lại `.env`). Vào Settings → chuyển sang **Local (Ollama)**.
 
-> **Docker**: api và scheduler container có thể reach Ollama trên host qua `http://host.docker.internal:11434` (Docker Desktop) hoặc `http://172.17.0.1:11434` (Linux bridge). Cập nhật `OLLAMA_BASE_URL` trong `docker-compose.yml` tương ứng. Lưu ý: SSRF guard chấp nhận `host.docker.internal` và IP bridge nếu là loopback/link-local của Docker network — test với `GET /api/settings` trước khi bật.
+#### Docker reach Ollama trên host
+
+`docker-compose.yml` đã khai báo `extra_hosts: host.docker.internal:host-gateway` cho api + scheduler, nên `http://host.docker.internal:11434` resolve về host trên cả macOS (Docker Desktop) lẫn Linux/WSL (docker engine native, gateway `172.17.0.1`).
+
+Nhưng route tới host **chưa đủ** — Ollama mặc định bind `127.0.0.1`, chỉ nghe loopback của host, container không vào được (`[Errno 111] Connection refused`, api trả `502`).
+
+Phải cho Ollama bind mọi interface qua `OLLAMA_HOST=0.0.0.0`. Với systemd service (cách `install.sh` cài):
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null <<'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+> `systemctl edit ollama` mở editor để tạo cùng file override này; nếu editor không lưu được (hay gặp trên WSL) thì dùng `tee` như trên.
+
+Verify theo thứ tự:
+
+```bash
+ss -tlnp | grep 11434                                    # phải thấy 0.0.0.0:11434, không còn 127.0.0.1
+docker compose exec api curl -sS http://host.docker.internal:11434   # phải in "Ollama is running"
+```
+
+SSRF guard chấp nhận `host.docker.internal` và IP bridge (loopback/link-local của Docker network) — nếu `GET /api/settings` báo lỗi base URL thì xem [§8.3](#83-ssrf-guard-cho-api_base-và-ollama_base_url).
 
 ---
 

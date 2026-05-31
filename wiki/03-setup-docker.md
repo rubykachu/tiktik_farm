@@ -22,8 +22,10 @@ Chạy trong thư mục `v2/`. Gõ `make` hoặc `make help` để xem đầy đ
 | **`make deploy`** | **Mặc định an toàn** sau mọi thay đổi code: `build` toàn bộ image rồi `--force-recreate` container. Tránh lỗi “đã sửa code nhưng container vẫn chạy image cũ”. |
 | `make up` | Lần đầu start stack (không rebuild). |
 | `make down` | Stop + xóa container (giữ volume + image). |
-| `make restart` | Chỉ kick lại `api` + `scheduler` (không rebuild — **không** lấy code bake trong image mới). |
-| `make recreate` | Tạo lại container từ image **hiện có** (vẫn không build). |
+| `make restart` | Kick lại `api` + `scheduler` + `webapp` (không rebuild — **không** lấy code bake trong image mới, **không** đọc lại `.env`). |
+| `make recreate` | Tạo lại mọi container từ image **hiện có** (không build). Đọc lại `.env`. |
+| `make recreate-api` | Tạo lại `api` + `scheduler` (đọc lại `.env` — dùng khi đổi `HOST`/`OLLAMA_*`). |
+| `make recreate-webapp` | Build + tạo lại riêng `webapp` (đổi `nginx.conf` / `.htpasswd` / asset prod). |
 | `make rebuild-base` | `requirements.txt` hoặc `tiktok_uploader/` đổi — rebuild base + api/scheduler. |
 | `make rebuild` | Full `build --no-cache` (chậm nhất). |
 | `make deploy-prod` | Giống `deploy` nhưng **không** merge `docker-compose.override.yml` (nginx static, không Vite). |
@@ -133,14 +135,46 @@ cp my_video.mp4 ./data/VideosDirPath/
 
 **Lưu ý path**: trong Docker stack working_dir = `/data`, nên `Config.cookies_dir = ./CookiesDir` resolve thành `/data/CookiesDir`. Host path tương ứng = `./data/CookiesDir/`. **KHÔNG** dùng `./CookiesDir/` (path đó chỉ cho native run).
 
+## Expose qua Cloudflare Tunnel
+
+Webapp bind `127.0.0.1:3000` (không ra ngoài). Để truy cập từ xa dùng Cloudflare Tunnel + HTTP Basic Auth.
+
+### Script `restart.sh`
+
+```bash
+bash restart.sh
+```
+
+Làm theo thứ tự: `make recreate` → start `cloudflared tunnel --url http://localhost:3000` → parse URL tunnel → ghi `HOST=<url>` vào `.env` → `make recreate-api` để api nạp `HOST` mới → giữ `cloudflared` chạy foreground (Ctrl-C để dừng). URL tunnel đổi mỗi lần chạy; script tự cập nhật `.env`.
+
+### Basic Auth
+
+Bắt buộc khi expose. Tạo credential trên host:
+
+```bash
+sudo apt install apache2-utils
+htpasswd -c .htpasswd <username>          # nhập password khi hỏi
+```
+
+- **Prod (nginx)**: `docker-compose.yml` mount `./.htpasswd` → `/etc/nginx/.htpasswd`; `webapp/nginx.conf` bật `auth_basic`. Đổi file → `make recreate-webapp`.
+- **Dev (Vite)**: set `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` trong `.env`; `vite.config.ts` thêm middleware basic-auth khi cả hai biến có giá trị (không set → không auth).
+
+`.htpasswd` và `.env` đều gitignored; mẫu xem `.env.example`.
+
+### `HOST` — origin check
+
+API có CSRF origin middleware (`api/middleware/origin.py`) chặn POST/PUT/PATCH/DELETE từ origin lạ (mặc định chỉ `localhost:3000`). Origin tunnel bị chặn → `403 INVALID_ORIGIN`. Set `HOST=<tunnel-url>` (hostname hoặc full URL, tự thêm `https://`) để whitelist. `restart.sh` set tự động; sửa tay thì phải `make recreate-api` (không phải `restart` — `restart` không đọc lại `.env`).
+
 ## Production VPS — checklist
 
 Trước khi expose ra Internet:
 
-- [ ] Đổi `0.0.0.0` → `127.0.0.1` bind cho webapp (đã sẵn) → đặt Caddy/Traefik/Cloudflare Tunnel trước
-- [ ] HTTPS via reverse proxy (Cloudflare cert hoặc Let's Encrypt)
+- [x] Webapp bind `127.0.0.1` (đã sẵn) → đặt Cloudflare Tunnel / Caddy / Traefik trước
+- [x] Basic Auth (xem § trên) — tối thiểu khi expose qua tunnel
+- [x] HTTPS: Cloudflare Tunnel cấp sẵn cert cho `*.trycloudflare.com`
+- [x] `HOST` whitelist origin tunnel cho CSRF middleware
 - [ ] CORS API hiện `allow_origins=["*"]` → đổi sang domain thực
-- [ ] Auth: hiện không có. Phase 2 add JWT (xem [11-roadmap](11-roadmap.md))
+- [ ] Auth mạnh hơn (JWT) — Phase 2, xem [11-roadmap](11-roadmap.md)
 - [ ] Backup `./data/` định kỳ (cookies + DB)
 - [ ] Log rotation `docker compose logs` không xoay tự động — config `docker-compose.yml` thêm `logging` driver `json-file` với `max-size`
 
