@@ -75,4 +75,6 @@ services:
       - api
     ports:
       - "127.0.0.1:3000:80"
+    volumes:
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
     restart: unless-stopped

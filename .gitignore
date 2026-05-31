@@ -147,6 +147,7 @@ data/
 
 # Environment
 .env
+.htpasswd
 
 # Node
 node_modules/
