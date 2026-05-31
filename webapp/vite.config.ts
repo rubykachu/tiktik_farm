@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: apiProxy, changeOrigin: true },
     },
+    allowedHosts: [".trycloudflare.com"],
   },
   build: {
     outDir: "dist",
