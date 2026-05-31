@@ -56,8 +56,8 @@ down:  ## Stop and remove containers (keeps volumes + images)
 	$(COMPOSE) down --remove-orphans
 
 .PHONY: restart
-restart:  ## Restart api + scheduler. Use after editing api/ or scheduler/ code.
-	$(COMPOSE) restart api scheduler
+restart:  ## Restart api + scheduler + webapp. Use after editing api/ or scheduler/ code.
+	$(COMPOSE) restart api scheduler webapp
 	@$(MAKE) --no-print-directory ps
 
 .PHONY: ps
@@ -111,6 +111,12 @@ recreate:  ## Recreate all containers from current images (does NOT rebuild)
 .PHONY: recreate-api
 recreate-api:  ## Recreate just api + scheduler from current images
 	$(COMPOSE) up -d --force-recreate --remove-orphans api scheduler
+	@$(MAKE) --no-print-directory ps
+
+.PHONY: recreate-webapp
+recreate-webapp:  ## Rebuild + recreate webapp only (prod: nginx.conf / .htpasswd / static asset changes)
+	$(COMPOSE) build webapp
+	$(COMPOSE) up -d --force-recreate --remove-orphans webapp
 	@$(MAKE) --no-print-directory ps
 
 # ─── Webapp dev volume helpers ─────────────────────────────────────────────
@@ -207,5 +213,6 @@ help:  ## Show this help (default target)
 	@printf "  Edited api/*.py (dev)      -> uvicorn --reload (or make restart)\n"
 	@printf "  Edited scheduler/*.py      -> make restart  (no auto-reload)\n"
 	@printf "  Edited webapp/*.tsx (dev)  -> (nothing — Vite HMR)\n"
+	@printf "  Edited webapp/*.tsx (prod) -> make recreate-webapp\n"
 	@printf "  VPS prod-like              -> make deploy-prod\n"
 	@printf "  Stack is broken            -> make nuke && make deploy\n"

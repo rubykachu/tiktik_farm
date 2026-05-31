@@ -3,9 +3,29 @@ import react from "@vitejs/plugin-react";
 
 // Host dev: localhost. Docker dev (compose override): service names on the compose network.
 const apiProxy = process.env.VITE_DEV_API_PROXY ?? "http://localhost:8000";
+const basicAuthUser = process.env.BASIC_AUTH_USER;
+const basicAuthPass = process.env.BASIC_AUTH_PASS;
+
+const basicAuthPlugin =
+  basicAuthUser && basicAuthPass
+    ? {
+        name: "basic-auth",
+        configureServer(server: import("vite").ViteDevServer) {
+          const expected =
+            "Basic " +
+            Buffer.from(`${basicAuthUser}:${basicAuthPass}`).toString("base64");
+          server.middlewares.use((req, res, next) => {
+            if (req.headers.authorization === expected) return next();
+            res.setHeader("WWW-Authenticate", 'Basic realm="Restricted"');
+            res.statusCode = 401;
+            res.end("Unauthorized");
+          });
+        },
+      }
+    : null;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), ...(basicAuthPlugin ? [basicAuthPlugin] : [])],
   server: {
     // Dev only — production nginx proxies /api (see webapp/nginx.conf).
     proxy: {
