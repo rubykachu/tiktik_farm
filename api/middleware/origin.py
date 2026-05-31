@@ -7,19 +7,37 @@ malicious page in another tab cannot CSRF the local API.
 
 Safe methods (GET/HEAD/OPTIONS) are not checked — CORS handles cross-origin
 read attempts at the browser layer.
+
+Set HOST to the public hostname of this deployment (e.g. the cloudflared
+tunnel URL) to allow that origin. Accepts hostname or full URL; scheme
+defaults to https if omitted.
 """
 from __future__ import annotations
 
+import os
 from urllib.parse import urlparse
 
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+def _parse_host_origin(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        u = urlparse(value)
+        return f"{u.scheme}://{u.netloc}"
+    return f"https://{value}"
+
+
+_host = os.environ.get("HOST", "")
+_extra = {_parse_host_origin(_host)} - {""} if _host else set()
+
 ALLOWED_ORIGINS = frozenset({
     "http://127.0.0.1:3000",
     "http://localhost:3000",
-})
+} | _extra)
 
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
