@@ -443,7 +443,7 @@ function LLMModelModal({
 
         <div className="space-y-3">
           <div>
-            <label className="label">Tên hiển thị</label>
+            <label className="label-required">Tên hiển thị</label>
             <input
               className="input"
               value={label}
@@ -452,7 +452,7 @@ function LLMModelModal({
             />
           </div>
           <div>
-            <label className="label">Model ID</label>
+            <label className="label-required">Model ID</label>
             <input
               className="input"
               value={modelId}
@@ -475,7 +475,7 @@ function LLMModelModal({
             </p>
           </div>
           <div>
-            <label className="label">API key</label>
+            <label className={isEdit ? "label" : "label-required"}>API key</label>
             <input
               type="password"
               className="input"
@@ -500,7 +500,7 @@ function LLMModelModal({
                   : "Endpoint tùy chỉnh (không bắt buộc)"}
               </p>
               <div>
-                <label className="label">API base URL</label>
+                <label className={needsEndpoint ? "label-required" : "label"}>API base URL</label>
                 <input
                   className="input"
                   value={apiBase}
@@ -515,7 +515,7 @@ function LLMModelModal({
                 )}
               </div>
               <div>
-                <label className="label">API version</label>
+                <label className={needsEndpoint ? "label-required" : "label"}>API version</label>
                 <input
                   className="input"
                   value={apiVersion}

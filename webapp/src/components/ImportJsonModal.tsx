@@ -107,9 +107,7 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
 
         {!isUpdate && (
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">
-              Nhãn <span className="text-red-500">*</span>
-            </label>
+            <label className="label-required">Nhãn</label>
             <input
               type="text"
               className="input"
@@ -122,7 +120,7 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
 
         {isUpdate && (
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Nhãn</label>
+            <label className="label">Nhãn</label>
             <input
               type="text"
               className="input"
@@ -135,9 +133,9 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
         )}
 
         <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">
-            Cookie JSON {!isUpdate && <span className="text-red-500">*</span>}
-            {isUpdate && <span className="text-slate-400 normal-case"> (để trống để giữ cookie hiện tại)</span>}
+          <label className={isUpdate ? "label" : "label-required"}>
+            Cookie JSON
+            {isUpdate && <span className="text-slate-400 normal-case font-normal"> (để trống để giữ cookie hiện tại)</span>}
           </label>
           <textarea
             className="input min-h-[120px] font-mono text-xs"
@@ -148,7 +146,7 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">Tài khoản đăng nhập</label>
+          <label className="label">Tài khoản đăng nhập</label>
           <input
             type="text"
             className="input"
@@ -160,7 +158,7 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">Mật khẩu</label>
+          <label className="label">Mật khẩu</label>
           <input
             type="password"
             className="input"

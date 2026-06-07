@@ -596,7 +596,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               Thông tin cơ bản
             </legend>
             <div>
-              <label className="label">Tên pipeline</label>
+              <label className="label-required">Tên pipeline</label>
               <input className="input" {...register("name")} placeholder="Ví dụ: Kênh du lịch" />
               {errors.name && <p className="field-error">{errors.name.message}</p>}
             </div>
@@ -605,7 +605,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             <div className="space-y-3">
               <div className="flex gap-3 items-end">
                 <div className="flex-1">
-                  <label className="label">Lặp lại mỗi</label>
+                  <label className="label-required">Lặp lại mỗi</label>
                   <input
                     type="number"
                     className="input"
@@ -614,7 +614,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="label">Đơn vị</label>
+                  <label className="label-required">Đơn vị</label>
                   <select
                     className="input"
                     {...register("interval_unit")}
@@ -644,7 +644,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               {intervalUnit === "days" && (
                 <div className="space-y-3">
                   <div>
-                    <label className="label">Chạy lúc ({getTimezoneLabel()})</label>
+                    <label className="label-required">Chạy lúc ({getTimezoneLabel()})</label>
                     <input
                       type="time"
                       className="input"
@@ -677,7 +677,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     <div className="space-y-3 pl-4 border-l-2 border-slate-200">
                       <div className="flex gap-3 items-end">
                         <div className="flex-1">
-                          <label className="label">Chạy đến lúc ({getTimezoneLabel()})</label>
+                          <label className="label-required">Chạy đến lúc ({getTimezoneLabel()})</label>
                           <input
                             type="time"
                             className="input"
@@ -688,7 +688,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                           )}
                         </div>
                         <div className="flex-1">
-                          <label className="label">Lặp lại mỗi (phút)</label>
+                          <label className="label-required">Lặp lại mỗi (phút)</label>
                           <input
                             type="number"
                             className="input"
@@ -718,7 +718,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             </legend>
             {!isEdit && (
               <div>
-                <label className="label">Nguồn video</label>
+                <label className="label-required">Nguồn video</label>
                 <select className="input" {...register("source_type")}>
                   <option value="youtube">YouTube</option>
                   <option value="douyin">Douyin</option>
@@ -727,7 +727,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             )}
             {sourceType === "douyin" && (
               <div>
-                <label className="label">Douyin Cookie</label>
+                <label className="label-required">Douyin Cookie</label>
                 <select
                   className="input"
                   {...register("douyin_cookie_id", { valueAsNumber: true })}
@@ -754,7 +754,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </div>
             )}
             <div>
-              <label className="label">
+              <label className="label-required">
                 {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
               </label>
               <input
@@ -773,7 +773,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             <div>
               <label className="label">
                 Mô tả channel{" "}
-                <span className="text-slate-400 font-normal">(tùy chọn — dùng cho AI)</span>
+                <span className="text-slate-400 font-normal">(dùng cho AI)</span>
               </label>
               <textarea
                 className="input min-h-[60px]"
@@ -786,7 +786,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               )}
             </div>
             <div>
-              <label className="label">Số video mỗi lần chạy (1–20)</label>
+              <label className="label-required">Số video mỗi lần chạy (1–20)</label>
               <input
                 type="number"
                 className="input"
@@ -817,7 +817,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </div>
             )}
             <div>
-              <label className="label">Độ dài tối đa (giây, tùy chọn)</label>
+              <label className="label">Độ dài tối đa (giây)</label>
               <input
                 type="number"
                 className="input"
@@ -830,7 +830,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               </p>
             </div>
             <div>
-              <label className="label">Lấy video từ ngày (tùy chọn)</label>
+              <label className="label">Lấy video từ ngày</label>
               <input
                 type="date"
                 className="input"
@@ -851,7 +851,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {/* Accounts */}
             <div className="space-y-2">
               <label className="label">
-                Tài khoản TikTok{" "}
+                Tài khoản TikTok<span className="text-red-500">*</span>{" "}
                 <span className="text-slate-400 font-normal">
                   ({selectedAccounts.length} đã chọn)
                 </span>
@@ -894,7 +894,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
             {/* Caption */}
             <div>
-              <label className="label">Caption</label>
+              <label className="label-required">Caption</label>
               <textarea
                 className="input min-h-[80px]"
                 maxLength={2200}

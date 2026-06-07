@@ -23,6 +23,13 @@
   .label {
     @apply block text-xs font-medium uppercase tracking-wide text-slate-500 mb-1;
   }
+  .label-required {
+    @apply label;
+  }
+  .label-required::after {
+    content: "*";
+    @apply text-red-500 ml-0.5;
+  }
   .card {
     @apply rounded-lg border border-slate-200 bg-white p-5 shadow-sm;
   }
