@@ -3,6 +3,7 @@ that is exposed through OpenAPI (via response_model in the routers).
 """
 from __future__ import annotations
 
+from datetime import date as date_type
 from datetime import datetime
 from typing import Optional
 
@@ -73,6 +74,7 @@ class ChannelPipeline(SQLModel, table=True):
 
     caption_ai_prompt: Optional[str] = Field(default=None)
     channel_description: Optional[str] = Field(default=None)
+    sync_from_date: Optional[date_type] = Field(default=None)
 
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)

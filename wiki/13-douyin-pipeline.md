@@ -16,6 +16,7 @@ Mở rộng pipeline để hỗ trợ **nguồn Douyin** (抖音) bên cạnh Yo
 | Dedup key | `(account_id, youtube_video_id)` | `(account_id, douyin_aweme_id)` |
 | Thư mục tạm | `/tmp/pipeline_dl_xxx/` | `/data/douyin_tmp/{pipeline_id}_xxx/` |
 | `max_duration_seconds` | Cắt sau khi tải (ffmpeg) | Lọc trước khi upload (không tải lại) |
+| `sync_from_date` | `dateafter` option yt-dlp — filter tại nguồn | `start_time` trong YAML config vendor — filter tại nguồn |
 | Metadata title/desc | YouTube title + description | `desc` field trong `*_data.json` |
 | Tên file tạm | `pre-processed.mp4` | `{date}_{aweme_id}.mp4` |
 

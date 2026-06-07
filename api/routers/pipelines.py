@@ -63,6 +63,7 @@ def _to_read(row: ChannelPipeline) -> dict:
         "lock_until": row.lock_until,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+        "sync_from_date": row.sync_from_date,
     }
 
 
@@ -148,6 +149,7 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         window_delay_minutes=payload.window_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
+        sync_from_date=payload.sync_from_date,
     )
     session.add(row)
     session.commit()
@@ -300,6 +302,10 @@ def update_pipeline(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=str(exc),
                 ) from exc
+
+    if "sync_from_date" in payload.model_fields_set:
+        row.sync_from_date = payload.sync_from_date
+        changed = True
 
     if "douyin_cookie_id" in payload.model_fields_set:
         if row.source_type != "douyin":

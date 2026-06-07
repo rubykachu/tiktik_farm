@@ -25,6 +25,7 @@ Chi tiết Douyin: [13-douyin-pipeline](13-douyin-pipeline.md).
 - **Caption**: template trong DB, render bằng `api/services/caption.py` (biến whitelist, hashtag dedupe, tối đa 2200 ký tự). Worker gọi `render_caption` trước mỗi lần gọi adapter trong tick; kết quả lưu vào `VideoUpload.rendered_caption` cho bản ghi tương ứng.
 - **Tùy chọn nâng cao** (giống upload): `allow_comment`, `allow_duet`, `allow_stitch`, `visibility_type` — lưu trong `upload_options_json`.
 - **`max_duration_seconds`** (optional): yt-dlp **bỏ qua** video dài hơn `3 × N` giây; nếu tải, **cắt** 0…N giây (native, không shell ffmpeg riêng). Giới hạn file **500MB** mỗi lần tải.
+- **`sync_from_date`** (optional, `YYYY-MM-DD`): **Bỏ qua video cũ** — chỉ xử lý video đăng từ ngày này trở đi. Khi set, scheduler truyền thẳng vào vendor: YouTube nhận `dateafter` (yt-dlp option), Douyin nhận `start_time` trong YAML config (douyin-downloader). Filter xảy ra tại nguồn — không tải video cũ xuống. Khi `NULL` → không filter, hành vi cũ. Khi filter active, `PipelineRun.summary_text` có prefix `"Cutoff: YYYY-MM-DD | "` để xác nhận filter đang hoạt động (UI hiển thị `"Bỏ qua: YYYY-MM-DD"`).
 - **`upload_delay_minutes`** (0–30, mặc định 0): **Nghỉ giữa upload** — số phút scheduler `sleep` giữa **mỗi lần** upload TikTok thực hiện trong cùng một tick (áp dụng sau mỗi bản ghi upload thành công hoặc thất bại). `0` = hành vi cũ, không nghỉ. Giảm rủi ro bị TikTok coi là spam khi một tick đẩy nhiều video/account liên tiếp. Ví dụ: `fetch_count=10`, mỗi video 1 account, `upload_delay_minutes=5` → thời gian chờ upload khoảng **9 × 5 = 45** phút (cộng thời gian tải/upload thực tế). **LockHeartbeat** (mỗi 5 phút) vẫn gia hạn `lock_until` trong lúc tick dài.
 - **Đĩa**: kiểm tra free trên `PIPELINE_TMP_DIR` (mặc định: system `/tmp`) — nếu **< 1 GB**, bỏ qua tick, `PipelineRun.error_text = low_disk`.
 
@@ -216,7 +217,7 @@ Cột `pushed_notify_at` (TEXT/datetime, nullable) ghi thời điểm Telegram n
     - *Lặp lại mỗi* N `ngày` hoặc `phút` (**không còn `hours`**)
     - *Chạy lúc* HH:MM — chỉ hiện khi unit là `days`
     - Checkbox **"Chạy nhiều lần trong ngày?"** — khi bật hiện thêm *Chạy đến lúc* + *Lặp lại mỗi N phút* (thay thế field "Window end" cũ). Tắt → tự clear 2 field. Edit pipeline có window đã set → checkbox tự bật.
-  - **Tải xuống**: source type (chỉ hiện khi tạo mới), Douyin cookie (nếu Douyin), URL kênh, mô tả channel (tùy chọn — context cho AI), số video mỗi lần chạy, thời gian chờ giữa các video, max duration
+  - **Tải xuống**: source type (chỉ hiện khi tạo mới), Douyin cookie (nếu Douyin), URL kênh, mô tả channel (tùy chọn — context cho AI), số video mỗi lần chạy, thời gian chờ giữa các video, max duration, **Bỏ qua video trước ngày** (`sync_from_date` — tùy chọn, mặc định UI = hôm nay)
   - **Đăng tải**: danh sách tài khoản TikTok, caption template, AI rewrite (collapsible), tùy chọn nâng cao — comment/duet/stitch/riêng tư (collapsible)
   - **Thông báo**: Telegram bot token + chat ID + auto-detect + gửi tin test
 - Validation chạy khi **submit** (không phải khi blur từng field).

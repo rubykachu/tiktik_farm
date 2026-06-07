@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Literal, Optional
 from urllib.parse import urlparse
 
@@ -164,6 +164,7 @@ class PipelineCreate(BaseModel):
     window_delay_minutes: Optional[int] = Field(default=None, ge=3)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    sync_from_date: Optional[date] = None
 
     @field_validator("channel_url")
     @classmethod
@@ -256,6 +257,7 @@ class PipelineUpdate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     clear_bot_token: bool = False
+    sync_from_date: Optional[date] = None
 
     @field_validator("caption_template")
     @classmethod
@@ -336,6 +338,7 @@ class PipelineRead(BaseModel):
     lock_until: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    sync_from_date: Optional[date] = None
 
     model_config = {"from_attributes": True}
 

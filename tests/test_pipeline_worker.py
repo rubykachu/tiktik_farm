@@ -1,7 +1,7 @@
 """Tests for scheduler/pipeline_worker.py — E1 through E5."""
 import json
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 from sqlmodel import Session, SQLModel, select
@@ -70,7 +70,8 @@ def _make_pipeline(session: Session, **overrides) -> ChannelPipeline:
          p.caption_template, p.upload_options_json, p.account_ids_json,
          p.max_duration_seconds, p.upload_delay_minutes, p.telegram_bot_token, p.telegram_chat_id,
          p.window_end_time, p.window_delay_minutes,
-         p.run_now_requested_at, p.lock_until, p.created_at, p.updated_at)
+         p.run_now_requested_at, p.lock_until, p.created_at, p.updated_at,
+         p.sync_from_date)
     return p
 
 
@@ -398,6 +399,51 @@ class TestRunPipeline:
 
         run_pipeline(pipeline, "scheduled")
         mock_sleep.assert_not_called()
+
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    def test_sync_from_date_forwarded_to_list_top_n(self, mock_upload, mock_download, mock_list):
+        cutoff = date(2025, 1, 15)
+        mock_list.return_value = []
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s, sync_from_date=cutoff)
+            s.expunge(pipeline)
+
+        run_pipeline(pipeline, "scheduled")
+
+        mock_list.assert_called_once()
+        _, kwargs = mock_list.call_args
+        assert kwargs.get("sync_from_date") == cutoff
+
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    def test_summary_text_includes_cutoff_prefix(self, mock_list):
+        cutoff = date(2025, 3, 20)
+        mock_list.return_value = []
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s, sync_from_date=cutoff)
+            s.expunge(pipeline)
+
+        run = run_pipeline(pipeline, "scheduled")
+
+        assert run.summary_text.startswith("Cutoff: 2025-03-20")
+
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    def test_summary_text_no_cutoff_prefix_when_none(self, mock_list):
+        mock_list.return_value = []
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            pipeline = _make_pipeline(s)
+            s.expunge(pipeline)
+
+        run = run_pipeline(pipeline, "scheduled")
+
+        assert "Cutoff:" not in run.summary_text
 
 
 # ─── E4: Advance next_fire_at ──────────────────────────────────────────────

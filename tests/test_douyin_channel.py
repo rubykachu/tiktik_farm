@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -157,6 +158,35 @@ class TestDownloadCreatorPosts:
         assert len(result) == 1
         assert result[0].aweme_id == "7634909977655774474"
         assert result[0].duration_seconds == 100
+
+
+class TestBuildConfig:
+    def test_sync_from_date_sets_start_time(self):
+        from api.services.douyin_channel import _build_config
+
+        cfg = _build_config(
+            creator_url="https://www.douyin.com/user/MS4wLjAB",
+            fetch_count=5,
+            cookie_dict=COOKIE_DICT,
+            output_dir="/tmp/out",
+            db_path="/tmp/dl.db",
+            sync_from_date=date(2025, 3, 20),
+        )
+        assert cfg["start_time"] == "2025-03-20"
+        assert cfg["end_time"] == ""
+
+    def test_no_sync_from_date_empty_start_time(self):
+        from api.services.douyin_channel import _build_config
+
+        cfg = _build_config(
+            creator_url="https://www.douyin.com/user/MS4wLjAB",
+            fetch_count=5,
+            cookie_dict=COOKIE_DICT,
+            output_dir="/tmp/out",
+            db_path="/tmp/dl.db",
+        )
+        assert cfg["start_time"] == ""
+        assert cfg["end_time"] == ""
 
 
 class TestCleanupAwemeFiles:

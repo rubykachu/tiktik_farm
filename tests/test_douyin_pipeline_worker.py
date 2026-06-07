@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -90,7 +90,7 @@ def _make_douyin_pipeline(session: Session, cookie_id: int, **overrides) -> Chan
          p.caption_template, p.upload_options_json, p.fetch_count, p.channel_url,
          p.max_duration_seconds, p.caption_ai_prompt, p.upload_delay_minutes,
          p.telegram_bot_token, p.telegram_chat_id, p.interval_value, p.interval_unit,
-         p.next_fire_at, p.lock_until, p.run_now_requested_at)
+         p.next_fire_at, p.lock_until, p.run_now_requested_at, p.sync_from_date)
     return p
 
 
@@ -277,3 +277,39 @@ class TestRunDouyinPipeline:
             upload = s.exec(select(VideoUpload)).first()
             assert upload.status == "failed"
             assert upload.douyin_aweme_id == "fff666"
+
+
+class TestSyncFromDate:
+    @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
+    def test_sync_from_date_forwarded_to_download_creator_posts(self, mock_download):
+        cutoff = date(2025, 2, 10)
+        mock_download.return_value = []
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            cookie = _make_douyin_cookie(s)
+            pipeline = _make_douyin_pipeline(s, cookie.id, sync_from_date=cutoff)
+            s.expunge(pipeline)
+
+        from scheduler.pipeline_worker import run_pipeline
+        run_pipeline(pipeline, "scheduled")
+
+        mock_download.assert_called_once()
+        _, kwargs = mock_download.call_args
+        assert kwargs.get("sync_from_date") == cutoff
+
+    @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
+    def test_summary_text_includes_cutoff_prefix(self, mock_download):
+        cutoff = date(2025, 2, 10)
+        mock_download.return_value = []
+
+        with Session(_api_db.engine) as s:
+            _make_account(s)
+            cookie = _make_douyin_cookie(s)
+            pipeline = _make_douyin_pipeline(s, cookie.id, sync_from_date=cutoff)
+            s.expunge(pipeline)
+
+        from scheduler.pipeline_worker import run_pipeline
+        run = run_pipeline(pipeline, "scheduled")
+
+        assert run.summary_text.startswith("Cutoff: 2025-02-10")

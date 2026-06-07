@@ -27,6 +27,7 @@ export interface Pipeline {
   lock_until: string | null;
   created_at: string;
   updated_at: string;
+  sync_from_date: string | null;
 }
 
 export interface PipelineCreate {
@@ -54,6 +55,7 @@ export interface PipelineCreate {
   window_delay_minutes?: number | null;
   telegram_bot_token?: string;
   telegram_chat_id?: string;
+  sync_from_date?: string | null;
 }
 
 export interface PipelineUpdate {
@@ -77,6 +79,7 @@ export interface PipelineUpdate {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
   clear_bot_token?: boolean;
+  sync_from_date?: string | null;
 }
 
 export interface PipelineRunItem {

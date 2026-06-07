@@ -261,6 +261,11 @@ function RunRow({
       {expanded && (
         <tr className="bg-blue-50/40 border-l-4 border-blue-300">
           <td colSpan={9} className="pb-2 pt-0">
+            {run.summary_text?.startsWith("Cutoff:") && (
+              <p className="text-xs text-slate-500 italic px-4 pt-2">
+                {run.summary_text.split(" | ")[0].replace("Cutoff:", "Bỏ qua:")}
+              </p>
+            )}
             <VideosList pipelineId={pipelineId} runId={run.id} />
           </td>
         </tr>

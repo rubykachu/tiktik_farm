@@ -5,6 +5,7 @@ Does NOT use subprocess. All interaction is through yt_dlp.YoutubeDL.
 from __future__ import annotations
 
 import os
+from datetime import date
 from typing import Optional
 
 import yt_dlp
@@ -20,10 +21,11 @@ class DownloadError(Exception):
     """Raised when yt-dlp fails to download a video."""
 
 
-def list_top_n(channel_url: str, n: int = 5) -> list[dict]:
+def list_top_n(channel_url: str, n: int = 5, sync_from_date: Optional[date] = None) -> list[dict]:
     """List the top N videos from a YouTube channel/playlist URL.
 
     Returns list of dicts with keys: id, title, url.
+    sync_from_date: optional date — passed as yt-dlp `dateafter` to skip older videos.
     """
     if not is_youtube_url(channel_url):
         raise ValueError(f"Not a valid YouTube URL: {channel_url}")
@@ -35,6 +37,8 @@ def list_top_n(channel_url: str, n: int = 5) -> list[dict]:
         "no_warnings": True,
         "ignoreerrors": True,
     }
+    if sync_from_date is not None:
+        opts["dateafter"] = sync_from_date.strftime("%Y%m%d")
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(channel_url, download=False)

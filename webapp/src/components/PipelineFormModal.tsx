@@ -42,6 +42,7 @@ const baseSchema = z.object({
       message: "Chat ID must be numeric (e.g. -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
+  sync_from_date: z.string().optional().default(""),
 });
 
 function buildSchema(existingTokenSet: boolean) {
@@ -195,6 +196,8 @@ function timeToNextOccurrence(timeStr: string): Date {
   return next;
 }
 
+const TODAY_DATE: string = new Date().toISOString().slice(0, 10);
+
 const NEW_PIPELINE_DEFAULTS: FormData = {
   name: "",
   source_type: "youtube",
@@ -219,6 +222,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   telegram_bot_token: "",
   telegram_chat_id: "",
   clear_bot_token: false,
+  sync_from_date: TODAY_DATE,
 };
 
 export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
@@ -278,6 +282,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       telegram_bot_token: "",
       telegram_chat_id: "",
       clear_bot_token: false,
+      sync_from_date: TODAY_DATE,
     },
   });
 
@@ -326,6 +331,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
         clear_bot_token: false,
+        sync_from_date: pipeline.sync_from_date ?? "",
       });
     } else {
       setMultipleRuns(false);
@@ -393,6 +399,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         ? null
         : Number(data.window_delay_minutes);
     const douyinCookieId = data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined;
+    const syncFromDate = (data.sync_from_date || "").trim() || null;
     const upload_options = {
       allow_comment: data.allow_comment as 0 | 1,
       allow_duet: data.allow_duet as 0 | 1,
@@ -421,6 +428,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
+        sync_from_date: syncFromDate,
       };
       if (data.telegram_bot_token) {
         payload.telegram_bot_token = data.telegram_bot_token;
@@ -447,6 +455,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
+        sync_from_date: syncFromDate,
       });
     }
   }
@@ -818,6 +827,17 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               />
               <p className="text-xs text-slate-400 mt-1">
                 Video dài hơn giá trị này sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên.
+              </p>
+            </div>
+            <div>
+              <label className="label">Lấy video từ ngày (tùy chọn)</label>
+              <input
+                type="date"
+                className="input"
+                {...register("sync_from_date")}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Chỉ xử lý video đăng từ ngày này trở đi. Để trống nếu muốn lấy tất cả.
               </p>
             </div>
           </fieldset>

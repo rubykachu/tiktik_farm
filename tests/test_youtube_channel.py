@@ -1,5 +1,6 @@
 """Tests for api/services/youtube_channel.py — mocked yt-dlp."""
 import os
+from datetime import date
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -69,6 +70,30 @@ class TestListTopN:
 
         result = list_top_n(VALID_CHANNEL, 2)
         assert len(result) == 2
+
+    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    def test_sync_from_date_adds_dateafter(self, mock_ydl_cls):
+        mock_ydl = MagicMock()
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.return_value = {"entries": []}
+
+        list_top_n(VALID_CHANNEL, 5, sync_from_date=date(2025, 1, 15))
+
+        opts = mock_ydl_cls.call_args[0][0]
+        assert opts["dateafter"] == "20250115"
+
+    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    def test_no_sync_from_date_omits_dateafter(self, mock_ydl_cls):
+        mock_ydl = MagicMock()
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.return_value = {"entries": []}
+
+        list_top_n(VALID_CHANNEL, 5)
+
+        opts = mock_ydl_cls.call_args[0][0]
+        assert "dateafter" not in opts
 
     @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
     def test_fallback_url_construction(self, mock_ydl_cls):

@@ -477,6 +477,7 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
             output_dir=output_dir,
             db_path=db_path,
             max_duration_seconds=pipeline.max_duration_seconds,
+            sync_from_date=pipeline.sync_from_date,
         )
     except Exception as e:
         log.error("Douyin download failed for pipeline %d: %s", pipeline.id, e)
@@ -611,6 +612,9 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
         if fail_details:
             summary_text += "\n\nFailed:\n" + "\n".join(fail_details)
 
+        if pipeline.sync_from_date:
+            summary_text = f"Cutoff: {pipeline.sync_from_date} | " + summary_text
+
         summary_text = truncate(summary_text, SUMMARY_MAX, suffix="\n…(truncated)")
 
         _finalize_run(
@@ -659,7 +663,10 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
     # List top-N videos
     _update_run_status(run_id, f"Fetching video list (up to {pipeline.fetch_count})…")
     try:
-        videos = youtube_channel.list_top_n(pipeline.channel_url, pipeline.fetch_count)
+        videos = youtube_channel.list_top_n(
+            pipeline.channel_url, pipeline.fetch_count,
+            sync_from_date=pipeline.sync_from_date,
+        )
     except Exception as e:
         log.error("list_top_n failed for pipeline %d: %s", pipeline.id, e)
         _finalize_run(run_id, error_text=f"list_top_n failed: {e}")
@@ -860,6 +867,9 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
         summary_text += "\n\nUploaded:\n" + "\n".join(upload_details)
     if fail_details:
         summary_text += "\n\nFailed:\n" + "\n".join(fail_details)
+
+    if pipeline.sync_from_date:
+        summary_text = f"Cutoff: {pipeline.sync_from_date} | " + summary_text
 
     summary_text = truncate(summary_text, SUMMARY_MAX, suffix="\n…(truncated)")
 

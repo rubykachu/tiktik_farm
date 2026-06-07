@@ -153,6 +153,34 @@ VPS production: cần ≥8 GB disk free + ≥4 GB RAM. Idle ~1.5 GB RAM, peak ~3
 - `webapp` port 3000 → host `127.0.0.1:3000` (chỉ localhost, không expose Internet)
 - Production VPS muốn expose Internet: dùng Cloudflare Tunnel hoặc đặt reverse proxy (Caddy/Traefik) lên trước `127.0.0.1:3000`, bật **HTTPS + auth** (Phase 1 không có auth trong app).
 
+## DB migrations
+
+Không dùng Alembic. Schema quản lý qua 2 bước:
+
+1. **`api/db.py` → `init_db()`**: gọi `SQLModel.metadata.create_all(engine)` — tạo table mới nếu chưa tồn tại. Idempotent. **Không thêm cột vào table đã có.**
+
+2. **`api/db_migrations.py` → `apply_schema_patches()`**: tập hợp `ALTER TABLE ... ADD COLUMN` với guard `PRAGMA table_info(...)` — chạy ngay sau `init_db()` mỗi lần khởi động. Idempotent, an toàn khi chạy nhiều lần. Đây là nơi đặt mọi additive column migration.
+
+Thêm cột mới cho table đã tồn tại:
+```python
+# trong apply_schema_patches(), block tương ứng với table:
+if "ten_cot_moi" not in col_names:
+    try:
+        conn.exec_driver_sql(
+            "ALTER TABLE ten_table ADD COLUMN ten_cot_moi TYPE"
+        )
+    except Exception:
+        pass
+```
+
+Gọi thứ tự startup (`api/main.py` và `scheduler/main.py`):
+```python
+init_db()
+apply_schema_patches(engine)
+apply_indexes(engine)
+seed_app_settings(engine)
+```
+
 ## Code structure
 
 ```

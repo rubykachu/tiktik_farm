@@ -97,6 +97,13 @@ def apply_schema_patches(engine: Engine) -> None:
                     )
                 except Exception:
                     pass
+            if "sync_from_date" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN sync_from_date TEXT"
+                    )
+                except Exception:
+                    pass
 
         has_pipeline_runs = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"

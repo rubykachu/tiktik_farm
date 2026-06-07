@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 
 import yaml
@@ -48,6 +49,7 @@ def _build_config(
     cookie_dict: dict,
     output_dir: str,
     db_path: str,
+    sync_from_date: Optional[date] = None,
 ) -> dict:
     return {
         "link": [creator_url],
@@ -68,6 +70,8 @@ def _build_config(
         "filename_template": "{date}_{id}",
         "browser_fallback": {"enabled": False},
         "progress": {"quiet_logs": False},
+        "start_time": sync_from_date.strftime("%Y-%m-%d") if sync_from_date else "",
+        "end_time": "",
         "cookies": {
             "msToken": cookie_dict.get("msToken", ""),
             "ttwid": cookie_dict.get("ttwid", ""),
@@ -135,15 +139,18 @@ def download_creator_posts(
     output_dir: str,
     db_path: str,
     max_duration_seconds: Optional[int] = None,
+    sync_from_date: Optional[date] = None,
 ) -> list[DownloadedVideo]:
     """Run douyin-downloader for a creator URL, return list of downloaded videos.
 
     Image-notes (no .mp4) are silently skipped.
     Videos longer than max_duration_seconds are removed and excluded.
     Temp config YAML is always deleted after subprocess returns.
+    sync_from_date: optional date — passed as `start_time` in vendor config.
     """
     os.makedirs(output_dir, exist_ok=True)
-    config = _build_config(creator_url, fetch_count, cookie_dict, output_dir, db_path)
+    config = _build_config(creator_url, fetch_count, cookie_dict, output_dir, db_path,
+                           sync_from_date=sync_from_date)
 
     config_fd, config_path = tempfile.mkstemp(suffix=".yml", prefix="douyin_cfg_")
     try:
