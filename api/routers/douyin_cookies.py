@@ -1,14 +1,14 @@
 """CRUD for Douyin browser cookies stored encrypted at rest.
 
-GET  /api/douyin-cookies          — list (id, name, created_at; no cookie_json)
+GET  /api/douyin-cookies          — list (id, name, login, login_password; no cookie_json)
 POST /api/douyin-cookies          — create from Cookie-Editor JSON upload
-PUT  /api/douyin-cookies/{id}     — re-upload cookie file (updates cookie_json)
+PUT  /api/douyin-cookies/{id}     — update cookie file and/or name/login/login_password
 DELETE /api/douyin-cookies/{id}   — delete (409 if a pipeline still references this ID)
 """
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session, select
@@ -34,40 +34,65 @@ def _parse_upload(file: UploadFile) -> str:
     return secrets.encrypt(json.dumps(cookie_dict))
 
 
+def _cookie_read(row: DouyinCookie) -> DouyinCookieRead:
+    return DouyinCookieRead(
+        **row.model_dump(exclude={"cookie_json_encrypted", "login_password_encrypted"}),
+        login_password=secrets.decrypt(row.login_password_encrypted) if row.login_password_encrypted else None,
+    )
+
+
 @router.get("", response_model=List[DouyinCookieRead])
 def list_cookies(session: Session = Depends(get_session)):
-    return session.exec(select(DouyinCookie).order_by(DouyinCookie.created_at)).all()
+    rows = session.exec(select(DouyinCookie).order_by(DouyinCookie.created_at)).all()
+    return [_cookie_read(r) for r in rows]
 
 
 @router.post("", response_model=DouyinCookieRead, status_code=status.HTTP_201_CREATED)
 def create_cookie(
     name: str = Form(..., min_length=1, max_length=128),
     file: UploadFile = File(...),
+    login: str = Form(default=""),
+    login_password: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
     encrypted = _parse_upload(file)
-    row = DouyinCookie(name=name, cookie_json_encrypted=encrypted)
+    row = DouyinCookie(
+        name=name,
+        cookie_json_encrypted=encrypted,
+        login=login or None,
+        login_password_encrypted=secrets.encrypt(login_password) if login_password else None,
+    )
     session.add(row)
     session.commit()
     session.refresh(row)
-    return row
+    return _cookie_read(row)
 
 
 @router.put("/{cookie_id}", response_model=DouyinCookieRead)
 def update_cookie(
     cookie_id: int,
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    name: Optional[str] = Form(default=None),
+    login: Optional[str] = Form(default=None),
+    login_password: Optional[str] = Form(default=None),
     session: Session = Depends(get_session),
 ):
     row = session.get(DouyinCookie, cookie_id)
     if not row:
         raise HTTPException(status_code=404, detail="douyin cookie not found")
-    row.cookie_json_encrypted = _parse_upload(file)
+    if file is not None:
+        row.cookie_json_encrypted = _parse_upload(file)
+    if name is not None:
+        row.name = name or row.name  # keep existing if sent as empty
+    if login is not None:
+        row.login = login or None  # empty string → NULL (clear)
+    if login_password is not None:
+        row.login_password_encrypted = secrets.encrypt(login_password) if login_password else None
     row.updated_at = now_utc()
     session.add(row)
     session.commit()
     session.refresh(row)
-    return row
+    return _cookie_read(row)
 
 
 @router.delete("/{cookie_id}", status_code=status.HTTP_204_NO_CONTENT)

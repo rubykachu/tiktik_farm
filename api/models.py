@@ -25,6 +25,8 @@ class Account(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
     last_used_at: Optional[datetime] = Field(default=None)
+    login: Optional[str] = Field(default=None, max_length=256)
+    login_password_encrypted: Optional[str] = Field(default=None)
 
 
 # ---------- channel pipelines (Phase 1) -------------------------------------
@@ -33,7 +35,7 @@ class DouyinCookie(SQLModel, table=True):
     """Douyin browser cookie stored encrypted at rest.
 
     cookie_json_encrypted is Fernet ciphertext (same key as LLM API keys).
-    GET endpoints must never return cookie_json_encrypted.
+    GET endpoints must never return cookie_json_encrypted or login_password_encrypted.
     """
     __tablename__ = "douyin_cookies"
 
@@ -42,6 +44,8 @@ class DouyinCookie(SQLModel, table=True):
     cookie_json_encrypted: str
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
+    login: Optional[str] = Field(default=None, max_length=256)
+    login_password_encrypted: Optional[str] = Field(default=None)
 
 
 class ChannelPipeline(SQLModel, table=True):

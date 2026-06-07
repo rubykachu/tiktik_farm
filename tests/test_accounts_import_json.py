@@ -229,3 +229,76 @@ class TestOriginEnforced:
             # no Origin header
         )
         assert r.status_code == 403
+
+
+class TestLoginCredentials:
+    def _import(self, client, username="user1", login="", login_password=""):
+        payload = _valid_cookie_payload()
+        files = {"file": ("TK.json", json.dumps(payload), "application/json")}
+        data = {"username": username}
+        if login:
+            data["login"] = login
+        if login_password:
+            data["login_password"] = login_password
+        return client.post(
+            "/api/accounts/import-json",
+            files=files,
+            data=data,
+            headers=HEADERS_OK,
+        )
+
+    def test_import_with_login_and_password_saved(self, client):
+        r = self._import(client, login="user@example.com", login_password="secret123")
+        assert r.status_code == 201
+        body = r.json()
+        assert body["login"] == "user@example.com"
+        assert body["login_password"] == "secret123"
+
+    def test_login_password_encrypted_not_in_response(self, client):
+        r = self._import(client, login="user@example.com", login_password="secret123")
+        assert "login_password_encrypted" not in r.json()
+
+    def test_import_without_credentials_returns_null_fields(self, client):
+        r = self._import(client)
+        assert r.status_code == 201
+        body = r.json()
+        assert body["login"] is None
+        assert body["login_password"] is None
+
+    def test_list_accounts_decrypts_password(self, client):
+        self._import(client, login="u@x.com", login_password="mypass")
+        r = client.get("/api/accounts", headers=HEADERS_OK)
+        assert r.status_code == 200
+        rows = r.json()
+        assert len(rows) == 1
+        assert rows[0]["login_password"] == "mypass"
+        assert "login_password_encrypted" not in rows[0]
+
+    def test_patch_updates_login_and_password(self, client):
+        create_r = self._import(client)
+        account_id = create_r.json()["id"]
+
+        r = client.patch(
+            f"/api/accounts/{account_id}",
+            json={"login": "new@example.com", "login_password": "newpass"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["login"] == "new@example.com"
+        assert body["login_password"] == "newpass"
+        assert "login_password_encrypted" not in body
+
+    def test_patch_preserves_existing_password_when_not_provided(self, client):
+        create_r = self._import(client, login="u@x.com", login_password="original")
+        account_id = create_r.json()["id"]
+
+        r = client.patch(
+            f"/api/accounts/{account_id}",
+            json={"display_name": "My Label"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["login_password"] == "original"
+        assert body["display_name"] == "My Label"

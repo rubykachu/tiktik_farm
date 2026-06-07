@@ -5,7 +5,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session
 
 import api.db as _api_db
 from api.db import make_engine, override_engine
@@ -21,7 +21,7 @@ def fresh_db(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.db")
     engine = make_engine(f"sqlite:///{db_path}")
     override_engine(engine)
-    SQLModel.metadata.create_all(engine)
+    _api_db.init_db()  # create_all + _run_migrations (matches production startup)
     yield engine
     override_engine(make_engine("sqlite:///"))
     _sec._reset_for_tests()
@@ -143,7 +143,7 @@ class TestDeleteDouyinCookie:
         resp = client.delete("/api/douyin-cookies/9999")
         assert resp.status_code == 404
 
-    def test_delete_in_use_by_pipeline_returns_409(self, client):
+    def test_delete_in_use_by_pipeline_returns_409(self, client):  # noqa: keep together
         from datetime import datetime, timezone
 
         from api.models import ChannelPipeline
@@ -172,3 +172,90 @@ class TestDeleteDouyinCookie:
 
         # Cookie still present after the rejected delete.
         assert len(client.get("/api/douyin-cookies").json()) == 1
+
+
+class TestLoginCredentials:
+    def _create(self, client, name="Main", login="", login_password=""):
+        cookie_bytes = json.dumps(VALID_COOKIE_LIST).encode()
+        data = {"name": name}
+        if login:
+            data["login"] = login
+        if login_password:
+            data["login_password"] = login_password
+        return client.post(
+            "/api/douyin-cookies",
+            data=data,
+            files={"file": ("cookies.json", cookie_bytes, "application/json")},
+        )
+
+    def test_create_with_login_and_password_saved(self, client):
+        r = self._create(client, login="user@example.com", login_password="secret123")
+        assert r.status_code == 201
+        body = r.json()
+        assert body["login"] == "user@example.com"
+        assert body["login_password"] == "secret123"
+
+    def test_login_password_encrypted_not_in_response(self, client):
+        r = self._create(client, login="u@x.com", login_password="pw")
+        assert "login_password_encrypted" not in r.json()
+        assert "cookie_json_encrypted" not in r.json()
+
+    def test_create_without_credentials_returns_null_fields(self, client):
+        r = self._create(client)
+        assert r.status_code == 201
+        body = r.json()
+        assert body["login"] is None
+        assert body["login_password"] is None
+
+    def test_list_decrypts_password(self, client):
+        self._create(client, login="u@x.com", login_password="mypass")
+        rows = client.get("/api/douyin-cookies").json()
+        assert rows[0]["login_password"] == "mypass"
+        assert "login_password_encrypted" not in rows[0]
+
+    def test_put_updates_login_without_file(self, client):
+        create_r = self._create(client, login="old@x.com", login_password="oldpass")
+        cookie_id = create_r.json()["id"]
+
+        r = client.put(
+            f"/api/douyin-cookies/{cookie_id}",
+            data={"login": "new@x.com", "login_password": "newpass"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["login"] == "new@x.com"
+        assert body["login_password"] == "newpass"
+
+    def test_put_updates_name_without_file(self, client):
+        create_r = self._create(client, name="Old Name")
+        cookie_id = create_r.json()["id"]
+
+        r = client.put(
+            f"/api/douyin-cookies/{cookie_id}",
+            data={"name": "New Name"},
+        )
+        assert r.status_code == 200
+        assert r.json()["name"] == "New Name"
+
+    def test_put_without_file_preserves_cookie(self, client):
+        """Updating only login fields must not wipe the stored cookie."""
+        cookie_bytes = json.dumps(VALID_COOKIE_LIST).encode()
+        create_r = client.post(
+            "/api/douyin-cookies",
+            data={"name": "X", "login": "a@b.com"},
+            files={"file": ("c.json", cookie_bytes, "application/json")},
+        )
+        cookie_id = create_r.json()["id"]
+
+        client.put(f"/api/douyin-cookies/{cookie_id}", data={"login": "c@d.com"})
+
+        # Re-fetch and confirm the cookie is still decryptable by the scheduler
+        from api.db import engine as _engine
+        from api.models import DouyinCookie as _DC
+        from api.services.secrets import decrypt
+        from sqlmodel import Session, select
+        with Session(_engine) as s:
+            row = s.exec(select(_DC).where(_DC.id == cookie_id)).one()
+            assert row.cookie_json_encrypted  # still present
+            decrypted = decrypt(row.cookie_json_encrypted)
+            assert "ttwid" in decrypted

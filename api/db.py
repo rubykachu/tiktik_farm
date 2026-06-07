@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 from typing import Iterator
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -64,12 +64,36 @@ def override_engine(new_engine: Engine) -> None:
     engine = new_engine
 
 
+_COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "accounts": [
+        ("login", "TEXT DEFAULT NULL"),
+        ("login_password_encrypted", "TEXT DEFAULT NULL"),
+    ],
+    "douyin_cookies": [
+        ("login", "TEXT DEFAULT NULL"),
+        ("login_password_encrypted", "TEXT DEFAULT NULL"),
+    ],
+}
+
+
+def _run_migrations(eng: Engine) -> None:
+    """Add new columns to existing tables. Safe to run on every startup."""
+    with eng.connect() as conn:
+        for table, columns in _COLUMN_MIGRATIONS.items():
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            for column, definition in columns:
+                if column not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+        conn.commit()
+
+
 def init_db() -> None:
-    """Create tables if they don't exist. Idempotent."""
+    """Create tables if they don't exist, then run column migrations."""
     # Import models so SQLModel.metadata sees them.
     from api import models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _run_migrations(engine)
 
 
 def get_session() -> Iterator[Session]:

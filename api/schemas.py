@@ -47,6 +47,8 @@ class DouyinCookieRead(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
+    login: Optional[str] = None
+    login_password: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -62,6 +64,8 @@ class AccountRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_used_at: Optional[datetime]
+    login: Optional[str] = None
+    login_password: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -71,10 +75,14 @@ class AccountCreate(BaseModel):
     # must already exist in CookiesDir; this endpoint does not create a login session.
     username: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.\-]+$")
     display_name: Optional[str] = Field(default=None, max_length=128)
+    login: Optional[str] = Field(default=None, max_length=256)
+    login_password: Optional[str] = Field(default=None, max_length=512)
 
 
 class AccountUpdate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=128)
+    login: Optional[str] = Field(default=None, max_length=256)
+    login_password: Optional[str] = Field(default=None, max_length=512)
 
 
 # ---------- videos / browse --------------------------------------------------

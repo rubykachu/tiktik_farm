@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, FileJson, Edit2 } from "lucide-react";
+import { Trash2, FileJson, Edit2, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Accounts } from "../api/client";
 import { DouyinCookies, type DouyinCookie } from "../api/douyin_cookies";
@@ -11,6 +11,22 @@ import DouyinCookieModal from "../components/DouyinCookieModal";
 type DeleteTarget = { id: number; username: string } | null;
 type DeleteCookieTarget = { id: number; name: string } | null;
 
+function CopyCell({ value, mask }: { value?: string | null; mask?: boolean }) {
+  if (!value) return <span className="text-slate-400">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="truncate max-w-[120px] font-mono text-xs">{mask ? "••••••••" : value}</span>
+      <button
+        className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+        onClick={() => { navigator.clipboard.writeText(value); toast.success("Đã sao chép"); }}
+        title="Sao chép"
+      >
+        <Copy size={12} />
+      </button>
+    </span>
+  );
+}
+
 export default function AccountsPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"tiktok" | "douyin">("tiktok");
@@ -19,7 +35,7 @@ export default function AccountsPage() {
   const { data, isLoading, isError } = useQuery({ queryKey: ["accounts"], queryFn: Accounts.list });
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
-  const [updateCookieTarget, setUpdateCookieTarget] = useState<{ id: number; username: string } | null>(null);
+  const [updateCookieTarget, setUpdateCookieTarget] = useState<{ id: number; username: string; display_name?: string | null } | null>(null);
 
   // Douyin tab state
   const { data: cookies, isLoading: cookiesLoading, isError: cookiesError } = useQuery({
@@ -102,7 +118,9 @@ export default function AccountsPage() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="text-left p-3">Tên</th>
+                  <th className="text-left p-3">Nhãn</th>
+                  <th className="text-left p-3">Tài khoản đăng nhập</th>
+                  <th className="text-left p-3">Mật khẩu</th>
                   <th className="text-left p-3">Phiên đăng nhập</th>
                   <th className="text-left p-3">Ngày tạo</th>
                   <th className="text-left p-3">Ngày cập nhật</th>
@@ -112,28 +130,30 @@ export default function AccountsPage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={5}>
+                    <td className="p-4 text-slate-500" colSpan={7}>
                       Đang tải…
                     </td>
                   </tr>
                 )}
                 {isError && (
                   <tr>
-                    <td className="p-4 text-center text-red-400" colSpan={5}>
+                    <td className="p-4 text-center text-red-400" colSpan={7}>
                       Không thể tải. Kiểm tra kết nối.
                     </td>
                   </tr>
                 )}
                 {!isLoading && !isError && data && data.length === 0 && (
                   <tr>
-                    <td className="p-6 text-center text-slate-500" colSpan={5}>
+                    <td className="p-6 text-center text-slate-500" colSpan={7}>
                       Chưa có tài khoản nào. Nhấn "Thêm Cookie TikTok" để thêm.
                     </td>
                   </tr>
                 )}
                 {data?.map((a) => (
                   <tr key={a.id} className="hover:bg-slate-50">
-                    <td className="p-3 font-medium">{a.username}</td>
+                    <td className="p-3 font-medium">{a.display_name || a.username}</td>
+                    <td className="p-3"><CopyCell value={a.login} /></td>
+                    <td className="p-3"><CopyCell value={a.login_password} mask /></td>
                     <td className="p-3">
                       <span
                         className={
@@ -151,7 +171,7 @@ export default function AccountsPage() {
                     <td className="p-3 text-right space-x-2">
                       <button
                         className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
-                        onClick={() => setUpdateCookieTarget({ id: a.id, username: a.username })}
+                        onClick={() => setUpdateCookieTarget({ id: a.id, username: a.username, display_name: a.display_name })}
                       >
                         <Edit2 size={14} /> Cập nhật
                       </button>
@@ -175,7 +195,9 @@ export default function AccountsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="text-left p-3">Tên</th>
+                <th className="text-left p-3">Nhãn</th>
+                <th className="text-left p-3">Tài khoản đăng nhập</th>
+                <th className="text-left p-3">Mật khẩu</th>
                 <th className="text-left p-3">Ngày tạo</th>
                 <th className="text-left p-3">Ngày cập nhật</th>
                 <th className="p-3 text-right">Thao tác</th>
@@ -184,21 +206,21 @@ export default function AccountsPage() {
             <tbody className="divide-y divide-slate-100">
               {cookiesLoading && (
                 <tr>
-                  <td className="p-4 text-slate-500" colSpan={4}>
+                  <td className="p-4 text-slate-500" colSpan={6}>
                     Đang tải…
                   </td>
                 </tr>
               )}
               {cookiesError && (
                 <tr>
-                  <td className="p-4 text-center text-red-400" colSpan={4}>
+                  <td className="p-4 text-center text-red-400" colSpan={6}>
                     Không thể tải. Kiểm tra kết nối.
                   </td>
                 </tr>
               )}
               {!cookiesLoading && !cookiesError && cookies && cookies.length === 0 && (
                 <tr>
-                  <td className="p-6 text-center text-slate-500" colSpan={4}>
+                  <td className="p-6 text-center text-slate-500" colSpan={6}>
                     Chưa có tài khoản nào. Nhấn "Thêm Tài khoản Douyin" để thêm.
                   </td>
                 </tr>
@@ -206,6 +228,8 @@ export default function AccountsPage() {
               {cookies?.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="p-3 font-medium">{c.name}</td>
+                  <td className="p-3"><CopyCell value={c.login} /></td>
+                  <td className="p-3"><CopyCell value={c.login_password} mask /></td>
                   <td className="p-3 text-slate-500">{new Date(c.created_at).toLocaleString()}</td>
                   <td className="p-3 text-slate-500">{new Date(c.updated_at).toLocaleString()}</td>
                   <td className="p-3 text-right space-x-2">

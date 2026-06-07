@@ -6,7 +6,7 @@ import { Accounts } from "../api/client";
 type Props = {
   open: boolean;
   onClose: () => void;
-  updateAccount?: { id: number; username: string } | null;
+  updateAccount?: { id: number; username: string; display_name?: string | null } | null;
 };
 
 const USERNAME_RE = /^[A-Za-z0-9_.]{1,32}$/;
@@ -16,25 +16,37 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
   const isUpdate = !!updateAccount;
   const [text, setText] = useState("");
   const [username, setUsername] = useState("");
-  const [replace, setReplace] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [login, setLogin] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setText("");
       setUsername("");
-      setReplace(false);
+      setDisplayName("");
+      setLogin("");
+      setLoginPassword("");
       setError(null);
     } else if (updateAccount) {
       setUsername(updateAccount.username);
-      setReplace(true);
+      setDisplayName(updateAccount.display_name ?? "");
     }
   }, [open, updateAccount]);
 
   const mut = useMutation({
     mutationFn: () => {
+      if (isUpdate && !text.trim()) {
+        // No new cookie — update display_name/login/password via PATCH
+        return Accounts.update(updateAccount!.id, {
+          display_name: displayName || undefined,
+          login: login || undefined,
+          login_password: loginPassword || undefined,
+        });
+      }
       const file = new File([text], "cookie.json", { type: "application/json" });
-      return Accounts.importJson(file, username, replace);
+      return Accounts.importJson(file, username, isUpdate, login || undefined, loginPassword || undefined);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["accounts"] });
@@ -44,7 +56,7 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
       const detail = e?.response?.data?.detail;
       const status = e?.response?.status;
       if (status === 409 && typeof detail === "object" && detail.code === "ACCOUNT_EXISTS") {
-        setError("Tài khoản đã tồn tại. Tích vào 'Ghi đè' và nhập lại để thay thế.");
+        setError("Tài khoản đã tồn tại. Xóa tài khoản cũ rồi thêm lại.");
       } else if (status === 403) {
         setError("Yêu cầu bị chặn (Origin không hợp lệ). Hãy tải lại trang.");
       } else {
@@ -54,17 +66,22 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
   });
 
   function handleSubmit() {
-    try {
-      JSON.parse(text);
-    } catch {
-      setError("JSON không hợp lệ. Kiểm tra lại và thử lại.");
-      return;
+    if (text.trim()) {
+      try {
+        JSON.parse(text);
+      } catch {
+        setError("JSON không hợp lệ. Kiểm tra lại và thử lại.");
+        return;
+      }
     }
     setError(null);
     mut.mutate();
   }
 
-  const submitDisabled = !text.trim() || !USERNAME_RE.test(username) || mut.isPending || (isUpdate && !replace);
+  const submitDisabled =
+    (!isUpdate && (!text.trim() || !USERNAME_RE.test(username))) ||
+    (isUpdate && !text.trim() && !displayName && !login && !loginPassword) ||
+    mut.isPending;
 
   if (!open) return null;
 
@@ -88,19 +105,11 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
           </button>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs uppercase tracking-wide text-slate-500">Cookie JSON</label>
-          <textarea
-            className="input min-h-[120px] font-mono text-xs"
-            value={text}
-            onChange={(e) => { setText(e.target.value); setError(null); }}
-            placeholder="Dán Cookie-Editor JSON vào đây…"
-          />
-        </div>
-
         {!isUpdate && (
           <div className="space-y-1">
-            <label className="text-xs uppercase tracking-wide text-slate-500">Tên</label>
+            <label className="text-xs uppercase tracking-wide text-slate-500">
+              Nhãn <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               className="input"
@@ -111,12 +120,56 @@ export default function ImportJsonModal({ open, onClose, updateAccount }: Props)
           </div>
         )}
 
-        {!isUpdate && (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-            Ghi đè nếu tên đăng nhập đã tồn tại
-          </label>
+        {isUpdate && (
+          <div className="space-y-1">
+            <label className="text-xs uppercase tracking-wide text-slate-500">Nhãn</label>
+            <input
+              type="text"
+              className="input"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={updateAccount!.username}
+              maxLength={128}
+            />
+          </div>
         )}
+
+        <div className="space-y-1">
+          <label className="text-xs uppercase tracking-wide text-slate-500">
+            Cookie JSON {!isUpdate && <span className="text-red-500">*</span>}
+            {isUpdate && <span className="text-slate-400 normal-case"> (để trống để giữ cookie hiện tại)</span>}
+          </label>
+          <textarea
+            className="input min-h-[120px] font-mono text-xs"
+            value={text}
+            onChange={(e) => { setText(e.target.value); setError(null); }}
+            placeholder="Dán Cookie-Editor JSON vào đây…"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs uppercase tracking-wide text-slate-500">Tài khoản đăng nhập</label>
+          <input
+            type="text"
+            className="input"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="Email hoặc username đăng nhập"
+            maxLength={256}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs uppercase tracking-wide text-slate-500">Mật khẩu</label>
+          <input
+            type="password"
+            className="input"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            placeholder="Mật khẩu tài khoản"
+            maxLength={512}
+          />
+        </div>
 
         {error && (
           <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

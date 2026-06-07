@@ -13,13 +13,22 @@ from api.models import Account
 from api.schemas import AccountCreate, AccountRead, AccountUpdate
 from api.services import cookie_import, cookie_store
 from api.services.safe_path import safe_join_under, validate_username
+from api.services.secrets import decrypt, encrypt
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
+def _account_read(acct: Account) -> AccountRead:
+    return AccountRead(
+        **acct.model_dump(exclude={"login_password_encrypted"}),
+        login_password=decrypt(acct.login_password_encrypted) if acct.login_password_encrypted else None,
+    )
+
+
 @router.get("", response_model=List[AccountRead])
 def list_accounts(session: Session = Depends(get_session)):
-    return session.exec(select(Account).order_by(Account.username)).all()
+    accounts = session.exec(select(Account).order_by(Account.username)).all()
+    return [_account_read(a) for a in accounts]
 
 
 @router.get("/{account_id}", response_model=AccountRead)
@@ -27,7 +36,7 @@ def get_account(account_id: int, session: Session = Depends(get_session)):
     acct = session.get(Account, account_id)
     if not acct:
         raise HTTPException(status_code=404, detail="account not found")
-    return acct
+    return _account_read(acct)
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -51,11 +60,13 @@ def create_account(payload: AccountCreate, session: Session = Depends(get_sessio
         display_name=payload.display_name,
         cookie_path=cookie_store.cookie_file_path(payload.username),
         has_valid_session=cookie_store.has_valid_session(payload.username),
+        login=payload.login or None,
+        login_password_encrypted=encrypt(payload.login_password) if payload.login_password else None,
     )
     session.add(acct)
     session.commit()
     session.refresh(acct)
-    return acct
+    return _account_read(acct)
 
 
 @router.patch("/{account_id}", response_model=AccountRead)
@@ -69,11 +80,15 @@ def update_account(
         raise HTTPException(status_code=404, detail="account not found")
     if payload.display_name is not None:
         acct.display_name = payload.display_name
+    if payload.login is not None:
+        acct.login = payload.login or None
+    if payload.login_password is not None:
+        acct.login_password_encrypted = encrypt(payload.login_password) if payload.login_password else None
     acct.updated_at = now_utc()
     session.add(acct)
     session.commit()
     session.refresh(acct)
-    return acct
+    return _account_read(acct)
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -94,6 +109,8 @@ async def import_json_cookie(
     file: UploadFile = File(...),
     username: str = Form(...),
     replace: str = Form(default="false"),
+    login: str = Form(default="", max_length=256),
+    login_password: str = Form(default="", max_length=512),
     session: Session = Depends(get_session),
 ):
     """Accept a Chrome Cookie-Editor JSON export, convert to pickle, store as
@@ -144,19 +161,25 @@ async def import_json_cookie(
         existing.cookie_path = cookie_path
         existing.has_valid_session = has_session
         existing.updated_at = now_utc()
+        if login:
+            existing.login = login
+        if login_password:
+            existing.login_password_encrypted = encrypt(login_password)
         session.add(existing)
         session.commit()
         session.refresh(existing)
-        return existing
+        return _account_read(existing)
 
     acct = Account(
         username=username,
         cookie_path=cookie_path,
         has_valid_session=has_session,
+        login=login or None,
+        login_password_encrypted=encrypt(login_password) if login_password else None,
     )
     session.add(acct)
     session.commit()
     session.refresh(acct)
-    return acct
+    return _account_read(acct)
 
 
