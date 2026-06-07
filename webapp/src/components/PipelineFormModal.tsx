@@ -116,6 +116,17 @@ function buildSchema(existingTokenSet: boolean) {
     )
     .refine(
       (d) => {
+        // {ai_title_hashtag} only makes sense alongside {ai_title}.
+        if (!d.caption_template.includes("{ai_title_hashtag}")) return true;
+        return d.caption_template.includes("{ai_title}");
+      },
+      {
+        message: "{ai_title_hashtag} requires {ai_title} in the caption template",
+        path: ["caption_template"],
+      }
+    )
+    .refine(
+      (d) => {
         if (d.clear_bot_token) {
           return !d.telegram_chat_id;
         }
@@ -909,7 +920,11 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <code className="bg-slate-100 px-1 rounded">{"{title}"}</code>,{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{title_hashtag}"}</code>,{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{now}"}</code>,{" "}
-                <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code>
+                <code className="bg-slate-100 px-1 rounded">{"{ai_title}"}</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{ai_title_hashtag}"}</code>
+                {" — "}
+                <code className="bg-slate-100 px-1 rounded">{"{now}"}</code> = giờ upload,
+                định dạng <code className="bg-slate-100 px-1 rounded">YYYY-MM-DD HH:mm</code> (GMT+7)
               </p>
             </div>
 

@@ -22,6 +22,19 @@ class TestFindUnknownVars:
     def test_no_vars(self):
         assert find_unknown_vars("hello world") == []
 
+    def test_ai_title_hashtag_allowed(self):
+        assert find_unknown_vars("{ai_title} {ai_title_hashtag}") == []
+
+
+class TestTemplateUsesAiTitleHashtag:
+    def test_positive(self):
+        from api.services.caption import template_uses_ai_title_hashtag
+        assert template_uses_ai_title_hashtag("{ai_title_hashtag}") is True
+
+    def test_negative(self):
+        from api.services.caption import template_uses_ai_title_hashtag
+        assert template_uses_ai_title_hashtag("{ai_title} {title}") is False
+
 
 class TestRenderCaptionHappy:
     def test_title_substitution(self):
@@ -45,6 +58,30 @@ class TestRenderCaptionHappy:
             now=dt,
         )
         assert result == "My Video #cool uploaded at 2025-06-01 08:00"
+
+
+class TestRenderCaptionAiTitleHashtag:
+    def test_extracts_from_ai_title(self):
+        result = render_caption(
+            "{title} {ai_title_hashtag}",
+            title="原始标题 #进口钻石球",
+            ai_title="Miss you this season #ImportedDiamondBall",
+        )
+        assert result == "原始标题 #进口钻石球 #ImportedDiamondBall"
+
+    def test_empty_when_ai_title_has_no_hashtags(self):
+        result = render_caption(
+            "{ai_title} {ai_title_hashtag}",
+            ai_title="No tags here",
+        )
+        assert result == "No tags here"
+
+    def test_dedupes_against_ai_title(self):
+        result = render_caption(
+            "{ai_title} {ai_title_hashtag}",
+            ai_title="Cool video #fyp",
+        )
+        assert result == "Cool video #fyp"
 
 
 class TestRenderCaptionHashtagDedupe:

@@ -147,6 +147,59 @@ class TestCreateValidation:
         assert r.status_code == 201, r.text
 
 
+class TestAiTitleHashtagValidation:
+    def test_create_hashtag_without_ai_title_422(self, client):
+        _seed_default_model(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_pipeline_payload(caption_template="{title} {ai_title_hashtag}"),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+        assert "{ai_title_hashtag} requires {ai_title}" in r.text
+
+    def test_patch_hashtag_without_ai_title_422(self, client):
+        _seed_default_model(client)
+        created = client.post(
+            "/api/pipelines",
+            json=_pipeline_payload(
+                caption_template="{title}",
+                caption_ai_prompt=None,
+            ),
+            headers=HEADERS_OK,
+        ).json()
+        r = client.patch(
+            f"/api/pipelines/{created['id']}",
+            json={"caption_template": "{ai_title_hashtag}"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+        assert "{ai_title_hashtag} requires {ai_title}" in r.text
+
+    def test_create_both_vars_happy_path(self, client):
+        _seed_default_model(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_pipeline_payload(caption_template="{ai_title} {ai_title_hashtag}"),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 201, r.text
+
+    def test_both_vars_without_prompt_still_422(self, client):
+        # The hashtag guard must not mask the existing prompt precondition.
+        _seed_default_model(client)
+        r = client.post(
+            "/api/pipelines",
+            json=_pipeline_payload(
+                caption_template="{ai_title} {ai_title_hashtag}",
+                caption_ai_prompt="",
+            ),
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+        assert "Add an AI prompt" in r.text
+
+
 class TestPatchValidation:
     def test_patch_template_to_ai_title_without_prompt_422(self, client):
         _seed_default_model(client)

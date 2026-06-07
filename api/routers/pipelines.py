@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 from api.db import get_session, now_utc
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
 from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, _validate_window_fields, is_douyin_url
-from api.services.caption import template_uses_ai_title
+from api.services.caption import template_uses_ai_title, template_uses_ai_title_hashtag
 from api.services.llm_config import get_default_llm_model, get_llm_mode, is_llm_enabled
 from api.services.youtube_validate import is_youtube_url
 
@@ -68,7 +68,13 @@ def _to_read(row: ChannelPipeline) -> dict:
 
 
 def _validate_ai_title_preconditions(template: str, prompt: Optional[str]) -> None:
-    """Three preconditions when {ai_title} appears in the template."""
+    """Caption AI validation: {ai_title_hashtag} requires {ai_title};
+    {ai_title} requires a prompt + enabled/configured LLM."""
+    if template_uses_ai_title_hashtag(template) and not template_uses_ai_title(template):
+        raise HTTPException(
+            status_code=422,
+            detail="{ai_title_hashtag} requires {ai_title} in the caption template",
+        )
     if not template_uses_ai_title(template):
         return
     if not prompt or not prompt.strip():

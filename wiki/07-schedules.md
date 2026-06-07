@@ -115,9 +115,10 @@ Nếu số pipeline **active** > **5**: banner vàng — gợi ý cân nhắc St
 | Biến | Ý nghĩa |
 |------|---------|
 | `{title}` | Tiêu đề video YouTube |
-| `{title_hashtag}` | Các token `#...` extract từ title, nối bằng space |
+| `{title_hashtag}` | Các token `#...` extract từ title **gốc**, nối bằng space |
 | `{now}` | Thời điểm render, TZ `Asia/Ho_Chi_Minh`, format `YYYY-MM-DD HH:mm` |
 | `{ai_title}` | Caption do LLM viết (yêu cầu bật AI prompt) |
+| `{ai_title_hashtag}` | Các token `#...` extract từ **kết quả LLM** (`ai_title`). Bắt buộc đi kèm `{ai_title}` trong template — thiếu → 422. LLM fail → `ai_title` fallback title gốc → hashtag cũng từ gốc. |
 
 - Biến lạ → **422** khi create/patch pipeline (Pydantic validation).
 - Sau khi thay biến: **dedupe hashtag** không phân biệt hoa thường, **giữ lần xuất hiện đầu** theo thứ tự trong chuỗi.

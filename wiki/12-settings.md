@@ -145,6 +145,7 @@ Khi POST/PATCH `/api/pipelines` có `caption_template` chứa `{ai_title}`, serv
 
 | Điều kiện sai | Error message |
 |---|---|
+| Template có `{ai_title_hashtag}` mà thiếu `{ai_title}` | `{ai_title_hashtag} requires {ai_title} in the caption template` |
 | `caption_ai_prompt` rỗng / null | `Add an AI prompt or remove {ai_title} from the caption template` |
 | `app_settings["llm.enabled"]` = `false` | `Enable LLM in Settings before using {ai_title}` |
 | Mode = **cloud** và không có row `llm_models.is_default = true` | `Configure a default LLM in Settings before using {ai_title}` |

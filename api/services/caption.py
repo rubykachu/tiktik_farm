@@ -10,10 +10,11 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-ALLOWED_VARS = frozenset({"title", "title_hashtag", "now", "ai_title"})
+ALLOWED_VARS = frozenset({"title", "title_hashtag", "now", "ai_title", "ai_title_hashtag"})
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
-_RENDER_RE = re.compile(r"\{(title|title_hashtag|now|ai_title)\}")
+_RENDER_RE = re.compile(r"\{(title|title_hashtag|now|ai_title|ai_title_hashtag)\}")
 _AI_TITLE_RE = re.compile(r"\{ai_title\}")
+_AI_TITLE_HASHTAG_RE = re.compile(r"\{ai_title_hashtag\}")
 _HASHTAG_RE = re.compile(r"#\w+")
 _MULTI_SPACE_RE = re.compile(r"\s{2,}")
 
@@ -37,6 +38,10 @@ def _extract_hashtags(title: str) -> str:
 
 def template_uses_ai_title(template: str) -> bool:
     return bool(_AI_TITLE_RE.search(template))
+
+
+def template_uses_ai_title_hashtag(template: str) -> bool:
+    return bool(_AI_TITLE_HASHTAG_RE.search(template))
 
 
 def render_caption(
@@ -68,6 +73,7 @@ def render_caption(
         "title_hashtag": title_hashtag,
         "now": now_str,
         "ai_title": ai_title,
+        "ai_title_hashtag": _extract_hashtags(ai_title),
     }
 
     text = _RENDER_RE.sub(lambda m: vars_map[m.group(1)], template)
