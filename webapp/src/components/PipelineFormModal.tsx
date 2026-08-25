@@ -834,7 +834,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 <span className="text-slate-400 font-normal">(dùng cho AI)</span>
               </label>
               <textarea
-                className="input min-h-[60px]"
+                className="input min-h-[90px]"
                 maxLength={2000}
                 {...register("channel_description")}
                 placeholder="Ví dụ: Kênh review xe điện và công nghệ Trung Quốc. Dùng để giúp AI hiểu context khi tiêu đề/mô tả nguồn mơ hồ."
@@ -843,19 +843,50 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 <p className="field-error">{errors.channel_description.message}</p>
               )}
             </div>
-            <div>
-              <label className="label-required">Số video mỗi lần chạy (1–20)</label>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                max={20}
-                {...register("fetch_count")}
-              />
-              {errors.fetch_count && (
-                <p className="field-error">{errors.fetch_count.message}</p>
-              )}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label-required">Số video/lần (1–20)</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  max={20}
+                  {...register("fetch_count")}
+                />
+                {errors.fetch_count && (
+                  <p className="field-error">{errors.fetch_count.message}</p>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Độ dài tối đa (giây)</label>
+                  {Number(maxDurationSeconds) > 60 && (
+                    <span className="text-xs font-medium text-brand-600 whitespace-nowrap">
+                      ≈ {formatSecondsAsMinutes(Number(maxDurationSeconds))}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  {...register("max_duration_seconds")}
+                  placeholder="Không giới hạn"
+                />
+              </div>
+              <div>
+                <label className="label">Lấy video từ ngày</label>
+                <input
+                  type="date"
+                  className="input"
+                  {...register("sync_from_date")}
+                />
+              </div>
             </div>
+            <p className="text-xs text-slate-400">
+              Video dài hơn "độ dài tối đa" sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên. "Lấy
+              video từ ngày" chỉ xử lý video đăng từ ngày đó trở đi, để trống nếu muốn lấy tất cả.
+            </p>
             {Number(fetchCount) > 1 && (
               <div>
                 <label className="label">Thời gian chờ giữa các video (phút)</label>
@@ -874,37 +905,6 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 )}
               </div>
             )}
-            <div>
-              <div className="flex items-center gap-2">
-                <label className="label">Độ dài tối đa (giây)</label>
-                {Number(maxDurationSeconds) > 60 && (
-                  <span className="text-xs font-medium text-brand-600">
-                    ≈ {formatSecondsAsMinutes(Number(maxDurationSeconds))}
-                  </span>
-                )}
-              </div>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                {...register("max_duration_seconds")}
-                placeholder="Để trống nếu không giới hạn"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Video dài hơn giá trị này sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên.
-              </p>
-            </div>
-            <div>
-              <label className="label">Lấy video từ ngày</label>
-              <input
-                type="date"
-                className="input"
-                {...register("sync_from_date")}
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Chỉ xử lý video đăng từ ngày này trở đi. Để trống nếu muốn lấy tất cả.
-              </p>
-            </div>
           </fieldset>
 
           {/* Section 3: Đăng tải */}
