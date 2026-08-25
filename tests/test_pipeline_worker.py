@@ -505,6 +505,13 @@ class TestAdvanceNextFire:
 # ─── E4b: Window scheduling ────────────────────────────────────────────────
 
 
+def _window_day() -> datetime:
+    """Midnight tomorrow, UTC — a window day that stays in the future."""
+    return (now_utc() + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
 class TestWindowScheduling:
     def _make_window_pipeline(
         self,
@@ -523,8 +530,11 @@ class TestWindowScheduling:
         )
 
     def test_within_window_advances_by_delay(self):
-        # next_fire_at = 00:10 → next should be 00:15 (still ≤ 00:30)
-        base = datetime(2026, 6, 1, 0, 10, 0, tzinfo=timezone.utc)
+        # next_fire_at = 00:10 → next should be 00:15 (still ≤ 00:30).
+        # Dated relative to today: advance_next_fire only keeps an in-window
+        # candidate when it is still in the future, so a hard-coded date makes
+        # the test pass until that date arrives and then fail forever.
+        base = _window_day().replace(hour=0, minute=10)
         with Session(_api_db.engine) as s:
             pipeline = self._make_window_pipeline(s, next_fire_at=base)
             s.expunge(pipeline)
@@ -534,12 +544,12 @@ class TestWindowScheduling:
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
             result = _ensure_aware(fresh.next_fire_at)
-            expected = datetime(2026, 6, 1, 0, 15, 0, tzinfo=timezone.utc)
+            expected = base.replace(minute=15)
             assert result == expected
 
     def test_at_window_end_advances_by_delay(self):
         # next_fire_at = 00:25, delay=5 → candidate 00:30 == window_close → still in window
-        base = datetime(2026, 6, 1, 0, 25, 0, tzinfo=timezone.utc)
+        base = _window_day().replace(hour=0, minute=25)
         with Session(_api_db.engine) as s:
             pipeline = self._make_window_pipeline(s, next_fire_at=base)
             s.expunge(pipeline)
@@ -549,7 +559,7 @@ class TestWindowScheduling:
         with Session(_api_db.engine) as s:
             fresh = s.get(ChannelPipeline, pipeline.id)
             result = _ensure_aware(fresh.next_fire_at)
-            expected = datetime(2026, 6, 1, 0, 30, 0, tzinfo=timezone.utc)
+            expected = base.replace(minute=30)
             assert result == expected
 
     def test_past_window_jumps_to_next_cycle(self):
