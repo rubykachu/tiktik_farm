@@ -8,13 +8,17 @@ silently break the scheduler.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Iterator
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine
+
+log = logging.getLogger(__name__)
 
 
 def _db_path() -> str:
@@ -76,14 +80,36 @@ _COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
 }
 
 
+def _is_duplicate_column(exc: OperationalError) -> bool:
+    return "duplicate column name" in str(exc.orig).lower()
+
+
 def _run_migrations(eng: Engine) -> None:
-    """Add new columns to existing tables. Safe to run on every startup."""
+    """Add new columns to existing tables. Safe to run on every startup.
+
+    The PRAGMA check and the ALTER are not atomic, and api + scheduler call
+    this concurrently at container startup. Both can see a column as missing
+    and both issue the ALTER; the loser gets "duplicate column name" and would
+    otherwise crash the container on the first boot after a release that adds
+    a column. Losing that race means the column now exists, which is the
+    desired end state, so swallow only that error and re-raise anything else.
+    """
     with eng.connect() as conn:
         for table, columns in _COLUMN_MIGRATIONS.items():
             existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             for column, definition in columns:
-                if column not in existing:
+                if column in existing:
+                    continue
+                try:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+                except OperationalError as exc:
+                    if not _is_duplicate_column(exc):
+                        raise
+                    log.info(
+                        "Column %s.%s was added concurrently by another process",
+                        table, column,
+                    )
+                    conn.rollback()
         conn.commit()
 
 
