@@ -147,6 +147,10 @@ data/
 
 # Environment
 .env
+
+# make tunnel-start background process
+tunnel.pid
+tunnel.log
 .htpasswd
 
 # Node

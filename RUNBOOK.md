@@ -52,38 +52,16 @@ Ghi lại mật khẩu này. Không xem lại được, chỉ đặt lại đư�
 
 Cần một tên miền đã trỏ NS về Cloudflare.
 
-```bash
-cloudflared tunnel login
-```
-
-Trình duyệt mở ra, chọn tên miền của bạn.
-
-Tiếp theo, đặt tên cho máy này. Ví dụ máy đầu tiên là `farm1`:
+Đặt tên cho máy này (ví dụ máy đầu tiên là `farm1`) và tên miền con muốn dùng,
+rồi chạy:
 
 ```bash
-cloudflared tunnel create farm1
+NAME=farm1 DOMAIN=farm1.tenmien.com make tunnel-create
 ```
 
-Dòng cuối in ra một chuỗi dài dạng `c80ed3bf-c8fc-...`. Đó là **mã tunnel**, copy lại.
-
-Nối tên miền vào tunnel — thay `tenmien.com` bằng tên miền của bạn:
-
-```bash
-cloudflared tunnel route dns farm1 farm1.tenmien.com
-```
-
-Tạo file `~/.cloudflared/config.yml` với nội dung sau. Thay hai chỗ `<MÃ TUNNEL>`
-và `<TÊN NGƯỜI DÙNG MÁC>` (xem bằng lệnh `whoami`):
-
-```yaml
-tunnel: <MÃ TUNNEL>
-credentials-file: /Users/<TÊN NGƯỜI DÙNG MÁC>/.cloudflared/<MÃ TUNNEL>.json
-
-ingress:
-  - hostname: farm1.tenmien.com
-    service: http://127.0.0.1:2705
-  - service: http_status:404
-```
+Lệnh này tự làm 3 việc: đăng nhập Cloudflare (trình duyệt mở ra, chọn tên
+miền của bạn), tạo tunnel tên `farm1`, trỏ `farm1.tenmien.com` vào tunnel đó,
+rồi ghi sẵn `~/.cloudflared/config.yml`.
 
 Cho tunnel tự chạy mỗi khi bật máy:
 
@@ -131,6 +109,9 @@ và mật khẩu ở Bước 4 → vào được trang quản lý là xong.
 | Xem hệ thống đang làm gì | `make logs` (Ctrl-C để thoát) |
 | Cập nhật bản mới | `make update` |
 | Sao lưu | `make backup` |
+| Chạy tunnel nền | `make tunnel-start` |
+| Dừng tunnel | `make tunnel-stop` |
+| Xem các tunnel đã tạo | `make tunnel-list` |
 
 Quên lệnh thì gõ `make` là hiện lại danh sách.
 
@@ -162,7 +143,7 @@ Không đỡ thì tra bảng dưới.
 
 | Hiện tượng | Nguyên nhân | Cách xử lý |
 |---|---|---|
-| Trang web không vào được, báo **Error 1033** | Tunnel không chạy | `cloudflared tunnel run farm1`. Nếu chạy được thì bước cài service ở Bước 5 chưa xong. |
+| Trang web không vào được, báo **Error 1033** | Tunnel không chạy | `make tunnel-start`. Nếu chạy được thì bước cài service ở Bước 5 chưa xong. |
 | Trang web hiện **502** hoặc **503** | Hệ thống chưa bật | `make start` |
 | Trang trắng, không có ô đăng nhập | Docker chưa khởi động | Mở Docker Desktop, chờ hết nhấp nháy, rồi `make start` |
 | Quên mật khẩu web | — | Đặt lại: `htpasswd -bc .htpasswd admin 'mat-khau-moi'` rồi `make start` |
