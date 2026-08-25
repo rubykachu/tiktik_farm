@@ -2,6 +2,10 @@
 
 tick() and loop() are called by scheduler/main.py.
 All upload execution is delegated to pipeline_worker.
+
+Channel discovery scans are NOT scheduled — they run as an API background
+task triggered by the "Quét ngay" button (api.routers.discovery.scan_now),
+not by this loop.
 """
 from __future__ import annotations
 
@@ -11,7 +15,6 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from api.services.manual_download import purge_expired as purge_expired_downloads
-from scheduler.discovery_worker import discovery_tick, reap_orphan_scan_runs
 from scheduler.pipeline_worker import pipeline_tick, purge_old_runs, reap_orphans
 
 log = logging.getLogger("scheduler.worker")
@@ -44,17 +47,11 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
         concurrency = 1
     log.info("scheduler loop starting, poll_interval=%gs concurrency=%d", poll_interval, concurrency)
     reap_orphans()
-    reap_orphan_scan_runs()
     _run_purges()
     last_purge = time.monotonic()
 
-    # Discovery gets its own single-worker executor, separate from the
-    # pipeline pool: pipeline uploads are the revenue path and must never
-    # wait on a multi-minute scan holding a pipeline concurrency slot.
-    with ThreadPoolExecutor(max_workers=concurrency) as executor, \
-            ThreadPoolExecutor(max_workers=1, thread_name_prefix="discovery") as discovery_executor:
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
         pending: set[Future] = set()
-        discovery_future: Future | None = None
         while True:
             done = {f for f in pending if f.done()}
             for f in done:
@@ -67,15 +64,6 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
             if time.monotonic() - last_purge >= _PURGE_INTERVAL:
                 _run_purges()
                 last_purge = time.monotonic()
-
-            if discovery_future is not None and discovery_future.done():
-                try:
-                    discovery_future.result()
-                except Exception:
-                    log.exception("discovery_tick raised")
-                discovery_future = None
-            if discovery_future is None:
-                discovery_future = discovery_executor.submit(discovery_tick)
 
             slots = concurrency - len(pending)
             for _ in range(slots):

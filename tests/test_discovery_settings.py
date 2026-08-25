@@ -1,5 +1,7 @@
 """Tests for api.services.discovery_settings — the single source of truth
-for channel-discovery thresholds (min subscribers, cadence target, etc.)."""
+for channel-discovery scoring thresholds (min subscribers, cadence target,
+etc.). Market and the keyword set are per-scan parameters now, not settings
+— see tests/test_discovery_router.py's scan-now tests instead."""
 from __future__ import annotations
 
 import pytest
@@ -23,10 +25,7 @@ class TestDefaults:
         assert ds.get_min_subscribers() == 100
         assert ds.get_silent_months() == 6
         assert ds.get_target_days_per_video() == 1.0
-        assert ds.get_scans_per_day() == 3
-        assert ds.get_keywords_per_scan() == 3
         assert ds.get_view_score_reference() == 1_000_000
-        assert ds.get_market() == ("US", "en")
 
     def test_falls_back_when_row_absent(self, engine):
         # Nothing seeded — fresh engine without seed_app_settings.
@@ -41,11 +40,6 @@ class TestSetSetting:
     def test_round_trip(self, engine):
         ds.set_setting("discovery.min_subscribers", "300")
         assert ds.get_min_subscribers() == 300
-
-    def test_market_round_trip(self, engine):
-        ds.set_setting("discovery.market_gl", "JP")
-        ds.set_setting("discovery.market_hl", "ja")
-        assert ds.get_market() == ("JP", "ja")
 
     def test_unknown_key_rejected(self, engine):
         with pytest.raises(KeyError):

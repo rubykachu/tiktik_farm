@@ -245,10 +245,6 @@ def seed_app_settings(engine: Engine) -> None:
         ("discovery.min_subscribers", "100"),
         ("discovery.silent_months", "6"),
         ("discovery.target_days_per_video", "1"),
-        ("discovery.scans_per_day", "3"),
-        ("discovery.keywords_per_scan", "3"),
-        ("discovery.market_gl", "US"),
-        ("discovery.market_hl", "en"),
         ("discovery.view_score_reference", "1000000"),
     )
     with engine.begin() as conn:

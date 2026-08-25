@@ -78,6 +78,8 @@ def create_app() -> FastAPI:
         # that were in flight, and nothing else deletes the expired files.
         downloads.fail_interrupted()
         manual_download.purge_expired()
+        # Discovery scans also run as a background task in this process.
+        discovery.fail_interrupted()
 
     @app.get("/health", tags=["meta"])
     def health():

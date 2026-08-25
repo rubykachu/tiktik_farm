@@ -682,6 +682,11 @@ class PromptTestResponse(BaseModel):
 # ---------- channel discovery (Phase 5) -----------------------------------
 
 
+# A batch bigger than this makes one "Quét ngay" click too slow/opaque to
+# follow, not an IP-protection measure — fixed in code, not a setting.
+DISCOVERY_MAX_KEYWORDS_PER_SCAN = 5
+
+
 class DiscoveryKeywordCreate(BaseModel):
     keyword: str = Field(min_length=1, max_length=200)
 
@@ -690,7 +695,6 @@ class DiscoveryKeywordRead(BaseModel):
     id: int
     keyword: str
     created_at: datetime
-    last_scanned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -699,7 +703,32 @@ class DiscoveryKeywordSuggestionsResponse(BaseModel):
     suggestions: List[str]
 
 
-class DiscoveryCandidateRead(BaseModel):
+class DiscoveryScanNowRequest(BaseModel):
+    keywords: List[str] = Field(min_length=1, max_length=DISCOVERY_MAX_KEYWORDS_PER_SCAN)
+    market_gl: str = Field(min_length=2, max_length=8)
+    market_hl: str = Field(min_length=2, max_length=8)
+
+
+class DiscoveryScanNowResponse(BaseModel):
+    scan_run_id: int
+    status: Literal["running", "done", "error"]
+
+
+class DiscoveryScanRunRead(BaseModel):
+    id: int
+    keywords: List[str]
+    market_gl: str
+    market_hl: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    channels_total: int
+    channels_done: int
+    candidates_found: int
+    status: Literal["running", "done", "error"]
+    error_text: Optional[str] = None
+
+
+class DiscoveryScanResultRead(BaseModel):
     id: int
     channel_id: str
     channel_url: str
@@ -708,47 +737,41 @@ class DiscoveryCandidateRead(BaseModel):
     subscriber_count: int
     median_view_count: int
     days_since_last_video: float
+    latest_video_posted_at: Optional[datetime] = None
     cadence_days_per_video: Optional[float] = None
     cadence_tab: Optional[str] = None
     has_shorts_tab: bool
     recent_shorts_count: int
     score: float
+    channel_description: Optional[str] = None
+    median_duration_seconds: Optional[int] = None
+    # Joined from the global DiscoveryCandidate row, if any — 'new' when no
+    # row exists yet (the user hasn't acted on this channel).
     status: Literal["new", "added", "skipped"]
     added_pipeline_id: Optional[int] = None
-    created_at: datetime
-    last_scanned_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
-class DiscoveryCandidateMarkAdded(BaseModel):
+class DiscoveryChannelSkipRequest(BaseModel):
+    channel_url: str = Field(min_length=1, max_length=2048)
+    channel_title: str = Field(min_length=1, max_length=256)
+
+
+class DiscoveryChannelMarkAddedRequest(BaseModel):
+    channel_url: str = Field(min_length=1, max_length=2048)
+    channel_title: str = Field(min_length=1, max_length=256)
     pipeline_id: int
 
 
-class DiscoveryScanRunRead(BaseModel):
-    id: int
-    started_at: datetime
-    finished_at: Optional[datetime] = None
-    keywords: List[str]
-    channels_total: int
-    channels_done: int
-    candidates_found: int
-    status: Literal["running", "done", "error"]
-    error_text: Optional[str] = None
-
-
-class DiscoveryScanNowResponse(BaseModel):
-    queued: bool
+class DiscoveryChannelActionResponse(BaseModel):
+    channel_id: str
+    status: Literal["added", "skipped"]
+    added_pipeline_id: Optional[int] = None
 
 
 class DiscoverySettingsRead(BaseModel):
     min_subscribers: int
     silent_months: int
     target_days_per_video: float
-    scans_per_day: int
-    keywords_per_scan: int
-    market_gl: str
-    market_hl: str
     view_score_reference: int
 
 
@@ -756,8 +779,4 @@ class DiscoverySettingsUpdate(BaseModel):
     min_subscribers: Optional[int] = Field(default=None, ge=0)
     silent_months: Optional[int] = Field(default=None, ge=1)
     target_days_per_video: Optional[float] = Field(default=None, gt=0)
-    scans_per_day: Optional[int] = Field(default=None, ge=1)
-    keywords_per_scan: Optional[int] = Field(default=None, ge=1)
-    market_gl: Optional[str] = Field(default=None, min_length=2, max_length=8)
-    market_hl: Optional[str] = Field(default=None, min_length=2, max_length=8)
     view_score_reference: Optional[int] = Field(default=None, gt=0)
