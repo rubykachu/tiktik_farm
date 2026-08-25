@@ -427,3 +427,109 @@ class TestDetectChatsHelpers:
 
         with pytest.raises(TelegramApiError, match="API error"):
             detect_chats(VALID_TOKEN)
+
+
+class TestGetChat:
+    def test_invalid_token_returns_none(self):
+        from api.services.telegram import get_chat
+
+        assert get_chat("bad-token", VALID_CHAT) is None
+
+    def test_invalid_chat_id_returns_none(self):
+        from api.services.telegram import get_chat
+
+        assert get_chat(VALID_TOKEN, "@my_channel") is None
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_group_uses_title(self, mock_cls):
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": {"id": -1001234567890, "type": "supergroup", "title": "Kênh vận hành"},
+        }
+        mock_client.get.return_value = mock_resp
+
+        result = get_chat(VALID_TOKEN, VALID_CHAT)
+        assert result == {"name": "Kênh vận hành", "type": "supergroup"}
+        call_args = mock_client.get.call_args
+        assert "getChat" in call_args[0][0]
+        assert call_args[1]["params"]["chat_id"] == VALID_CHAT
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_private_chat_falls_back_to_first_last_name(self, mock_cls):
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": {"id": 123, "type": "private", "first_name": "An", "last_name": "Nguyen"},
+        }
+        mock_client.get.return_value = mock_resp
+
+        assert get_chat(VALID_TOKEN, "123") == {"name": "An Nguyen", "type": "private"}
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_private_chat_falls_back_to_username_without_name(self, mock_cls):
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "result": {"id": 123, "type": "private", "username": "an_nguyen"},
+        }
+        mock_client.get.return_value = mock_resp
+
+        assert get_chat(VALID_TOKEN, "123") == {"name": "an_nguyen", "type": "private"}
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_ok_false_returns_none(self, mock_cls):
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": False, "description": "chat not found"}
+        mock_client.get.return_value = mock_resp
+
+        assert get_chat(VALID_TOKEN, VALID_CHAT) is None
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_non_200_returns_none(self, mock_cls):
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_client.get.return_value = mock_resp
+
+        assert get_chat(VALID_TOKEN, VALID_CHAT) is None
+
+    @patch("api.services.telegram.httpx.Client")
+    def test_network_error_returns_none(self, mock_cls):
+        import httpx
+        from api.services.telegram import get_chat
+
+        mock_client = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client.get.side_effect = httpx.ConnectError("boom")
+
+        assert get_chat(VALID_TOKEN, VALID_CHAT) is None

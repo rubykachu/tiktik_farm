@@ -472,6 +472,32 @@ class TelegramTestResponse(BaseModel):
     message: str
 
 
+class TelegramResolveChatRequest(BaseModel):
+    bot_token: str = Field(min_length=1)
+    chat_id: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat_id_shape(cls, v: str) -> str:
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("chat_id format invalid")
+        return v
+
+
+class TelegramResolveChatResponse(BaseModel):
+    # None when the bot has no history with this chat_id — not an error,
+    # just nothing to show a name for (e.g. an ID pasted in by hand).
+    name: Optional[str] = None
+    type: Optional[str] = None
+
+
 class SampleCaptionPromptResponse(BaseModel):
     prompt: str
 

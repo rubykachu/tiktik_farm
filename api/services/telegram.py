@@ -260,6 +260,49 @@ def _chats_from_updates_result(result: list[Any]) -> list[dict[str, Any]]:
     return list(ordered.values())
 
 
+def get_chat(bot_token: str, chat_id: str) -> Optional[dict[str, Any]]:
+    """Telegram Bot API getChat — resolves a display name for a chat_id the
+    bot has any history with. Unlike detect_chats (getUpdates, a rolling
+    buffer that only covers recent activity), this works for any chat_id
+    the bot was ever added to or messaged, so it's the right call for
+    resolving a name behind a chat_id the operator pasted in by hand.
+
+    Returns None on any failure (invalid format, chat not found, network
+    error) rather than raising — this is a display nicety the caller falls
+    back gracefully from, never a required step.
+    """
+    if not _BOT_TOKEN_RE.match(bot_token) or not _CHAT_ID_RE.match(chat_id):
+        return None
+
+    url = _method_url(bot_token, "getChat")
+    try:
+        with httpx.Client(follow_redirects=False, timeout=10) as client:
+            resp = client.get(url, params={"chat_id": chat_id})
+    except httpx.HTTPError:
+        return None
+
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    if not data.get("ok"):
+        return None
+
+    result = data.get("result")
+    if not isinstance(result, dict):
+        return None
+    name = (
+        result.get("title")
+        or " ".join(filter(None, [result.get("first_name"), result.get("last_name")]))
+        or result.get("username")
+    )
+    if not name:
+        return None
+    return {"name": str(name), "type": str(result.get("type") or "")}
+
+
 def detect_chats(bot_token: str) -> list[dict[str, Any]]:
     """Poll Telegram for recent updates and list unique group/channel chats.
 
