@@ -38,6 +38,10 @@ const baseSchema = z.object({
       message: "Chat ID must be numeric (e.g. -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
+  telegram_notify_mode: z
+    .enum(["changes_only", "cycle", "every_tick"])
+    .optional()
+    .default("cycle"),
   telegram_attach_video: z.boolean().optional().default(false),
   telegram_attach_fields: z.array(z.string()).optional().default([]),
   sync_from_date: z.string().optional().default(""),
@@ -227,6 +231,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   telegram_bot_token: "",
   telegram_chat_id: "",
   clear_bot_token: false,
+  telegram_notify_mode: "cycle" as const,
   telegram_attach_video: false,
   telegram_attach_fields: [],
   sync_from_date: TODAY_DATE,
@@ -292,7 +297,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       telegram_bot_token: "",
       telegram_chat_id: "",
       clear_bot_token: false,
-      telegram_attach_video: false,
+      telegram_notify_mode: "cycle" as const,
+  telegram_attach_video: false,
       telegram_attach_fields: [],
       sync_from_date: TODAY_DATE,
     },
@@ -329,6 +335,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
         clear_bot_token: false,
+        telegram_notify_mode: pipeline.telegram_notify_mode ?? "cycle",
         telegram_attach_video: pipeline.telegram_attach_video ?? false,
         telegram_attach_fields: pipeline.telegram_attach_fields ?? [],
         sync_from_date: pipeline.sync_from_date ?? "",
@@ -420,6 +427,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
+        telegram_notify_mode: data.telegram_notify_mode,
         telegram_attach_video: data.telegram_attach_video,
         telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
@@ -448,6 +456,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
+        telegram_notify_mode: data.telegram_notify_mode,
         telegram_attach_video: data.telegram_attach_video,
         telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
@@ -1133,7 +1142,18 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
             <div className="space-y-2 border-t pt-3">
+              <label className="label">Khi không có video mới</label>
+              <select className="input" {...register("telegram_notify_mode")}>
+                <option value="cycle">Báo một lần cuối mỗi chu kỳ</option>
+                <option value="changes_only">Không báo</option>
+                <option value="every_tick">Báo mọi lần chạy</option>
+              </select>
               <p className="text-xs text-slate-500">
+                Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục
+                cho tới khi bắt được video — chọn “một lần cuối mỗi chu kỳ” để
+                không bị mỗi lần quét một tin nhắn.
+              </p>
+              <p className="text-xs text-slate-500 pt-2 border-t">
                 Thông báo luôn kèm link tải video, dùng được cả với video lớn.
                 Video giữ trên máy chủ 24 giờ.
               </p>

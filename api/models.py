@@ -82,6 +82,13 @@ class ChannelPipeline(SQLModel, table=True):
 
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)
+    # When a run with nothing new to report still notifies:
+    #   "changes_only" - only new videos or errors
+    #   "cycle"        - also at the end of each schedule cycle, so a silently
+    #                    dead scheduler shows up as a missing message
+    #   "every_tick"   - every run, including each poll inside a window
+    # Errors always notify regardless.
+    telegram_notify_mode: str = Field(default="cycle", max_length=16)
     # Upload the video file into the Telegram chat as well as linking it.
     # Telegram caps bot uploads at 50 MB, so this is the optional extra; the
     # download link in the message text is what always works.

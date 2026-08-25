@@ -5,7 +5,7 @@ and Telegram summary.
 """
 from __future__ import annotations
 
-import itertools
+import html
 import json
 import logging
 import os
@@ -89,6 +89,9 @@ class RunVideo:
     path: str
     source_url: str
     title: str
+    # Rendered from the pipeline's template. On the download-only path this is
+    # the whole point: the operator pastes it into TikTok by hand.
+    caption: str = ""
 
 
 @dataclass
@@ -102,7 +105,6 @@ class RunArtifacts:
 
     cleanup_paths: list[str] = field(default_factory=list)
     videos: list[RunVideo] = field(default_factory=list)
-    source_urls: list[str] = field(default_factory=list)
 
 
 def _seen_source(pipeline_id: int, source_key: str) -> bool:
@@ -556,6 +558,7 @@ def _run_douyin_pipeline(
                         source_url=douyin_channel.post_url(v.aweme_id),
                         title=v.title,
                         file_path=v.file_path,
+                        description=v.description,
                     )
                     for v in videos
                 ],
@@ -716,6 +719,7 @@ class _SourceItem:
     source_url: str
     title: str
     file_path: str = ""
+    description: str = ""
 
 
 def _split_seen(
@@ -768,7 +772,7 @@ def _download_youtube_only(
         if artifacts is not None:
             artifacts.cleanup_paths.append(temp_dir)
         try:
-            download_path, _description = youtube_channel.download(
+            download_path, description = youtube_channel.download(
                 video_url, temp_dir, pipeline.max_duration_seconds
             )
         except youtube_channel.VideoTooLong:
@@ -782,6 +786,7 @@ def _download_youtube_only(
                 shutil.rmtree(temp_dir, ignore_errors=True)
             continue
         item.file_path = download_path
+        item.description = description
         items.append(item)
     return items, skipped_dup_count
 
@@ -798,16 +803,36 @@ def _finalize_download_only(
 
     `fresh` is already filtered against PipelineSeenVideo by the caller.
     """
+    use_ai_title = bool(
+        pipeline.caption_ai_prompt and template_uses_ai_title(pipeline.caption_template)
+    )
+
     for item in fresh:
         _mark_source_seen(pipeline.id, item.source_key)  # type: ignore[arg-type]
-        if artifacts is not None:
-            artifacts.source_urls.append(item.source_url)
-            if os.path.exists(item.file_path):
-                artifacts.videos.append(RunVideo(
-                    path=item.file_path,
-                    source_url=item.source_url,
-                    title=item.title,
-                ))
+        if artifacts is None:
+            continue
+        if not os.path.exists(item.file_path):
+            continue
+
+        ai_title = item.title
+        if use_ai_title:
+            rewritten = _rewrite_with_llm(
+                pipeline.caption_ai_prompt or "",
+                item.title,
+                item.description,
+                pipeline.channel_description or "",
+            )
+            if rewritten:
+                ai_title = rewritten
+
+        artifacts.videos.append(RunVideo(
+            path=item.file_path,
+            source_url=item.source_url,
+            title=item.title,
+            caption=render_caption(
+                pipeline.caption_template, title=item.title, ai_title=ai_title
+            ),
+        ))
 
     summary_parts = [f"Pulled: {len(fresh)}", "Uploaded: 0 (no TikTok account)"]
     if skipped_dup_count:
@@ -1204,24 +1229,33 @@ def _next_fire_in_window(pipeline: ChannelPipeline, prev: datetime) -> Optional[
     return None
 
 
-def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str, skip_window: bool = False) -> None:
+def advance_next_fire(
+    pipeline: ChannelPipeline, trigger_reason: str, skip_window: bool = False
+) -> bool:
     """Advance next_fire_at (scheduled) or clear run_now flag (manual).
 
     skip_window=True forces next-cycle scheduling even if still inside window
     (used when a successful upload means no need to retry within the window).
+
+    Returns whether this tick closed the schedule cycle. A window fires many
+    times while it waits for the author to post; only the tick that closes the
+    window is worth an "found nothing" notification, and every tick of a
+    non-window pipeline closes its own cycle.
     """
     now = now_utc()
+    cycle_closed = True
 
     with Session(_api_db.engine) as s:
         fresh = s.get(ChannelPipeline, pipeline.id)
         if not fresh:
-            return
+            return True
 
         if trigger_reason == "scheduled":
             prev = _ensure_aware(fresh.next_fire_at)
             in_window = None if skip_window else _next_fire_in_window(fresh, prev)
             if in_window is not None and in_window > now:
                 fresh.next_fire_at = in_window
+                cycle_closed = False
             else:
                 interval = _interval_to_timedelta(fresh.interval_value, fresh.interval_unit)
                 if fresh.window_end_time:
@@ -1250,6 +1284,8 @@ def advance_next_fire(pipeline: ChannelPipeline, trigger_reason: str, skip_windo
         s.add(fresh)
         s.commit()
 
+    return cycle_closed
+
 
 def _interval_to_timedelta(value: int, unit: str) -> timedelta:
     if unit == "minutes":
@@ -1274,6 +1310,63 @@ def release_lock(pipeline_id: int) -> None:
 
 # ─── E5: Telegram summary ──────────────────────────────────────────────────
 
+# Messages use parse_mode=HTML so a 110-character signed URL can hide behind a
+# few words, and so a caption can sit in <code>, which Telegram copies on tap.
+MAX_VIDEO_BLOCKS = 5
+TITLE_MAX = 60
+CAPTION_MAX = 200
+ERROR_MAX = 120
+
+# Known failures, phrased for whoever reads the message rather than the log.
+# Matched as a substring against the raw error, first hit wins.
+_FRIENDLY_ERRORS: tuple[tuple[str, str], ...] = (
+    ("HTTP Error 403", "nguồn chặn tải xuống — thử nâng yt-dlp"),
+    ("low_disk", "máy chủ hết dung lượng đĩa"),
+    ("Sign in to confirm", "nguồn yêu cầu đăng nhập"),
+    ("Private video", "video đã chuyển sang riêng tư"),
+    ("Video unavailable", "video không còn tồn tại"),
+    ("KeyError: 'project'", "cookie TikTok hết hạn — nhập lại cookie"),
+    ("status_code\":8", "cookie TikTok hết hạn — nhập lại cookie"),
+    ("not found — update cookie", "cookie Douyin không còn — cập nhật lại"),
+    ("worker crashed", "worker dừng đột ngột"),
+    ("upload returned false", "TikTok từ chối video"),
+)
+
+
+def _esc(value: Optional[str]) -> str:
+    """Escape for parse_mode=HTML. Titles and captions are attacker-adjacent."""
+    return html.escape(value or "", quote=False)
+
+
+def _friendly_error(raw: Optional[str]) -> str:
+    if not raw:
+        return ""
+    for needle, message in _FRIENDLY_ERRORS:
+        if needle in raw:
+            return message
+    return truncate(raw, ERROR_MAX, suffix="…")
+
+
+def _local_time(dt: Optional[datetime], with_date: bool = True) -> str:
+    from zoneinfo import ZoneInfo
+
+    if dt is None:
+        return ""
+    local = dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
+    return local.strftime("%H:%M %d/%m") if with_date else local.strftime("%H:%M")
+
+
+def _link(url: str, label: str) -> str:
+    return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+
+
+def _account_names(account_ids: list[int]) -> dict[int, str]:
+    if not account_ids:
+        return {}
+    with Session(_api_db.engine) as s:
+        rows = s.exec(select(Account).where(Account.id.in_(account_ids))).all()
+    return {r.id: r.username for r in rows if r.id is not None}
+
 
 def _attach_fields_block(pipeline: ChannelPipeline) -> list[str]:
     """Render the credentials block, or [] when there is nothing to render.
@@ -1292,28 +1385,25 @@ def _attach_fields_block(pipeline: ChannelPipeline) -> list[str]:
     with Session(_api_db.engine) as s:
         accounts = [s.get(Account, aid) for aid in account_ids]
 
-    lines: list[str] = ["", "🔑 Tài khoản:"]
+    lines: list[str] = []
     for acct in accounts:
         if acct is None:
             continue
-        lines.append(f"[{acct.username}]")
-        for f in fields:
-            value = account_fields.resolve(acct, f)
-            lines.append(f"  {account_fields.label(f)}: {value or '—'}")
-    # Header only, no account resolved.
-    return lines if len(lines) > 2 else []
+        values = [account_fields.resolve(acct, f) or "—" for f in fields]
+        lines.append(f"🔑 {_esc(acct.username)} — <code>{_esc(' / '.join(values))}</code>")
+    return lines
 
 
 def _publish_video_links(
     pipeline: ChannelPipeline, artifacts: RunArtifacts
-) -> list[str]:
-    """Move each downloaded video into the retained store, return its link.
+) -> dict[str, str]:
+    """Move each downloaded video into the retained store, keyed by source URL.
 
     Sidesteps Telegram's 50 MB upload cap: the message carries a signed URL
     instead of the file. The files then live under the same 24h retention as a
     manually pasted download.
     """
-    links: list[str] = []
+    links: dict[str, str] = {}
     for video in artifacts.videos:
         published = manual_download.publish(
             file_path=video.path,
@@ -1327,7 +1417,7 @@ def _publish_video_links(
         # The file moved out of the run's temp dir. Follow it, or the attach
         # step below would upload nothing.
         video.path = published.file_path
-        links.append(published.url)
+        links[video.source_url] = published.url
     return links
 
 
@@ -1335,7 +1425,7 @@ def _send_video_attachments(pipeline: ChannelPipeline, video_paths: list[str]) -
     """Attach downloaded videos to the notification, best effort.
 
     Telegram caps bot uploads at 50 MB, so anything larger degrades to the
-    text-only message that was already sent (which carries the source URLs).
+    text-only message that was already sent (which carries the links).
     """
     existing = [p for p in video_paths if os.path.exists(p)]
     if not existing:
@@ -1351,7 +1441,7 @@ def _send_video_attachments(pipeline: ChannelPipeline, video_paths: list[str]) -
             if dropped > 0:
                 log.info(
                     "Pipeline %d: %d video(s) over the sendMediaGroup limit were "
-                    "not attached; their source URLs are in the message",
+                    "not attached; their links are in the message",
                     pipeline.id, dropped,
                 )
             return
@@ -1359,7 +1449,7 @@ def _send_video_attachments(pipeline: ChannelPipeline, video_paths: list[str]) -
         if os.path.getsize(first) > telegram.TELEGRAM_MAX_UPLOAD_BYTES:
             log.info(
                 "Pipeline %d: video %s exceeds the Telegram upload limit — "
-                "sent source URLs only", pipeline.id, first,
+                "sent links only", pipeline.id, first,
             )
             return
         telegram.send_document(token, chat_id, first)  # type: ignore[arg-type]
@@ -1371,98 +1461,223 @@ def _send_video_attachments(pipeline: ChannelPipeline, video_paths: list[str]) -
         log.warning("Telegram attachment failed for pipeline %d: %s", pipeline.id, e)
 
 
+def _upload_blocks(
+    run: PipelineRun, links: dict[str, str], want_caption: bool
+) -> list[str]:
+    """One numbered block per (video, account) attempt of this run."""
+    if run.id is None:
+        return []
+    try:
+        with Session(_api_db.engine) as s:
+            uploads = list(
+                s.exec(select(VideoUpload).where(VideoUpload.run_id == run.id)).all()
+            )
+    except Exception:
+        log.warning("Failed to fetch VideoUpload for Telegram summary run %d", run.id)
+        return []
+
+    try:
+        names = _account_names([u.account_id for u in uploads])
+    except Exception:
+        names = {}
+    blocks: list[str] = []
+    for i, u in enumerate(uploads[:MAX_VIDEO_BLOCKS], start=1):
+        title = truncate(u.ai_title or u.source_title or "video", TITLE_MAX)
+        who = _esc(names.get(u.account_id, f"account #{u.account_id}"))
+        lines = [f"{i}. {_esc(title)}"]
+
+        if u.status == "succeeded":
+            posted = _link(u.tiktok_url, "Xem trên TikTok") if u.tiktok_url else "đã đăng"
+            lines.append(f"   ✅ @{who} · {posted}")
+        else:
+            lines.append(f"   ❌ @{who} — {_esc(_friendly_error(u.error_text))}")
+            # A failed upload is exactly when the operator wants to post by
+            # hand, so hand them the caption and the file.
+            if want_caption and u.rendered_caption:
+                lines.append(
+                    f"   📄 <code>{_esc(truncate(u.rendered_caption, CAPTION_MAX))}</code>"
+                )
+            link = links.get(u.youtube_url or "")
+            if link:
+                lines.append(f"   {_link(link, '⬇️ Tải video để đăng tay')}")
+
+        blocks.append("\n".join(lines))
+
+    remaining = len(uploads) - len(blocks)
+    if remaining > 0:
+        blocks.append(f"… và {remaining} video khác")
+    return blocks
+
+
+def _download_blocks(artifacts: RunArtifacts, links: dict[str, str]) -> list[str]:
+    """One numbered block per downloaded video on the no-account path."""
+    blocks: list[str] = []
+    for i, video in enumerate(artifacts.videos[:MAX_VIDEO_BLOCKS], start=1):
+        lines = [f"{i}. {_esc(truncate(video.title or 'video', TITLE_MAX))}"]
+        if video.caption:
+            lines.append(
+                f"   📄 <code>{_esc(truncate(video.caption, CAPTION_MAX))}</code>"
+            )
+        parts = []
+        link = links.get(video.source_url)
+        if link:
+            parts.append(_link(link, "⬇️ Tải video"))
+        if video.source_url:
+            parts.append(_link(video.source_url, "🔗 Nguồn"))
+        if parts:
+            lines.append("   " + " · ".join(parts))
+        blocks.append("\n".join(lines))
+
+    remaining = len(artifacts.videos) - len(blocks)
+    if remaining > 0:
+        blocks.append(f"… và {remaining} video khác")
+    return blocks
+
+
+def _headline(
+    pipeline: ChannelPipeline, run: Optional[PipelineRun], has_accounts: bool
+) -> tuple[str, str]:
+    """(emoji, one-line verdict) — the part read from the notification preview."""
+    if run is None:
+        return "🛑", "Worker dừng đột ngột"
+    if run.error_text:
+        return "🛑", f"Không chạy được: {_esc(_friendly_error(run.error_text))}"
+
+    if not has_accounts:
+        if run.pulled_count:
+            return "📥", f"Đã tải {run.pulled_count} video, chờ bạn đăng"
+        return "😴", "Không có video mới"
+
+    if run.uploaded_count and not run.failed_count:
+        return "✅", f"Đã đăng {run.uploaded_count} video"
+    if run.failed_count and not run.uploaded_count:
+        return "❌", f"Không đăng được video nào · {run.failed_count} lỗi"
+    if run.uploaded_count or run.failed_count:
+        total = run.uploaded_count + run.failed_count
+        bits = [f"Đăng được {run.uploaded_count}/{total}"]
+        if run.failed_count:
+            bits.append(f"{run.failed_count} lỗi")
+        if run.skipped_dup_count:
+            bits.append(f"{run.skipped_dup_count} trùng")
+        return "⚠️", " · ".join(bits)
+    return "😴", "Không có video mới"
+
+
+def _next_fire_line(pipeline: ChannelPipeline) -> str:
+    """Read next_fire_at back from the DB — advance_next_fire has already run.
+
+    A DB hiccup here must not cost the whole notification; the schedule line is
+    the least important part of it.
+    """
+    try:
+        with Session(_api_db.engine) as s:
+            fresh = s.get(ChannelPipeline, pipeline.id)
+            if fresh is None or fresh.state != "active":
+                return ""
+            return f"Lần chạy tới: {_local_time(_ensure_aware(fresh.next_fire_at))}"
+    except Exception:
+        log.warning("Could not read next_fire_at for pipeline %s", pipeline.id)
+        return ""
+
+
+def run_produced_something(pipeline: ChannelPipeline, run: Optional[PipelineRun]) -> bool:
+    """Whether this tick has anything worth reporting on its own.
+
+    Videos only skipped as duplicates do not count — that is the steady state
+    of a pipeline polling a channel that has not posted yet.
+    """
+    if run is None:
+        return True
+    if run.error_text or run.failed_count:
+        return True
+    if run.uploaded_count:
+        return True
+    return not _has_accounts(pipeline) and run.pulled_count > 0
+
+
+def should_notify(
+    pipeline: ChannelPipeline, run: Optional[PipelineRun], cycle_closed: bool
+) -> bool:
+    """Whether a tick with nothing new still sends a message.
+
+    A window fires many times while it waits for the author to post; notifying
+    on each poll is noise, but never notifying makes a dead scheduler
+    indistinguishable from a quiet channel. "cycle" is the middle: one message
+    when the window closes, so a missing message is a real signal.
+    """
+    if run_produced_something(pipeline, run):
+        return True
+    mode = pipeline.telegram_notify_mode or "cycle"
+    if mode == "every_tick":
+        return True
+    if mode == "cycle":
+        return cycle_closed
+    return False
+
+
 def send_telegram_summary(
     pipeline: ChannelPipeline,
     run: PipelineRun,
     artifacts: Optional[RunArtifacts] = None,
+    cycle_closed: bool = True,
 ) -> None:
-    """Send Telegram notification if pipeline has bot config."""
+    """Send the Telegram notification if the pipeline has bot config."""
     if not pipeline.telegram_bot_token or not pipeline.telegram_chat_id:
         return
+    if not should_notify(pipeline, run, cycle_closed):
+        log.info(
+            "Pipeline %d: nothing new and notify mode is %s — no message sent",
+            pipeline.id, pipeline.telegram_notify_mode,
+        )
+        return
 
-    from zoneinfo import ZoneInfo
-    tz = ZoneInfo("Asia/Ho_Chi_Minh")
-    started_str = (run.started_at or now_utc()).astimezone(tz).strftime("%H:%M")
+    # Publishing moves the files out of the run's temp dirs, so it has to
+    # happen before the message is built and before the outer context deletes
+    # those dirs.
+    links = _publish_video_links(pipeline, artifacts) if artifacts is not None else {}
 
-    parts = [f"📋 [{pipeline.name}] — {started_str}", ""]
+    has_accounts = _has_accounts(pipeline)
+    emoji, verdict = _headline(pipeline, run, has_accounts)
+    started = _local_time(run.started_at or now_utc())
+
+    parts = [f"{emoji} <b>{_esc(pipeline.name)}</b> · {started}", verdict]
 
     ai_warn = _ai_config_warn(pipeline)
     if ai_warn:
-        parts.append(f"⚠️ {ai_warn}")
+        parts[1] = f"{verdict} · {_esc(ai_warn)}"
+
+    blocks = (
+        _download_blocks(artifacts, links)
+        if not has_accounts and artifacts is not None
+        else _upload_blocks(run, links, want_caption=True)
+    )
+    if blocks:
         parts.append("")
+        parts.append("\n".join(blocks))
 
-    if run.error_text:
-        parts.append(f"❌ Lỗi hệ thống: {truncate(run.error_text, 200)}")
-    else:
-        parts.append(f"⬇️ Tải xuống: {run.pulled_count}")
-        parts.append(f"✅ Đăng tải: {run.uploaded_count}")
-        if run.skipped_dup_count:
-            parts.append(f"⏭️ Bỏ qua (trùng): {run.skipped_dup_count}")
-        if run.skipped_exhausted_count:
-            parts.append(f"⏭️ Bỏ qua (hết): {run.skipped_exhausted_count}")
-        if run.failed_count:
-            parts.append(f"⚠️ Thất bại: {run.failed_count}")
+    credentials = _attach_fields_block(pipeline)
+    if credentials:
+        parts.append("")
+        parts.extend(credentials)
 
-    if artifacts is not None and artifacts.source_urls:
-        parts.extend(["", "📼 Đã tải (chưa đăng):"])
-        parts.extend(f"- {u}" for u in artifacts.source_urls)
+    footer = []
+    if links:
+        footer.append("⏳ Link hết hạn sau 24h")
+    next_fire = _next_fire_line(pipeline)
+    if next_fire:
+        footer.append(next_fire)
+    if footer:
+        parts.append("")
+        parts.append("\n".join(footer))
 
-    # Every notification carries download links: the message is cheap, the
-    # bytes only move when someone clicks. Publishing moves the files out of
-    # the run's temp dirs, so it has to happen before the message is sent and
-    # before the outer context deletes those dirs.
-    if artifacts is not None:
-        links = _publish_video_links(pipeline, artifacts)
-        if links:
-            parts.extend(["", f"⬇️ Tải video (còn {_LINK_RETENTION_HOURS}h):"])
-            parts.extend(f"- {link}" for link in links)
-
-    parts.extend(_attach_fields_block(pipeline))
-
-    uploads: list[VideoUpload] = []
-    if run.id is not None:
-        try:
-            with Session(_api_db.engine) as s:
-                uploads = list(
-                    s.exec(select(VideoUpload).where(VideoUpload.run_id == run.id)).all()
-                )
-        except Exception:
-            log.warning("Failed to fetch VideoUpload for Telegram summary run %d", run.id)
-
-    if uploads:
-        parts.extend(["", "📼 Chi tiết:"])
-        header = "\n".join(parts)
-
-        video_lines: list[str] = []
-        for v in uploads:
-            source_title = truncate(v.source_title or "video", 60)
-            ai = truncate(v.ai_title, 60) if v.ai_title and v.ai_title != v.source_title else None
-            display_title = f"{source_title} → {ai}" if ai else source_title
-            if v.status == "succeeded" and v.tiktok_url:
-                video_lines.append(f"  ✅ {display_title}\n     {v.tiktok_url}")
-            elif v.error_text:
-                video_lines.append(f"  ❌ {display_title}\n     {truncate(v.error_text, 80)}")
-            else:
-                video_lines.append(f"  ⏭️ {display_title}")
-
-        body: list[str] = []
-        used = len(header)
-        for i, vl in enumerate(video_lines):
-            if used + len(vl) + 1 > 3500:
-                body.append(f"\n... và {len(video_lines) - i} video khác")
-                break
-            body.append(vl)
-            used += len(vl) + 1
-
-        text = header + "\n" + "\n".join(body)
-    else:
-        text = "\n".join(parts)
-
+    text = "\n".join(parts)
     if len(text) > 4096:
         text = text[:4090] + "\n…"
 
     try:
-        telegram.send_message(pipeline.telegram_bot_token, pipeline.telegram_chat_id, text)
+        telegram.send_message(
+            pipeline.telegram_bot_token, pipeline.telegram_chat_id, text, html=True
+        )
         if run.id is not None:
             with Session(_api_db.engine) as s:
                 db_run = s.get(PipelineRun, run.id)
@@ -1500,8 +1715,23 @@ def _needs_artifacts(pipeline: ChannelPipeline) -> bool:
     )
 
 
+@dataclass
+class TickOutcome:
+    """Filled in by the tick body, read by the notification in the finally.
+
+    Defaults to a closed cycle so a crash — which never reaches the body —
+    always notifies.
+    """
+
+    cycle_closed: bool = True
+
+
 @contextmanager
-def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
+def _pipeline_run_context(
+    pipeline: ChannelPipeline,
+    trigger_reason: str,
+    outcome: Optional[TickOutcome] = None,
+):
     """Run pipeline with timeout, always send Telegram summary in finally (even on crash)."""
     run: Optional[PipelineRun] = None
     artifacts = RunArtifacts() if _needs_artifacts(pipeline) else None
@@ -1539,7 +1769,10 @@ def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
     finally:
         if run is not None:
             try:
-                send_telegram_summary(pipeline, run, artifacts)
+                send_telegram_summary(
+                    pipeline, run, artifacts,
+                    cycle_closed=outcome.cycle_closed if outcome else True,
+                )
             except Exception:
                 # Deletion below must still run, so the notification failure
                 # is logged here instead of escaping the finally block.
@@ -1566,17 +1799,16 @@ def pipeline_tick() -> bool:
     hb = LockHeartbeat(pipeline.id)  # type: ignore[arg-type]
     hb.start(pipeline.lock_until or now_utc() + LOCK_TTL)
 
+    outcome = TickOutcome()
     try:
-        with _pipeline_run_context(pipeline, trigger_reason) as run:
-            # A download-only pipeline never uploads, so "did something new
-            # happen" is measured by pulled_count instead — otherwise a
-            # windowed pipeline would re-fire (and re-notify) all window long.
-            produced = run is not None and (
-                run.uploaded_count > 0
-                or (not _has_accounts(pipeline) and run.pulled_count > 0)
+        with _pipeline_run_context(pipeline, trigger_reason, outcome) as run:
+            # A window keeps polling until the author posts; landing a video
+            # closes it early. A download-only pipeline never uploads, so its
+            # signal is pulled_count instead of uploaded_count.
+            produced = run is not None and run_produced_something(pipeline, run)
+            outcome.cycle_closed = advance_next_fire(
+                pipeline, trigger_reason, skip_window=produced
             )
-            skip_window = produced
-            advance_next_fire(pipeline, trigger_reason, skip_window=skip_window)
     except Exception:
         advance_next_fire(pipeline, trigger_reason)
     finally:

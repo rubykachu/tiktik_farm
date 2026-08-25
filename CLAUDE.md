@@ -111,6 +111,12 @@ To sync only the signing JS (safe): `bash scripts/update-tiktok-signature.sh`.
 - Manual downloads (`/api/downloads`) run as FastAPI background tasks in the api process and are
   kept under `MANUAL_DOWNLOAD_DIR` for 24h. Expired ones are deleted by the scheduler's daily
   retention pass and by `GET /api/downloads`, so retention holds without the scheduler.
+- Telegram messages are sent with `parse_mode=HTML`, so every interpolated value goes through
+  `_esc()` in `scheduler/pipeline_worker.py`. An unescaped `<` in a video title fails the send.
+- `telegram_notify_mode` decides whether a run with nothing new still notifies: `changes_only`,
+  `cycle` (default — one message when the schedule cycle closes, so a dead scheduler shows up as
+  a missing message), or `every_tick`. Errors always notify. A window fires many times waiting
+  for the author to post; `advance_next_fire` returns whether this tick closed the cycle.
 - Every Telegram notification carries a signed download link per video: the message is cheap and
   the bytes only move when someone clicks, which is also the only way past Telegram's 50 MB
   bot-upload cap. Publishing MOVES the file into the manual-download store, so anything holding

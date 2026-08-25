@@ -114,12 +114,13 @@ class TestDownloadOnlyRun:
         assert run.pulled_count == 2
         assert run.finished_at is not None
         mock_upload.assert_not_called()
-        assert artifacts.source_urls == [
+        assert [v.source_url for v in artifacts.videos] == [
             "https://www.youtube.com/watch?v=v1",
             "https://www.youtube.com/watch?v=v2",
         ]
-        assert [v.source_url for v in artifacts.videos] == artifacts.source_urls
         assert [v.title for v in artifacts.videos] == ["T1", "T2"]
+        # The caption is the deliverable on this path — it gets pasted by hand.
+        assert [v.caption for v in artifacts.videos] == ["T1", "T2"]
 
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
@@ -136,7 +137,7 @@ class TestDownloadOnlyRun:
 
         assert run2.pulled_count == 0
         assert run2.skipped_dup_count == 1
-        assert second.source_urls == []
+        assert second.videos == []
         with Session(_api_db.engine) as s:
             seen = s.exec(select(PipelineSeenVideo)).all()
             assert [r.source_key for r in seen] == ["v1"]
@@ -199,9 +200,8 @@ class TestTelegramCredentialsBlock:
         send_telegram_summary(pipeline, run)
 
         text = mock_send.call_args[0][2]
-        assert "🔑 Tài khoản:" in text
-        assert "acc1@example.com" in text
-        assert "s3cret" in text
+        assert "🔑 acc1" in text
+        assert "acc1@example.com / s3cret" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_block_omitted_without_accounts(self, mock_send):
@@ -213,18 +213,28 @@ class TestTelegramCredentialsBlock:
 
         send_telegram_summary(pipeline, run)
 
-        assert "🔑 Tài khoản:" not in mock_send.call_args[0][2]
+        assert "🔑" not in mock_send.call_args[0][2]
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
-    def test_source_urls_listed_when_nothing_uploaded(self, mock_send):
+    def test_caption_and_source_listed_when_nothing_uploaded(self, mock_send, tmp_path):
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"\0" * 8)
         pipeline = _make_pipeline()
         run = PipelineRun(id=1, pipeline_id=pipeline.id, started_at=now_utc(),
                           trigger_reason="scheduled", pulled_count=1)
-        artifacts = RunArtifacts(source_urls=["https://www.youtube.com/watch?v=v1"])
+        artifacts = RunArtifacts(videos=[RunVideo(
+            path=str(video),
+            source_url="https://www.youtube.com/watch?v=v1",
+            title="Clip one",
+            caption="Clip one #tag",
+        )])
 
         send_telegram_summary(pipeline, run, artifacts)
 
-        assert "https://www.youtube.com/watch?v=v1" in mock_send.call_args[0][2]
+        text = mock_send.call_args[0][2]
+        assert "Clip one" in text
+        assert "<code>Clip one #tag</code>" in text
+        assert "https://www.youtube.com/watch?v=v1" in text
 
 
 class TestVideoAttachment:
@@ -307,14 +317,11 @@ class TestVideoLinks:
         pipeline = _make_pipeline()
         run = PipelineRun(id=1, pipeline_id=pipeline.id, started_at=now_utc(),
                           trigger_reason="scheduled", pulled_count=1)
-        artifacts = RunArtifacts(
-            videos=[RunVideo(
-                path=str(video),
-                source_url="https://www.youtube.com/watch?v=v1",
-                title="Clip one",
-            )],
-            source_urls=["https://www.youtube.com/watch?v=v1"],
-        )
+        artifacts = RunArtifacts(videos=[RunVideo(
+            path=str(video),
+            source_url="https://www.youtube.com/watch?v=v1",
+            title="Clip one",
+        )])
         return pipeline, run, artifacts, video
 
     @patch("scheduler.pipeline_worker.telegram.send_media_group")
@@ -379,6 +386,84 @@ class TestVideoLinks:
         assert video.exists()
 
 
+class TestNotifyMode:
+    """A window polls many times waiting for the author to post. Notifying on
+    each poll is noise; never notifying makes a dead scheduler look like a
+    quiet channel."""
+
+    def _idle_run(self, pipeline):
+        return PipelineRun(id=1, pipeline_id=pipeline.id, started_at=now_utc(),
+                           trigger_reason="scheduled", skipped_dup_count=2)
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_cycle_mode_stays_quiet_mid_window(self, mock_send):
+        pipeline = _make_pipeline(telegram_notify_mode="cycle")
+
+        send_telegram_summary(pipeline, self._idle_run(pipeline), cycle_closed=False)
+
+        mock_send.assert_not_called()
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_cycle_mode_reports_when_window_closes(self, mock_send):
+        pipeline = _make_pipeline(telegram_notify_mode="cycle")
+
+        send_telegram_summary(pipeline, self._idle_run(pipeline), cycle_closed=True)
+
+        assert "Không có video mới" in mock_send.call_args[0][2]
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_changes_only_stays_quiet_at_cycle_end(self, mock_send):
+        pipeline = _make_pipeline(telegram_notify_mode="changes_only")
+
+        send_telegram_summary(pipeline, self._idle_run(pipeline), cycle_closed=True)
+
+        mock_send.assert_not_called()
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_every_tick_reports_mid_window(self, mock_send):
+        pipeline = _make_pipeline(telegram_notify_mode="every_tick")
+
+        send_telegram_summary(pipeline, self._idle_run(pipeline), cycle_closed=False)
+
+        mock_send.assert_called_once()
+
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_errors_ignore_the_mode(self, mock_send):
+        """Silence is for quiet runs, never for failures."""
+        pipeline = _make_pipeline(telegram_notify_mode="changes_only")
+        run = PipelineRun(id=1, pipeline_id=pipeline.id, started_at=now_utc(),
+                          trigger_reason="scheduled", error_text="low_disk")
+
+        send_telegram_summary(pipeline, run, cycle_closed=False)
+
+        assert "hết dung lượng đĩa" in mock_send.call_args[0][2]
+
+
+class TestMessageEscaping:
+    @patch("scheduler.pipeline_worker.telegram.send_message")
+    def test_title_and_caption_are_escaped(self, mock_send, tmp_path):
+        """parse_mode=HTML means an unescaped < in a title breaks the send."""
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"\0" * 8)
+        pipeline = _make_pipeline(name="A & B")
+        run = PipelineRun(id=1, pipeline_id=pipeline.id, started_at=now_utc(),
+                          trigger_reason="scheduled", pulled_count=1)
+        artifacts = RunArtifacts(videos=[RunVideo(
+            path=str(video),
+            source_url="https://example.test/v1",
+            title="<b>hack</b> & run",
+            caption="caption <script>",
+        )])
+
+        send_telegram_summary(pipeline, run, artifacts)
+
+        text = mock_send.call_args[0][2]
+        assert "&lt;b&gt;hack&lt;/b&gt; &amp; run" in text
+        assert "caption &lt;script&gt;" in text
+        assert "A &amp; B" in text
+        assert mock_send.call_args[1]["html"] is True
+
+
 class TestDeletionOrdering:
     def _pipeline_and_dir(self, tmp_path):
         d = tmp_path / "dl"
@@ -391,7 +476,7 @@ class TestDeletionOrdering:
         pipeline, d = self._pipeline_and_dir(tmp_path)
         seen = {}
 
-        def _record(_pipeline, _run, artifacts=None):
+        def _record(_pipeline, _run, artifacts=None, cycle_closed=True):
             seen["exists"] = os.path.exists(d)
 
         mock_notify.side_effect = _record

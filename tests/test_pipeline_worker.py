@@ -748,7 +748,7 @@ class TestTelegramSummary:
     def test_sends_when_configured(self, mock_send):
         mock_send.return_value = True
         now = now_utc()
-        pipeline = _make_tg_pipeline(now)
+        pipeline = _make_tg_pipeline(now, account_ids_json="[1]")
         run = PipelineRun(
             id=1, pipeline_id=1, started_at=now, finished_at=now,
             trigger_reason="scheduled", pulled_count=3, uploaded_count=2, failed_count=1,
@@ -757,10 +757,9 @@ class TestTelegramSummary:
         send_telegram_summary(pipeline, run)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
-        assert "[my-pipe]" in text
-        assert "Tải xuống: 3" in text
-        assert "Đăng tải: 2" in text
-        assert "Thất bại: 1" in text
+        assert "my-pipe" in text
+        assert "Đăng được 2/3" in text
+        assert "1 lỗi" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_skips_when_no_config(self, mock_send):
@@ -794,7 +793,7 @@ class TestTelegramSummary:
 
         send_telegram_summary(pipeline, run)
         text = mock_send.call_args[0][2]
-        assert "Lỗi hệ thống" in text
+        assert "Không chạy được" in text
         assert "NullPointerException" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
@@ -894,21 +893,21 @@ class TestTelegramSummary:
         assert len(text) <= 4096
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
-    def test_skipped_counts_appear_in_summary(self, mock_send):
-        """H4: skipped_dup_count and skipped_exhausted_count show in message."""
+    def test_skipped_count_appears_in_headline(self, mock_send):
+        """H4: a partial run says how many were skipped as duplicates."""
         mock_send.return_value = True
         now = now_utc()
-        pipeline = _make_tg_pipeline(now)
+        pipeline = _make_tg_pipeline(now, account_ids_json="[1]")
         run = PipelineRun(
             id=1, pipeline_id=1, started_at=now, trigger_reason="scheduled",
-            pulled_count=5, uploaded_count=2,
+            pulled_count=5, uploaded_count=2, failed_count=1,
             skipped_dup_count=2, skipped_exhausted_count=1,
         )
 
         send_telegram_summary(pipeline, run)
         text = mock_send.call_args[0][2]
-        assert "Bỏ qua (trùng): 2" in text
-        assert "Bỏ qua (hết): 1" in text
+        assert "Đăng được 2/3" in text
+        assert "2 trùng" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_run_id_none_skips_video_lookup_but_still_sends(self, mock_send):
@@ -924,7 +923,7 @@ class TestTelegramSummary:
         send_telegram_summary(pipeline, run)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
-        assert "[my-pipe]" in text
+        assert "my-pipe" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_db_failure_on_video_fetch_still_sends(self, mock_send):
@@ -936,6 +935,7 @@ class TestTelegramSummary:
             id=999, pipeline_id=1, started_at=now, trigger_reason="scheduled",
             pulled_count=3, uploaded_count=2,
         )
+        pipeline.account_ids_json = "[1]"
 
         with patch("scheduler.pipeline_worker.Session") as mock_session_cls:
             mock_session_cls.return_value.__enter__ = MagicMock(side_effect=Exception("db down"))
@@ -944,8 +944,8 @@ class TestTelegramSummary:
 
         mock_send.assert_called_once()
         text = mock_send.call_args[0][2]
-        assert "[my-pipe]" in text
-        assert "Đăng tải: 2" in text
+        assert "my-pipe" in text
+        assert "Đã đăng 2 video" in text
 
     @patch("scheduler.pipeline_worker.telegram.send_message")
     def test_soft_cap_truncation_appears_when_many_videos(self, mock_send):
@@ -985,13 +985,13 @@ class TestTelegramSummary:
             s.refresh(run)
 
         pipeline = _make_tg_pipeline(
-            now, id=pid,
+            now, id=pid, account_ids_json="[1]",
             telegram_bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678",
             telegram_chat_id="-1001234567890",
         )
         send_telegram_summary(pipeline, run)
         text = mock_send.call_args[0][2]
-        assert "... và" in text
+        assert "… và 30 video khác" in text
         assert "video khác" in text
         assert len(text) <= 4096
 
@@ -1025,7 +1025,8 @@ class TestPipelineRunContext:
         with _pipeline_run_context(pipeline, "scheduled") as r:
             assert r is run
 
-        mock_notify.assert_called_once_with(pipeline, run, ANY)
+        mock_notify.assert_called_once()
+        assert mock_notify.call_args[0][:2] == (pipeline, run)
 
     @patch("scheduler.pipeline_worker.send_telegram_summary")
     @patch("scheduler.pipeline_worker._emergency_finalize")
@@ -1070,7 +1071,8 @@ class TestPipelineRunContext:
         with _pipeline_run_context(pipeline, "scheduled"):
             pass
 
-        mock_notify.assert_called_once_with(pipeline, run, ANY)
+        mock_notify.assert_called_once()
+        assert mock_notify.call_args[0][:2] == (pipeline, run)
 
     @patch("scheduler.pipeline_worker.send_telegram_summary")
     @patch("scheduler.pipeline_worker._emergency_finalize")
@@ -1184,7 +1186,8 @@ class TestPipelineRunContext:
                     with _pipeline_run_context(pipeline, "scheduled"):
                         pass
 
-        mock_notify.assert_called_once_with(pipeline, db_run, ANY)
+        mock_notify.assert_called_once()
+        assert mock_notify.call_args[0][:2] == (pipeline, db_run)
 
 
 class TestEmergencyFinalize:

@@ -108,6 +108,14 @@ def apply_schema_patches(engine: Engine) -> None:
                     )
                 except Exception:
                     pass
+            if "telegram_notify_mode" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "telegram_notify_mode TEXT NOT NULL DEFAULT 'cycle'"
+                    )
+                except Exception:
+                    pass
             if "telegram_attach_video" not in col_names:
                 try:
                     conn.exec_driver_sql(

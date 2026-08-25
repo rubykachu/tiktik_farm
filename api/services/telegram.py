@@ -115,19 +115,26 @@ def _send_with_retry(method: str, attempt: Callable[[], _Attempt]) -> bool:
     return False
 
 
-def send_message(bot_token: str, chat_id: str, text: str) -> bool:
+def send_message(bot_token: str, chat_id: str, text: str, html: bool = False) -> bool:
     """Send a text message via Telegram Bot API.
 
-    Retries transient failures (see MAX_SEND_ATTEMPTS). Returns True on
-    success, False once the attempts or the deadline are exhausted.
-    Raises ValueError if token or chat_id format is invalid.
+    Set html=True to send with parse_mode=HTML; the caller is then responsible
+    for escaping every value it interpolates. Retries transient failures (see
+    MAX_SEND_ATTEMPTS). Returns True on success, False once the attempts or the
+    deadline are exhausted. Raises ValueError if token or chat_id is malformed.
     """
     _check_credentials(bot_token, chat_id)
     url = _method_url(bot_token, "sendMessage")
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if html:
+        payload["parse_mode"] = "HTML"
+        # Telegram renders a preview card for the first link otherwise, which
+        # buries the message under a thumbnail.
+        payload["disable_web_page_preview"] = True
 
     def _attempt() -> _Attempt:
         with httpx.Client(follow_redirects=False, timeout=10) as client:
-            resp = client.post(url, json={"chat_id": chat_id, "text": text})
+            resp = client.post(url, json=payload)
         return _classify(resp, "sendMessage")
 
     return _send_with_retry("sendMessage", _attempt)

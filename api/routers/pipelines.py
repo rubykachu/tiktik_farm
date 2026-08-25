@@ -74,6 +74,7 @@ def _to_read(row: ChannelPipeline) -> dict:
         "window_delay_minutes": row.window_delay_minutes,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
         "telegram_chat_id": row.telegram_chat_id,
+        "telegram_notify_mode": row.telegram_notify_mode or "cycle",
         "telegram_attach_video": bool(row.telegram_attach_video),
         "telegram_attach_fields": _load_attach_fields(row.telegram_attach_fields_json),
         "run_now_requested_at": row.run_now_requested_at,
@@ -172,6 +173,7 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         window_delay_minutes=payload.window_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
+        telegram_notify_mode=payload.telegram_notify_mode,
         telegram_attach_video=payload.telegram_attach_video,
         telegram_attach_fields_json=json.dumps(payload.telegram_attach_fields),
         sync_from_date=payload.sync_from_date,
@@ -286,6 +288,9 @@ def update_pipeline(
         changed = True
     if "window_delay_minutes" in payload.model_fields_set:
         row.window_delay_minutes = payload.window_delay_minutes
+        changed = True
+    if payload.telegram_notify_mode is not None:
+        row.telegram_notify_mode = payload.telegram_notify_mode
         changed = True
     if payload.telegram_attach_video is not None:
         row.telegram_attach_video = payload.telegram_attach_video

@@ -188,6 +188,7 @@ class PipelineCreate(BaseModel):
     window_delay_minutes: Optional[int] = Field(default=None, ge=3)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    telegram_notify_mode: Literal["changes_only", "cycle", "every_tick"] = "cycle"
     telegram_attach_video: bool = False
     telegram_attach_fields: List[str] = Field(default_factory=list)
     sync_from_date: Optional[date] = None
@@ -287,6 +288,7 @@ class PipelineUpdate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     clear_bot_token: bool = False
+    telegram_notify_mode: Optional[Literal["changes_only", "cycle", "every_tick"]] = None
     telegram_attach_video: Optional[bool] = None
     telegram_attach_fields: Optional[List[str]] = None
     sync_from_date: Optional[date] = None
@@ -370,6 +372,7 @@ class PipelineRead(BaseModel):
     window_delay_minutes: Optional[int] = None
     telegram_bot_token_set: bool
     telegram_chat_id: Optional[str]
+    telegram_notify_mode: str = "cycle"
     telegram_attach_video: bool = False
     telegram_attach_fields: List[str] = []
     run_now_requested_at: Optional[datetime]
