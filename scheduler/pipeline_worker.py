@@ -13,7 +13,6 @@ import shutil
 import tempfile
 import threading
 import time
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
