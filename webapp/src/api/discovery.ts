@@ -75,4 +75,5 @@ export const Discovery = {
       .then((r) => r.data),
 
   scanStatus: () => api.get<DiscoveryScanRun | null>("/discovery/scan-status").then((r) => r.data),
+  scanNow: () => api.post<{ queued: boolean }>("/discovery/scan-now").then((r) => r.data),
 };

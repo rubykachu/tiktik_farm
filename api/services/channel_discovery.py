@@ -40,7 +40,7 @@ from sqlmodel import Session, select
 
 import api.db as _api_db
 from api.db import now_utc
-from api.models import ChannelPipeline, DiscoveryCandidate
+from api.models import AppSetting, ChannelPipeline, DiscoveryCandidate
 from api.services import discovery_settings as settings
 from api.services.ytdlp_opts import extractor_args
 
@@ -328,6 +328,38 @@ def score_candidate(metrics: ChannelMetrics) -> float:
     shorts = (10.0 if metrics.has_shorts_tab else 0.0) + 10 * _clamp(metrics.recent_shorts_count / 10, 0, 1)
 
     return round(recency + cadence + view + shorts, 1)
+
+
+# ---------- manual "scan now" trigger ------------------------------------
+
+_RUN_NOW_KEY = "discovery.run_now_requested_at"
+
+
+def request_run_now() -> None:
+    """Called by the 'Quét ngay' button. Row presence = requested — the
+    scheduler's discovery_tick clears it once it starts the scan, mirroring
+    ChannelPipeline.run_now_requested_at for the per-pipeline 'run now'."""
+    with Session(_api_db.engine) as s:
+        row = s.get(AppSetting, _RUN_NOW_KEY)
+        if row is None:
+            row = AppSetting(key=_RUN_NOW_KEY, value=now_utc().isoformat())
+        else:
+            row.value = now_utc().isoformat()
+        s.add(row)
+        s.commit()
+
+
+def is_run_now_requested() -> bool:
+    with Session(_api_db.engine) as s:
+        return s.get(AppSetting, _RUN_NOW_KEY) is not None
+
+
+def clear_run_now_requested() -> None:
+    with Session(_api_db.engine) as s:
+        row = s.get(AppSetting, _RUN_NOW_KEY)
+        if row is not None:
+            s.delete(row)
+            s.commit()
 
 
 # ---------- orchestration --------------------------------------------------

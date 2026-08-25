@@ -737,6 +737,10 @@ class DiscoveryScanRunRead(BaseModel):
     error_text: Optional[str] = None
 
 
+class DiscoveryScanNowResponse(BaseModel):
+    queued: bool
+
+
 class DiscoverySettingsRead(BaseModel):
     min_subscribers: int
     silent_months: int

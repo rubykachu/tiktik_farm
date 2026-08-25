@@ -190,3 +190,50 @@ class TestReapOrphanScanRuns:
             s.commit()
 
         assert dw.reap_orphan_scan_runs() == 0
+
+
+class TestRunNowBypassesSchedule:
+    def test_bypasses_not_due(self, engine):
+        _add_keyword("kw")
+        with Session(_db.engine) as s:
+            run = DiscoveryScanRun(status="done")
+            s.add(run)  # just finished — normally not due again for a long time
+            s.commit()
+        cd.request_run_now()
+
+        with patch.object(cd, "run_scan", return_value=cd.ScanSummary(1, 1, 1, 0)):
+            assert dw.discovery_tick() is True
+
+    def test_bypasses_hard_floor(self, engine):
+        _add_keyword("kw")
+        settings.set_setting("discovery.scans_per_day", "3")
+        with Session(_db.engine) as s:
+            run = DiscoveryScanRun(status="done")
+            run.started_at = _db.now_utc() - timedelta(minutes=5)  # well under the 4h floor
+            s.add(run)
+            s.commit()
+        cd.request_run_now()
+
+        with patch.object(cd, "run_scan", return_value=cd.ScanSummary(1, 1, 1, 0)):
+            assert dw.discovery_tick() is True
+
+    def test_clears_flag_after_running(self, engine):
+        _add_keyword("kw")
+        cd.request_run_now()
+        with patch.object(cd, "run_scan", return_value=cd.ScanSummary(1, 1, 1, 0)):
+            dw.discovery_tick()
+        assert cd.is_run_now_requested() is False
+
+    def test_clears_flag_even_with_no_keywords(self, engine):
+        cd.request_run_now()
+        assert dw.discovery_tick() is False
+        assert cd.is_run_now_requested() is False
+
+    def test_without_flag_still_respects_schedule(self, engine):
+        _add_keyword("kw")
+        with Session(_db.engine) as s:
+            s.add(DiscoveryScanRun(status="done"))
+            s.commit()
+        with patch.object(cd, "run_scan") as mock_scan:
+            assert dw.discovery_tick() is False
+        mock_scan.assert_not_called()

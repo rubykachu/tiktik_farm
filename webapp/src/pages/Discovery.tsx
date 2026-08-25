@@ -1,12 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpDown, ExternalLink, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Discovery, type DiscoveryCandidate } from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
 import PipelineFormModal from "../components/PipelineFormModal";
+import { formatRelative } from "../utils/datetime";
 
 const SCAN_POLL_MS = 4000;
+// How long to keep polling eagerly after "Quét ngay" before falling back to
+// idle — the scheduler picks the request up on its next poll (≤30s default).
+const EAGER_POLL_TIMEOUT_MS = 60_000;
+
+// One dropdown instead of separate gl/hl inputs — hl is derived, not chosen.
+const MARKETS = [
+  { label: "Mỹ (English)", gl: "US", hl: "en" },
+  { label: "Việt Nam (Tiếng Việt)", gl: "VN", hl: "vi" },
+  { label: "Nhật Bản (日本語)", gl: "JP", hl: "ja" },
+  { label: "Hàn Quốc (한국어)", gl: "KR", hl: "ko" },
+];
 
 type SortKey = "score" | "subscriber_count" | "median_view_count" | "days_since_last_video" | "cadence_days_per_video";
 
@@ -34,6 +46,7 @@ export default function DiscoveryPage() {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [addTarget, setAddTarget] = useState<DiscoveryCandidate | null>(null);
+  const [justTriggered, setJustTriggered] = useState(false);
 
   const { data: settings } = useQuery({ queryKey: ["discovery-settings"], queryFn: Discovery.getSettings });
   const { data: keywords } = useQuery({ queryKey: ["discovery-keywords"], queryFn: Discovery.listKeywords });
@@ -44,7 +57,29 @@ export default function DiscoveryPage() {
   const { data: scanRun } = useQuery({
     queryKey: ["discovery-scan-status"],
     queryFn: Discovery.scanStatus,
-    refetchInterval: (query) => (query.state.data?.status === "running" ? SCAN_POLL_MS : false),
+    refetchInterval: (query) => (query.state.data?.status === "running" || justTriggered ? SCAN_POLL_MS : false),
+  });
+
+  // Stop the eager post-trigger poll once the scheduler actually picks the
+  // request up (status flips to "running") — the normal running-poll takes over.
+  useEffect(() => {
+    if (justTriggered && scanRun?.status === "running") setJustTriggered(false);
+  }, [justTriggered, scanRun?.status]);
+
+  useEffect(() => {
+    if (!justTriggered) return;
+    const timer = setTimeout(() => setJustTriggered(false), EAGER_POLL_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [justTriggered]);
+
+  const scanNowMut = useMutation({
+    mutationFn: Discovery.scanNow,
+    onSuccess: () => {
+      setJustTriggered(true);
+      toast.success("Đã xếp lịch quét ngay — sẽ chạy trong ít phút");
+    },
+    onError: (e: any) =>
+      toast.error("Không quét được", { description: e?.response?.data?.detail ?? e.message }),
   });
 
   const suggestMut = useMutation({
@@ -133,6 +168,21 @@ export default function DiscoveryPage() {
         </p>
       </div>
 
+      <div className="flex items-center gap-3">
+        <button
+          className="btn-primary text-sm"
+          disabled={scanNowMut.isPending || scanRun?.status === "running" || (keywords?.length ?? 0) === 0}
+          onClick={() => scanNowMut.mutate()}
+          title={(keywords?.length ?? 0) === 0 ? "Duyệt ít nhất 1 từ khóa trước" : undefined}
+        >
+          Quét ngay
+        </button>
+        <span className="text-xs text-slate-500">
+          Tự động {settings?.scans_per_day ?? "…"} lần/ngày (tối thiểu cách nhau 4 giờ).
+          {scanRun && ` Lần quét gần nhất: bắt đầu ${formatRelative(scanRun.started_at)}.`}
+        </span>
+      </div>
+
       {scanRun && (
         <div
           className={`rounded border p-3 text-sm ${
@@ -208,21 +258,27 @@ export default function DiscoveryPage() {
           <h3 className="font-medium text-sm">Cài đặt quét</h3>
           {settings && (
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Thị trường (gl)</span>
-                <input
+              <label className="space-y-1 col-span-2">
+                <span className="text-xs text-slate-500">Thị trường</span>
+                <select
                   className="input"
-                  defaultValue={settings.market_gl}
-                  onBlur={(e) => e.target.value !== settings.market_gl && patchSettingsMut.mutate({ market_gl: e.target.value })}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs text-slate-500">Ngôn ngữ (hl)</span>
-                <input
-                  className="input"
-                  defaultValue={settings.market_hl}
-                  onBlur={(e) => e.target.value !== settings.market_hl && patchSettingsMut.mutate({ market_hl: e.target.value })}
-                />
+                  value={settings.market_gl}
+                  onChange={(e) => {
+                    const market = MARKETS.find((m) => m.gl === e.target.value);
+                    if (market) patchSettingsMut.mutate({ market_gl: market.gl, market_hl: market.hl });
+                  }}
+                >
+                  {MARKETS.map((m) => (
+                    <option key={m.gl} value={m.gl}>
+                      {m.label}
+                    </option>
+                  ))}
+                  {!MARKETS.some((m) => m.gl === settings.market_gl) && (
+                    <option value={settings.market_gl}>
+                      {settings.market_gl}/{settings.market_hl} (tùy chỉnh)
+                    </option>
+                  )}
+                </select>
               </label>
               <label className="space-y-1 col-span-2">
                 <span className="text-xs text-slate-500">Nhịp đăng "đều đặn" (ngày/video)</span>

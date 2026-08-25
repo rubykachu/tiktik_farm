@@ -235,3 +235,29 @@ class TestScanStatus:
         assert body["channels_total"] == 10
         assert body["channels_done"] == 3
         assert body["status"] == "running"
+
+
+class TestScanNow:
+    def test_no_keywords_422(self, client):
+        r = client.post("/api/discovery/scan-now", headers=HEADERS_OK)
+        assert r.status_code == 422
+
+    def test_queues_request(self, client):
+        client.post("/api/discovery/keywords", json={"keyword": "kw"}, headers=HEADERS_OK)
+        r = client.post("/api/discovery/scan-now", headers=HEADERS_OK)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"queued": True}
+
+        from api.services import channel_discovery as cd
+        assert cd.is_run_now_requested() is True
+
+    def test_already_running_409(self, client):
+        from api import db as _db
+
+        client.post("/api/discovery/keywords", json={"keyword": "kw"}, headers=HEADERS_OK)
+        with Session(_db.engine) as s:
+            s.add(DiscoveryScanRun(status="running"))
+            s.commit()
+
+        r = client.post("/api/discovery/scan-now", headers=HEADERS_OK)
+        assert r.status_code == 409

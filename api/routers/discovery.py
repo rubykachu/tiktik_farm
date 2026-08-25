@@ -21,6 +21,7 @@ from api.schemas import (
     DiscoveryKeywordCreate,
     DiscoveryKeywordRead,
     DiscoveryKeywordSuggestionsResponse,
+    DiscoveryScanNowResponse,
     DiscoveryScanRunRead,
     DiscoverySettingsRead,
     DiscoverySettingsUpdate,
@@ -158,6 +159,22 @@ def mark_candidate_added(
 
 
 # ---------- scan status ----------------------------------------------------
+
+
+@router.post("/scan-now", response_model=DiscoveryScanNowResponse)
+def scan_now(session: Session = Depends(get_session)):
+    """Bypass the schedule and scan on the next poll (up to
+    SCHEDULER_POLL_SECONDS away, 30s by default) — the scheduler process is
+    what actually runs the scan, this only sets the request flag."""
+    if session.exec(select(DiscoveryKeyword)).first() is None:
+        raise HTTPException(status_code=422, detail="Chưa có từ khóa nào được duyệt để quét")
+    latest_run = session.exec(
+        select(DiscoveryScanRun).order_by(DiscoveryScanRun.started_at.desc())
+    ).first()
+    if latest_run is not None and latest_run.status == "running":
+        raise HTTPException(status_code=409, detail="Đang có lượt quét chạy, chờ xong đã")
+    cd.request_run_now()
+    return DiscoveryScanNowResponse(queued=True)
 
 
 @router.get("/scan-status", response_model=DiscoveryScanRunRead | None)

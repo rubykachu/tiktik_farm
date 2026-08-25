@@ -162,13 +162,24 @@ def _mark_scanned(keyword_ids: list[int]) -> None:
 def discovery_tick() -> bool:
     """One scheduler poll's worth of discovery work. Returns True if a scan
     ran (finished or errored), False if it wasn't due yet or no keyword has
-    been approved — a scan never runs on a keyword the user hasn't ticked."""
-    if not _is_due():
+    been approved — a scan never runs on a keyword the user hasn't ticked.
+
+    A pending "Quét ngay" request (cd.is_run_now_requested) bypasses the
+    schedule interval AND the hard floor between scans — both exist to stop
+    an automatic loop from over-scanning, not to make the user wait after an
+    explicit one-off click. keywords_per_scan's cap still applies either way.
+    """
+    run_now = cd.is_run_now_requested()
+    if not run_now and not _is_due():
         return False
 
     keyword_rows = _pick_keywords()
     if not keyword_rows:
+        if run_now:
+            cd.clear_run_now_requested()
         return False
+    if run_now:
+        cd.clear_run_now_requested()
 
     keywords = [k.keyword for k in keyword_rows]
     run_id = _start_run(keywords)

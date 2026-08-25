@@ -425,3 +425,23 @@ class TestRunScan:
             cd.run_scan(["kw"], progress_cb=lambda done, total: calls.append((done, total)))
         assert calls[0] == (0, 1)
         assert calls[-1] == (1, 1)
+
+
+class TestRunNowFlag:
+    def test_not_requested_by_default(self, engine):
+        assert cd.is_run_now_requested() is False
+
+    def test_request_then_clear(self, engine):
+        cd.request_run_now()
+        assert cd.is_run_now_requested() is True
+        cd.clear_run_now_requested()
+        assert cd.is_run_now_requested() is False
+
+    def test_clear_when_not_requested_is_a_no_op(self, engine):
+        cd.clear_run_now_requested()
+        assert cd.is_run_now_requested() is False
+
+    def test_request_twice_stays_requested(self, engine):
+        cd.request_run_now()
+        cd.request_run_now()
+        assert cd.is_run_now_requested() is True
