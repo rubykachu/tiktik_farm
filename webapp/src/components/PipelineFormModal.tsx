@@ -15,10 +15,10 @@ import { Settings } from "../api/settings";
 import Tooltip from "./Tooltip";
 
 const baseSchema = z.object({
-  name: z.string().min(1, "Required").max(128),
+  name: z.string().min(1, "Bắt buộc nhập").max(128),
   source_type: z.enum(["youtube", "douyin"]).default("youtube"),
   douyin_cookie_id: z.number().nullable().optional(),
-  channel_url: z.string().min(1, "Required"),
+  channel_url: z.string().min(1, "Bắt buộc nhập"),
   interval_value: z.coerce.number().int().min(1),
   interval_unit: z.enum(["minutes", "days"]),
   first_fire_at: z.string().optional().default(""),
@@ -37,7 +37,7 @@ const baseSchema = z.object({
     .optional()
     .default("")
     .refine((v) => !v || /^-?\d+$/.test(v), {
-      message: "Chat ID must be numeric (e.g. -1001234567890)",
+      message: "Chat ID chỉ được nhập số (vd: -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
   telegram_notify_mode: z
@@ -53,7 +53,7 @@ function buildSchema(existingTokenSet: boolean) {
   return baseSchema
     .refine(
       (d) => d.source_type !== "douyin" || !!d.douyin_cookie_id,
-      { message: "Select a Douyin cookie", path: ["douyin_cookie_id"] }
+      { message: "Chọn 1 cookie Douyin", path: ["douyin_cookie_id"] }
     )
     .refine(
       (d) => {
@@ -63,7 +63,7 @@ function buildSchema(existingTokenSet: boolean) {
           return ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"].includes(u.hostname);
         } catch { return false; }
       },
-      { message: "Must be a YouTube URL (e.g. https://youtube.com/@channel)", path: ["channel_url"] }
+      { message: "Phải là URL YouTube (vd: https://youtube.com/@channel)", path: ["channel_url"] }
     )
     .refine(
       (d) => {
@@ -73,10 +73,10 @@ function buildSchema(existingTokenSet: boolean) {
           return ["douyin.com", "www.douyin.com", "m.douyin.com", "v.douyin.com"].includes(u.hostname);
         } catch { return false; }
       },
-      { message: "Must be a Douyin URL (e.g. https://www.douyin.com/user/...)", path: ["channel_url"] }
+      { message: "Phải là URL Douyin (vd: https://www.douyin.com/user/...)", path: ["channel_url"] }
     )
     .refine((d) => !(d.interval_unit === "minutes" && d.interval_value < 2), {
-      message: "Interval must be ≥ 2 when using minutes",
+      message: "Khoảng lặp phải ≥ 2 khi dùng đơn vị phút",
       path: ["interval_value"],
     })
     .refine(
@@ -85,14 +85,14 @@ function buildSchema(existingTokenSet: boolean) {
         const delaySet = !!(d.window_delay_minutes !== "" && d.window_delay_minutes !== undefined);
         return endSet === delaySet;
       },
-      { message: "Window end time and repeat interval must both be set or both be empty", path: ["window_end_time"] }
+      { message: "Giờ kết thúc và khoảng lặp lại phải điền đủ cả hai, hoặc để trống cả hai", path: ["window_end_time"] }
     )
     .refine(
       (d) => {
         if (!d.window_end_time || !d.first_fire_at) return true;
         return toMinutes(d.window_end_time) > toMinutes(d.first_fire_at);
       },
-      { message: "Window end must be later than the start time", path: ["window_end_time"] }
+      { message: "Giờ kết thúc phải sau giờ bắt đầu", path: ["window_end_time"] }
     )
     .refine(
       (d) => {
@@ -100,11 +100,11 @@ function buildSchema(existingTokenSet: boolean) {
         const windowMin = toMinutes(d.window_end_time) - toMinutes(d.first_fire_at);
         return windowMin > Number(d.window_delay_minutes);
       },
-      { message: "Window duration must be greater than the repeat interval", path: ["window_delay_minutes"] }
+      { message: "Khoảng thời gian chạy nhiều lần phải dài hơn khoảng lặp lại", path: ["window_delay_minutes"] }
     )
     .refine(
       (d) => d.interval_unit !== "days" || /^\d{2}:\d{2}$/.test(d.first_fire_at ?? ""),
-      { message: "Enter a daily run time (HH:MM)", path: ["first_fire_at"] }
+      { message: "Nhập giờ chạy hằng ngày (HH:MM)", path: ["first_fire_at"] }
     )
     .refine(
       (d) => {
@@ -113,8 +113,7 @@ function buildSchema(existingTokenSet: boolean) {
         return !!(d.caption_ai_prompt && d.caption_ai_prompt.trim());
       },
       {
-        message:
-          "Add an AI prompt or remove {ai_title} from the caption template",
+        message: "Thêm prompt AI hoặc bỏ {ai_title} khỏi mẫu caption",
         path: ["caption_ai_prompt"],
       }
     )
@@ -125,7 +124,7 @@ function buildSchema(existingTokenSet: boolean) {
         return d.caption_template.includes("{ai_title}");
       },
       {
-        message: "{ai_title_hashtag} requires {ai_title} in the caption template",
+        message: "{ai_title_hashtag} cần có {ai_title} trong mẫu caption",
         path: ["caption_template"],
       }
     )
@@ -140,7 +139,7 @@ function buildSchema(existingTokenSet: boolean) {
         return botPresent === chatSet;
       },
       {
-        message: "Bot token and chat ID must be set together (or both empty)",
+        message: "Bot Token và Chat ID phải điền đủ cả hai, hoặc để trống cả hai",
         path: ["telegram_bot_token"],
       }
     );
