@@ -6,7 +6,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  webapp — nginx + React SPA  (port 3000 → host 127.0.0.1)   │
+│  webapp — nginx + React SPA  (host 127.0.0.1:2705)          │
 │  ├ /accounts                                                 │
 │  ├ /schedules  (Pipelines)                                   │
 │  └ /videos     (lịch sử VideoUpload từ pipeline)             │
@@ -127,7 +127,7 @@ User → POST /api/pipelines (source_type=douyin, douyin_cookie_id=N, …)
 
 ## Bảo mật mặt phẳng (Phase 1)
 
-- **Origin / Referer**: mọi `POST/PUT/PATCH/DELETE` phải có `Origin` hoặc `Referer` trỏ tới `http://127.0.0.1:3000` hoặc `http://localhost:3000` — giảm CSRF / DNS rebinding tới API local.
+- **Origin / Referer**: mọi `POST/PUT/PATCH/DELETE` phải có `Origin` hoặc `Referer` trỏ tới `http://127.0.0.1:2705` hoặc `http://localhost:2705` (port lấy từ `WEBAPP_PORT`) — giảm CSRF / DNS rebinding tới API local.
 - **Cấu hình mạng**: nên bind dịch vụ ra `127.0.0.1`; mở LAN/Internet chỉ qua reverse proxy có auth (ví dụ nginx basic auth). Trong `docker-compose`, map port API về `127.0.0.1:...` nếu host-expose.
 - **Cookie pickle**: file `.cookie` là mặt phẳng thực thi mã khi `pickle.load` — quyền file chặt (`0600`), thư mục `0700`; không chia sẻ file cho user khác.
 - **Telegram `bot_token`**: không bao giờ trả về trong JSON GET; log được lọc token (`api/logging.py`).
@@ -149,9 +149,9 @@ VPS production: cần ≥8 GB disk free + ≥4 GB RAM. Idle ~1.5 GB RAM, peak ~3
 
 ## Network
 
-- `api` port 8000: chỉ bind compose network (`expose`), nginx proxy ra port 3000
-- `webapp` port 3000 → host `127.0.0.1:3000` (chỉ localhost, không expose Internet)
-- Production VPS muốn expose Internet: dùng Cloudflare Tunnel hoặc đặt reverse proxy (Caddy/Traefik) lên trước `127.0.0.1:3000`, bật **HTTPS + auth** (Phase 1 không có auth trong app).
+- `api` port 8000 trong container, publish ra host `127.0.0.1:2706`; nginx proxy qua compose network
+- `webapp` port 80 trong container → host `127.0.0.1:2705` (chỉ localhost, không expose Internet)
+- Muốn expose Internet: dùng Cloudflare Tunnel hoặc reverse proxy lên trước `127.0.0.1:2705`, bật **HTTPS + auth**.
 
 ## DB migrations
 

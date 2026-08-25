@@ -81,7 +81,7 @@ credentials-file: /Users/<TÊN NGƯỜI DÙNG MÁC>/.cloudflared/<MÃ TUNNEL>.js
 
 ingress:
   - hostname: farm1.tenmien.com
-    service: http://127.0.0.1:3000
+    service: http://127.0.0.1:2705
   - service: http_status:404
 ```
 

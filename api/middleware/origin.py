@@ -23,12 +23,21 @@ from starlette.requests import Request
 
 from api.services.public_url import normalize_base_url
 
+# The port the webapp is published on. Must match the host mapping in
+# docker-compose.yml — a mismatch makes every button in the UI fail the origin
+# check with 403 while GETs keep working, which reads like a broken frontend.
+# 2705 rather than 3000: that range collides with everything else on a dev box.
+DEFAULT_WEBAPP_PORT = "2705"
+WEBAPP_PORT = os.environ.get("WEBAPP_PORT") or DEFAULT_WEBAPP_PORT
+
+LOCAL_ORIGIN = f"http://127.0.0.1:{WEBAPP_PORT}"
+
 _host = os.environ.get("HOST", "")
 _extra = {normalize_base_url(_host)} - {""} if _host else set()
 
 ALLOWED_ORIGINS = frozenset({
-    "http://127.0.0.1:3000",
-    "http://localhost:3000",
+    LOCAL_ORIGIN,
+    f"http://localhost:{WEBAPP_PORT}",
 } | _extra)
 
 MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})

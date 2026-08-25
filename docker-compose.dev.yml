@@ -20,7 +20,7 @@ services:
       - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
       - BASIC_AUTH_PASS=${BASIC_AUTH_PASS:-}
     ports: !override
-      - "127.0.0.1:3000:5173"
+      - "127.0.0.1:2705:5173"
     command:
       - sh
       - -c

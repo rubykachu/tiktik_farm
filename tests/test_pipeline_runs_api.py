@@ -9,6 +9,7 @@ import api.db as _api_db
 from api.db import make_engine, override_engine, now_utc
 from api.main import app
 from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
+from api.middleware.origin import LOCAL_ORIGIN
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +24,7 @@ def fresh_db(tmp_path):
 
 @pytest.fixture
 def client():
-    return TestClient(app, headers={"Origin": "http://127.0.0.1:3000"})
+    return TestClient(app, headers={"Origin": LOCAL_ORIGIN})
 
 
 def _seed():

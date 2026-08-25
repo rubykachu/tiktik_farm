@@ -75,7 +75,7 @@ native run).
 
 ## Expose ra Internet
 
-Webapp bind `127.0.0.1:3000`, không ra ngoài. Đường ra là Cloudflare Tunnel với
+Webapp bind `127.0.0.1:2705`, không ra ngoài. Đường ra là Cloudflare Tunnel với
 **named tunnel** + tên miền riêng — các bước ở [RUNBOOK](../RUNBOOK.md) Bước 5.
 
 Quick tunnel (`trycloudflare.com`) đổi URL mỗi lần khởi động lại. Không dùng được

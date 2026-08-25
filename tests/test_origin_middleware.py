@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.middleware.origin import OriginCheckMiddleware
+from api.middleware.origin import LOCAL_ORIGIN, WEBAPP_PORT, OriginCheckMiddleware
 
 
 def _make_client() -> TestClient:
@@ -52,15 +52,15 @@ class TestPostChecked:
         assert r.status_code == 403
 
     def test_post_with_localhost_origin_passes(self):
-        r = _make_client().post("/p", headers={"Origin": "http://127.0.0.1:3000"})
+        r = _make_client().post("/p", headers={"Origin": LOCAL_ORIGIN})
         assert r.status_code == 200
 
     def test_post_with_loopback_localhost_origin_passes(self):
-        r = _make_client().post("/p", headers={"Origin": "http://localhost:3000"})
+        r = _make_client().post("/p", headers={"Origin": f"http://localhost:{WEBAPP_PORT}"})
         assert r.status_code == 200
 
     def test_post_with_localhost_referer_passes_when_origin_missing(self):
-        r = _make_client().post("/p", headers={"Referer": "http://127.0.0.1:3000/some/page"})
+        r = _make_client().post("/p", headers={"Referer": LOCAL_ORIGIN + "/some/page"})
         assert r.status_code == 200
 
 
@@ -70,7 +70,7 @@ class TestDeleteChecked:
         assert r.status_code == 403
 
     def test_delete_with_localhost_origin_passes(self):
-        r = _make_client().delete("/d/1", headers={"Origin": "http://localhost:3000"})
+        r = _make_client().delete("/d/1", headers={"Origin": f"http://localhost:{WEBAPP_PORT}"})
         assert r.status_code == 200
 
 

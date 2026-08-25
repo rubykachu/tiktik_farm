@@ -27,13 +27,13 @@ make test
 
 ```bash
 # API
-TIKTOK_CONFIG_PATH=./config.txt ./.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+TIKTOK_CONFIG_PATH=./config.txt ./.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 2706 --reload
 
 # Scheduler
 TIKTOK_CONFIG_PATH=./config.txt ./.venv/bin/python -m scheduler.main
 
 # Webapp
-cd webapp && npm run dev -- --port 3000 --host 127.0.0.1
+cd webapp && npm run dev -- --port 2705 --host 127.0.0.1
 ```
 
 ### Docker — the only deployment
@@ -59,9 +59,9 @@ cd webapp && npm run build   # Type-check + bundle
 ## Architecture
 
 ```
-webapp (React/Vite → nginx, :3000)
+webapp (React/Vite → nginx, host 127.0.0.1:2705)
   └─ /api/* proxied to →
-api (FastAPI, :8000 internal)
+api (FastAPI, container :8000, host 127.0.0.1:2706)
   ├─ api/models.py       SQLModel: Account, ChannelPipeline, PipelineRun, VideoUpload, DouyinCookie,
   │                      PipelineSeenVideo (dedupe for account-less pipelines), ManualDownload
   ├─ api/schemas.py      Pydantic request/response shapes
@@ -100,7 +100,10 @@ To sync only the signing JS (safe): `bash scripts/update-tiktok-signature.sh`.
 
 ## Key invariants
 
-- `POST/PUT/PATCH/DELETE` require `Origin` or `Referer` matching `http://127.0.0.1:3000` or `http://localhost:3000` — enforced by `api/middleware/origin.py`.
+- `POST/PUT/PATCH/DELETE` require `Origin` or `Referer` matching the webapp's host port —
+  `api/middleware/origin.py` builds that from `WEBAPP_PORT` (default 2705), which must match
+  the mapping in `docker-compose.yml`. A mismatch 403s every mutation while GETs still work,
+  which reads like a broken frontend. Tests import `LOCAL_ORIGIN` rather than hard-coding it.
 - `config.txt` (not `.env`) is what `Config` class reads for uploader settings. `.env` is only used for `TIKTOK_LOGIN_URL`.
 - Native dev cookie dir is `./CookiesDir/`; Docker uses `./data/CookiesDir/`. They don't share.
 - `api/logging.py` scrubs Telegram `bot_token` from all log output.
