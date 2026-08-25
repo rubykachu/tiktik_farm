@@ -13,6 +13,7 @@ import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram
 import { TelegramConfigs } from "../api/telegram_configs";
 import { Settings } from "../api/settings";
 import Tooltip from "./Tooltip";
+import { useTelegramChatName } from "../hooks/useTelegramChatName";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Bắt buộc nhập").max(128),
@@ -535,6 +536,11 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
+  const resolvedChatName = useTelegramChatName(
+    telegramBotToken || "",
+    telegramChatId || "",
+    telegramDetectChats,
+  );
   const attachFields = watch("telegram_attach_fields") ?? [];
   const captionTemplate = watch("caption_template");
   const captionAiPrompt = watch("caption_ai_prompt");
@@ -1192,6 +1198,9 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                     {telegramTestSending ? "Đang gửi…" : "Gửi thử"}
                   </button>
                 </div>
+                {resolvedChatName && (
+                  <p className="text-xs text-brand-600 mt-1">→ {resolvedChatName}</p>
+                )}
                 {errors.telegram_chat_id && (
                   <p className="field-error">{errors.telegram_chat_id.message}</p>
                 )}

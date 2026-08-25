@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Star, Trash2, Edit, X, ExternalLink } from "lucide-react";
+import { Plus, Star, Trash2, Edit, X, ExternalLink, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Settings as SettingsApi } from "../api/settings";
 import { LLMModels, LLMModel, LLMModelCreate } from "../api/llmModels";
 import { TelegramConfigs, TelegramConfig } from "../api/telegram_configs";
 import { Telegram, TelegramChatItem } from "../api/telegram";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Tooltip from "../components/Tooltip";
+import { useTelegramChatName } from "../hooks/useTelegramChatName";
 
 type EditState =
   | { mode: "create" }
@@ -767,6 +769,7 @@ function TelegramConfigModal({ onClose }: { onClose: () => void }) {
   }
 
   const canSubmit = name.trim() && botToken.trim() && chatId.trim();
+  const resolvedChatName = useTelegramChatName(botToken, chatId, detectChats);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -816,7 +819,12 @@ function TelegramConfigModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <label className="label-required">Chat ID</label>
+            <div className="flex items-center gap-1.5">
+              <label className="label-required">Chat ID</label>
+              <Tooltip content={<>Chỉ nhập số (kênh private thường bắt đầu bằng <code>-100…</code>).</>}>
+                <HelpCircle size={12} className="text-slate-400 cursor-help" />
+              </Tooltip>
+            </div>
             <div className="flex gap-2 items-stretch">
               <input
                 className="input flex-1 min-w-0"
@@ -837,10 +845,9 @@ function TelegramConfigModal({ onClose }: { onClose: () => void }) {
                 {testSending ? "Đang gửi…" : "Gửi thử"}
               </button>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Chỉ nhập số (kênh private thường bắt đầu bằng{" "}
-              <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot làm admin kênh.
-            </p>
+            {resolvedChatName && (
+              <p className="text-xs text-brand-600 mt-1">→ {resolvedChatName}</p>
+            )}
           </div>
 
           {detectChats && detectChats.length > 0 && (
