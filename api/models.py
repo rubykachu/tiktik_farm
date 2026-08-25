@@ -267,17 +267,6 @@ class AppSetting(SQLModel, table=True):
 # ---------- channel discovery (Phase 5) -------------------------------------
 
 
-class DiscoveryKeyword(SQLModel, table=True):
-    """A keyword chip in the search box, saved so a batch survives a page
-    reload. Purely a convenience list the user builds by hand — nothing
-    scans automatically; see api.routers.discovery's scan-now endpoint."""
-    __tablename__ = "discovery_keywords"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    keyword: str = Field(unique=True, max_length=200)
-    created_at: datetime = Field(default_factory=now_utc)
-
-
 class DiscoveryCandidate(SQLModel, table=True):
     """Global, channel_id-keyed action state — shared across every scan,
     regardless of which keyword search found the channel. A channel already

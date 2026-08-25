@@ -79,34 +79,6 @@ class TestPatchSettings:
         assert r.status_code == 403
 
 
-class TestKeywords:
-    def test_create_and_list(self, client):
-        r = client.post("/api/discovery/keywords", json={"keyword": "nhảy thiếu nhi"}, headers=HEADERS_OK)
-        assert r.status_code == 201, r.text
-        assert r.json()["keyword"] == "nhảy thiếu nhi"
-        assert "last_scanned_at" not in r.json()
-
-        r2 = client.get("/api/discovery/keywords", headers=HEADERS_OK)
-        assert len(r2.json()) == 1
-
-    def test_duplicate_rejected(self, client):
-        client.post("/api/discovery/keywords", json={"keyword": "kw"}, headers=HEADERS_OK)
-        r = client.post("/api/discovery/keywords", json={"keyword": "kw"}, headers=HEADERS_OK)
-        assert r.status_code == 409
-
-    def test_delete(self, client):
-        created = client.post(
-            "/api/discovery/keywords", json={"keyword": "kw"}, headers=HEADERS_OK
-        ).json()
-        r = client.delete(f"/api/discovery/keywords/{created['id']}", headers=HEADERS_OK)
-        assert r.status_code == 204
-        assert client.get("/api/discovery/keywords", headers=HEADERS_OK).json() == []
-
-    def test_delete_missing_404(self, client):
-        r = client.delete("/api/discovery/keywords/9999", headers=HEADERS_OK)
-        assert r.status_code == 404
-
-
 class TestKeywordSuggestions:
     def test_calls_service_with_given_market(self, client):
         with patch.object(cd, "suggest_keywords", return_value=["a", "b"]) as mock_suggest:

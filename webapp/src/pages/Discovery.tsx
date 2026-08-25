@@ -54,7 +54,7 @@ function formatCadence(days: number | null): string {
 // doesn't need to repeat "Shorts" as visible column text too.
 function cadenceTabHint(tab: string | null): string {
   const tabLabel = tab === "shorts" ? "Shorts" : "video dài";
-  return `Tính theo tab ${tabLabel} — tab kênh đăng đều hơn giữa video dài và Shorts.`;
+  return `Tính theo tab ${tabLabel}`;
 }
 
 function marketLabel(gl: string): string {
@@ -120,7 +120,11 @@ export default function DiscoveryPage() {
   const [viewingRunId, setViewingRunId] = useState<number | null>(null);
 
   const { data: settings } = useQuery({ queryKey: ["discovery-settings"], queryFn: Discovery.getSettings });
-  const { data: keywords } = useQuery({ queryKey: ["discovery-keywords"], queryFn: Discovery.listKeywords });
+  // Purely client-side, cleared on every page load — an earlier version
+  // persisted this batch across visits, but on a shared multi-user portal
+  // that meant stale keywords from someone else's session sat there
+  // unnoticed and silently combined with whatever the next person typed.
+  const [keywords, setKeywords] = useState<string[]>([]);
   const { data: scanRuns } = useQuery({ queryKey: ["discovery-scan-runs"], queryFn: Discovery.listScanRuns });
 
   // Default to the most recent search on load, so the page isn't empty.
@@ -156,21 +160,15 @@ export default function DiscoveryPage() {
     onError: () => toast.error("Không lấy được gợi ý"),
   });
 
-  const addKeywordMut = useMutation({
-    mutationFn: (keyword: string) => Discovery.addKeyword(keyword),
-    onSuccess: (_row, keyword) => {
-      qc.invalidateQueries({ queryKey: ["discovery-keywords"] });
-      setSuggestions((prev) => prev.filter((s) => s !== keyword));
-      toast.success(`Đã thêm từ khóa "${keyword}"`);
-    },
-    onError: (e: any) =>
-      toast.error("Không thêm được từ khóa", { description: e?.response?.data?.detail ?? e.message }),
-  });
+  function addKeyword(keyword: string) {
+    if (keywords.includes(keyword)) return;
+    setKeywords((prev) => [...prev, keyword]);
+    setSuggestions((prev) => prev.filter((s) => s !== keyword));
+  }
 
-  const removeKeywordMut = useMutation({
-    mutationFn: (id: number) => Discovery.removeKeyword(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["discovery-keywords"] }),
-  });
+  function removeKeyword(keyword: string) {
+    setKeywords((prev) => prev.filter((k) => k !== keyword));
+  }
 
   const patchSettingsMut = useMutation({
     mutationFn: Discovery.patchSettings,
@@ -182,7 +180,7 @@ export default function DiscoveryPage() {
   });
 
   const scanNowMut = useMutation({
-    mutationFn: () => Discovery.scanNow((keywords ?? []).map((k) => k.keyword), market.gl, market.hl),
+    mutationFn: () => Discovery.scanNow(keywords, market.gl, market.hl),
     onSuccess: (res) => {
       setViewingRunId(res.scan_run_id);
       qc.invalidateQueries({ queryKey: ["discovery-scan-runs"] });
@@ -238,7 +236,7 @@ export default function DiscoveryPage() {
     );
   }
 
-  const keywordCount = keywords?.length ?? 0;
+  const keywordCount = keywords.length;
   const atCap = keywordCount >= DISCOVERY_MAX_KEYWORDS_PER_SCAN;
 
   return (
@@ -296,7 +294,7 @@ export default function DiscoveryPage() {
                 <button
                   key={s}
                   className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                  onClick={() => addKeywordMut.mutate(s)}
+                  onClick={() => addKeyword(s)}
                   disabled={atCap}
                   title={atCap ? `Tối đa ${DISCOVERY_MAX_KEYWORDS_PER_SCAN} từ khóa/lần quét` : "Thêm vào lượt quét"}
                 >
@@ -315,10 +313,10 @@ export default function DiscoveryPage() {
             </div>
             {keywordCount === 0 && <p className="text-sm text-slate-400">Chưa có từ khóa nào.</p>}
             <div className="flex flex-wrap gap-2">
-              {keywords?.map((k) => (
-                <span key={k.id} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">
-                  {k.keyword}
-                  <button onClick={() => removeKeywordMut.mutate(k.id)} title="Bỏ khỏi lượt quét">
+              {keywords.map((k) => (
+                <span key={k} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">
+                  {k}
+                  <button onClick={() => removeKeyword(k)} title="Bỏ khỏi lượt quét">
                     <X size={12} />
                   </button>
                 </span>

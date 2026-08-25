@@ -1,11 +1,5 @@
 import { api } from "./client";
 
-export interface DiscoveryKeyword {
-  id: number;
-  keyword: string;
-  created_at: string;
-}
-
 export interface DiscoveryScanRun {
   id: number;
   keywords: string[];
@@ -57,10 +51,6 @@ export const Discovery = {
   patchSettings: (payload: DiscoverySettingsUpdate) =>
     api.patch<DiscoverySettings>("/discovery/settings", payload).then((r) => r.data),
 
-  listKeywords: () => api.get<DiscoveryKeyword[]>("/discovery/keywords").then((r) => r.data),
-  addKeyword: (keyword: string) =>
-    api.post<DiscoveryKeyword>("/discovery/keywords", { keyword }).then((r) => r.data),
-  removeKeyword: (id: number) => api.delete(`/discovery/keywords/${id}`),
   suggestKeywords: (seed: string, gl: string, hl: string) =>
     api
       .get<{ suggestions: string[] }>("/discovery/keyword-suggestions", { params: { seed, gl, hl } })

@@ -743,18 +743,6 @@ class PromptTestResponse(BaseModel):
 DISCOVERY_MAX_KEYWORDS_PER_SCAN = 5
 
 
-class DiscoveryKeywordCreate(BaseModel):
-    keyword: str = Field(min_length=1, max_length=200)
-
-
-class DiscoveryKeywordRead(BaseModel):
-    id: int
-    keyword: str
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 class DiscoveryKeywordSuggestionsResponse(BaseModel):
     suggestions: List[str]
 

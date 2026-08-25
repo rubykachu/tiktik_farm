@@ -1,4 +1,4 @@
-"""Channel discovery: keyword chips, on-demand scans, and scan history.
+"""Channel discovery: keyword suggestions, on-demand scans, and scan history.
 
 Read the module docstring on api.services.channel_discovery first. There is
 no automatic scheduling here — POST /scan-now starts a scan immediately as
@@ -12,19 +12,16 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlmodel import Session, delete, select
 
 import api.db as _db
 from api.db import get_session, now_utc
-from api.models import ChannelPipeline, DiscoveryCandidate, DiscoveryKeyword, DiscoveryScanResult, DiscoveryScanRun
+from api.models import ChannelPipeline, DiscoveryCandidate, DiscoveryScanResult, DiscoveryScanRun
 from api.schemas import (
     DiscoveryChannelActionResponse,
     DiscoveryChannelMarkAddedRequest,
     DiscoveryChannelSkipRequest,
-    DiscoveryKeywordCreate,
-    DiscoveryKeywordRead,
     DiscoveryKeywordSuggestionsResponse,
     DiscoveryScanNowRequest,
     DiscoveryScanNowResponse,
@@ -87,35 +84,12 @@ def patch_settings(payload: DiscoverySettingsUpdate):
     return _read_settings()
 
 
-# ---------- keyword chips (persisted convenience list) ------------------------
-
-
-@router.get("/keywords", response_model=list[DiscoveryKeywordRead])
-def list_keywords(session: Session = Depends(get_session)):
-    rows = session.exec(select(DiscoveryKeyword).order_by(DiscoveryKeyword.created_at)).all()
-    return rows
-
-
-@router.post("/keywords", response_model=DiscoveryKeywordRead, status_code=status.HTTP_201_CREATED)
-def create_keyword(payload: DiscoveryKeywordCreate, session: Session = Depends(get_session)):
-    row = DiscoveryKeyword(keyword=payload.keyword.strip())
-    session.add(row)
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(status_code=409, detail="Từ khóa này đã có trong danh sách")
-    session.refresh(row)
-    return row
-
-
-@router.delete("/keywords/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_keyword(keyword_id: int, session: Session = Depends(get_session)):
-    row = session.get(DiscoveryKeyword, keyword_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="keyword not found")
-    session.delete(row)
-    session.commit()
+# ---------- keyword suggestions -----------------------------------------------
+# No persisted keyword-chip list here on purpose: an earlier version saved
+# the batch across page loads, but on a shared multi-user portal that meant
+# stale keywords from someone else's earlier session sat in the box
+# unnoticed, and got silently combined with whatever the next person typed.
+# The keyword batch is now purely client-side, cleared on every page load.
 
 
 @router.get("/keyword-suggestions", response_model=DiscoveryKeywordSuggestionsResponse)
