@@ -4,7 +4,7 @@ import { Bell, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
-import { asUtcDate as asUtc } from "../utils/datetime";
+import { formatDateTime, formatTime } from "../utils/datetime";
 import { toast } from "sonner";
 
 function statusLabel(s: string): string {
@@ -226,7 +226,7 @@ function RunRow({
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </td>
         <td className="py-1.5 px-2 text-slate-600 tabular-nums">
-          {run.started_at ? asUtc(run.started_at).toLocaleTimeString() : "—"}
+          {formatTime(run.started_at)}
         </td>
         <td className="py-1.5 px-2 tabular-nums">{run.pulled_count}</td>
         <td className="py-1.5 px-2 tabular-nums">{run.uploaded_count}</td>
@@ -249,7 +249,7 @@ function RunRow({
         </td>
         <td className="py-1.5 px-1 w-5 text-center">
           {run.pushed_notify_at ? (
-            <span title={asUtc(run.pushed_notify_at).toLocaleString()}>
+            <span title={formatDateTime(run.pushed_notify_at)}>
               <Bell size={10} className="text-orange-500 inline" />
             </span>
           ) : null}

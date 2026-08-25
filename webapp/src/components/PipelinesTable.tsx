@@ -6,7 +6,7 @@ import { Accounts } from "../api/client";
 import { toast } from "sonner";
 import ConfirmDialog from "./ConfirmDialog";
 import PipelineRunsExpand from "./PipelineRunsExpand";
-import { asUtcDate } from "../utils/datetime";
+import { formatDateTime, formatRelative } from "../utils/datetime";
 
 type Props = {
   onEdit?: (pipeline: Pipeline) => void;
@@ -151,7 +151,7 @@ export default function PipelinesTable({ onEdit }: Props) {
             <tr>
               <th className="text-left p-3">Tên</th>
               <th className="text-left p-3">Kênh</th>
-              <th className="text-left p-3">T/khoản TikTok</th>
+              <th className="text-left p-3">Tài khoản</th>
               <th className="text-left p-3">Chu kỳ</th>
               <th className="text-left p-3">Lần chạy tới</th>
               <th className="text-left p-3">Trạng thái</th>
@@ -176,7 +176,8 @@ export default function PipelinesTable({ onEdit }: Props) {
             {!isLoading && !isError && data && data.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={7}>
-                  Chưa có lịch đăng nào.
+                  Chưa có lịch đăng nào. Bấm "Tạo lịch mới" để hệ thống bắt đầu
+                  tự động lấy video và đăng lên TikTok.
                 </td>
               </tr>
             )}
@@ -201,14 +202,30 @@ export default function PipelinesTable({ onEdit }: Props) {
                     </a>
                   </td>
                   <td className="p-3 text-slate-600 text-xs">
-                    {accountIds(p).map((id) => {
-                      const name = accountLabel.get(id) ?? `#${id}`;
-                      return name.length > 8 ? name.slice(0, 8) + "…" : name;
-                    }).join(", ") || "—"}
+                    {(() => {
+                      const names = accountIds(p).map(
+                        (id) => accountLabel.get(id) ?? `#${id}`,
+                      );
+                      if (names.length === 0) return "—";
+                      // Truncating several names to 8 chars renders them
+                      // identical ("USA Clip…, USA Clip…"), which says less
+                      // than the count does. Full list stays in the tooltip.
+                      const shown =
+                        names.length === 1 ? names[0] : `${names.length} tài khoản`;
+                      return <span title={names.join(", ")}>{shown}</span>;
+                    })()}
                   </td>
                   <td className="p-3 text-slate-600">{intervalLabel(p)}</td>
                   <td className="p-3 text-slate-600 text-xs">
-                    {asUtcDate(p.next_fire_at).toLocaleString()}
+                    {/* A paused pipeline keeps its next_fire_at but will not
+                        fire, so showing a countdown would be a lie. */}
+                    {p.state === "active" ? (
+                      <span title={formatDateTime(p.next_fire_at)}>
+                        {formatRelative(p.next_fire_at)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">đang tạm dừng</span>
+                    )}
                   </td>
                   <td className="p-3">
                     <span className={"chip " + stateClass(p.state)}>{p.state === "active" ? "hoạt động" : "tạm dừng"}</span>

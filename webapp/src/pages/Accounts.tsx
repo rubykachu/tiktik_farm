@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Accounts } from "../api/client";
 import { DouyinCookies, type DouyinCookie } from "../api/douyin_cookies";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { formatDateTime } from "../utils/datetime";
 import ImportJsonModal from "../components/ImportJsonModal";
 import DouyinCookieModal from "../components/DouyinCookieModal";
 
@@ -166,8 +167,8 @@ export default function AccountsPage() {
                         {a.has_valid_session ? "Hợp lệ" : "Cần đăng nhập lại"}
                       </span>
                     </td>
-                    <td className="p-3 text-slate-500">{new Date(a.created_at).toLocaleString()}</td>
-                    <td className="p-3 text-slate-500">{new Date(a.updated_at).toLocaleString()}</td>
+                    <td className="p-3 text-slate-500">{formatDateTime(a.created_at)}</td>
+                    <td className="p-3 text-slate-500">{formatDateTime(a.updated_at)}</td>
                     <td className="p-3 text-right space-x-2">
                       <button
                         className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
@@ -230,8 +231,8 @@ export default function AccountsPage() {
                   <td className="p-3 font-medium">{c.name}</td>
                   <td className="p-3"><CopyCell value={c.login} /></td>
                   <td className="p-3"><CopyCell value={c.login_password} mask /></td>
-                  <td className="p-3 text-slate-500">{new Date(c.created_at).toLocaleString()}</td>
-                  <td className="p-3 text-slate-500">{new Date(c.updated_at).toLocaleString()}</td>
+                  <td className="p-3 text-slate-500">{formatDateTime(c.created_at)}</td>
+                  <td className="p-3 text-slate-500">{formatDateTime(c.updated_at)}</td>
                   <td className="p-3 text-right space-x-2">
                     <button
                       className="inline-flex items-center gap-1 text-brand-600 text-xs font-medium"
