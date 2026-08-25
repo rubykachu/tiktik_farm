@@ -48,6 +48,22 @@ class DouyinCookie(SQLModel, table=True):
     login_password_encrypted: Optional[str] = Field(default=None)
 
 
+class TelegramConfig(SQLModel, table=True):
+    """A saved bot_token/chat_id pair the pipeline form can pick from.
+
+    No FK from ChannelPipeline — selecting a config only copies bot_token/
+    chat_id into the pipeline's own fields at selection time, so deleting a
+    config never breaks a pipeline.
+    """
+    __tablename__ = "telegram_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=128)
+    bot_token: str
+    chat_id: str
+    created_at: datetime = Field(default_factory=now_utc)
+
+
 class ChannelPipeline(SQLModel, table=True):
     """Recurring channel → TikTok auto-upload pipeline.
 

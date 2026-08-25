@@ -25,6 +25,7 @@ from api.routers import (
     pipelines,
     settings,
     telegram,
+    telegram_configs,
     videos,
 )
 from api.services import manual_download
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(videos.router)
     app.include_router(pipelines.router)
     app.include_router(telegram.router)
+    app.include_router(telegram_configs.router)
     app.include_router(settings.router)
     app.include_router(llm_models.router)
     app.include_router(douyin_cookies.router)
