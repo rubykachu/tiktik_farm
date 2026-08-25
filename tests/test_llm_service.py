@@ -76,6 +76,41 @@ class TestRewriteTitleHappy:
         # The user message contains "Title: ... Description: <truncated>".
         assert "x" * (llm.DESCRIPTION_MAX_CHARS + 1) not in user_msg
 
+    def test_transcript_included_and_truncated(self, isolated_secret):
+        from api.services import llm
+        from api.services.secrets import encrypt
+
+        long_transcript = "y" * 5000
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title(
+                "p",
+                title="t",
+                description="d",
+                model_id="gemini/x",
+                api_key_encrypted=encrypt("k"),
+                transcript=long_transcript,
+            )
+        user_msg = mock.call_args.kwargs["messages"][1]["content"]
+        assert "y" in user_msg
+        assert "y" * (llm.TRANSCRIPT_MAX_CHARS + 1) not in user_msg
+
+    def test_empty_transcript_omitted_from_user_message(self, isolated_secret):
+        from api.services import llm
+        from api.services.secrets import encrypt
+
+        with patch.object(llm.litellm, "completion") as mock:
+            mock.return_value = _mock_completion("ok")
+            llm.rewrite_title(
+                "p",
+                title="t",
+                description="d",
+                model_id="gemini/x",
+                api_key_encrypted=encrypt("k"),
+            )
+        user_msg = mock.call_args.kwargs["messages"][1]["content"]
+        assert "Transcript" not in user_msg
+
     def test_max_tokens_and_timeout_pinned(self, isolated_secret):
         from api.services import llm
         from api.services.secrets import encrypt

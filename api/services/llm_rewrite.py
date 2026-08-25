@@ -29,7 +29,12 @@ def sanitize_llm_title(value: str) -> str:
 
 
 def rewrite_with_llm(
-    prompt: str, title: str, description: str, channel_description: str = ""
+    prompt: str,
+    title: str,
+    description: str,
+    channel_description: str = "",
+    *,
+    transcript: str = "",
 ) -> str:
     """Return the rewritten title, or `title` on any failure path."""
     if not is_llm_enabled():
@@ -49,6 +54,7 @@ def rewrite_with_llm(
                 model=model,
                 base_url=base_url,
                 channel_description=channel_description,
+                transcript=transcript,
             )
         except llm.LLMCallFailed as e:
             log.warning("Ollama rewrite skipped: %s", e)
@@ -69,6 +75,7 @@ def rewrite_with_llm(
             api_base=default.api_base,
             api_version=default.api_version,
             channel_description=channel_description,
+            transcript=transcript,
         )
     except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
         log.warning("LLM rewrite skipped: %s", e)

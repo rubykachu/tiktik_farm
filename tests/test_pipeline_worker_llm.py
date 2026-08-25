@@ -111,7 +111,7 @@ class TestLLMRewriteHappy:
             {"id": "v1", "title": "raw1", "url": "https://www.youtube.com/watch?v=v1"},
             {"id": "v2", "title": "raw2", "url": "https://www.youtube.com/watch?v=v2"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "long description")
+        mock_download.return_value = ("/tmp/x.mp4", "long description", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_rewrite.side_effect = lambda prompt, title, description, **kw: f"AI-{title}"
 
@@ -146,7 +146,7 @@ class TestLLMRewriteHappy:
         mock_list.return_value = [
             {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "DESCRIPTION-FROM-YT")
+        mock_download.return_value = ("/tmp/x.mp4", "DESCRIPTION-FROM-YT", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_rewrite.return_value = "AI"
 
@@ -167,6 +167,33 @@ class TestLLMRewriteHappy:
             len(args) >= 3 and "DESCRIPTION-FROM-YT" in args[2]
         )
 
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.llm_rewrite.llm.rewrite_title")
+    def test_transcript_forwarded_to_llm(
+        self, mock_rewrite, mock_list, mock_download, mock_upload
+    ):
+        mock_list.return_value = [
+            {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
+        ]
+        mock_download.return_value = ("/tmp/x.mp4", "desc", "TRANSCRIPT-FROM-YT")
+        mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
+        mock_rewrite.return_value = "AI"
+
+        from scheduler.pipeline_worker import run_pipeline
+
+        with Session(_api_db.engine) as s:
+            _account(s)
+            _default_llm(s)
+            p = _pipeline(s)
+            s.expunge(p)
+
+        run_pipeline(p, "scheduled")
+
+        assert mock_rewrite.called
+        assert mock_rewrite.call_args.kwargs.get("transcript") == "TRANSCRIPT-FROM-YT"
+
 
 class TestLLMRewriteFallback:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
@@ -181,7 +208,7 @@ class TestLLMRewriteFallback:
         mock_list.return_value = [
             {"id": "v1", "title": "raw-title", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_rewrite.side_effect = LLMCallFailed("upstream 500")
 
@@ -212,7 +239,7 @@ class TestLLMRewriteFallback:
         mock_list.return_value = [
             {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
 
         from scheduler.pipeline_worker import run_pipeline
@@ -236,7 +263,7 @@ class TestLLMRewriteFallback:
         mock_list.return_value = [
             {"id": "v1", "title": "raw", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
 
         from scheduler.pipeline_worker import run_pipeline
@@ -266,7 +293,7 @@ class TestLLMRewriteFallback:
         mock_list.return_value = [
             {"id": "v1", "title": "raw", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
 
         from scheduler.pipeline_worker import run_pipeline
@@ -294,7 +321,7 @@ class TestChannelDescriptionForwarding:
         mock_list.return_value = [
             {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "video description")
+        mock_download.return_value = ("/tmp/x.mp4", "video description", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_rewrite.return_value = "AI title"
 
@@ -322,7 +349,7 @@ class TestChannelDescriptionForwarding:
         mock_list.return_value = [
             {"id": "v1", "title": "t", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_rewrite.return_value = "AI title"
 

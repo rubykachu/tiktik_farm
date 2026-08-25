@@ -90,7 +90,7 @@ def _fake_download(tmp_path, size_bytes=1024):
         path = os.path.join(temp_dir, f"video{counter['n']}.mp4")
         with open(path, "wb") as fh:
             fh.write(b"\0" * size_bytes)
-        return path, ""
+        return path, "", ""
 
     return _download
 

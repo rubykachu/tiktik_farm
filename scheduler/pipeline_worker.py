@@ -719,6 +719,7 @@ class _SourceItem:
     title: str
     file_path: str = ""
     description: str = ""
+    transcript: str = ""  # YouTube only — Douyin has no captions to draw from
 
 
 def _split_seen(
@@ -771,7 +772,7 @@ def _download_youtube_only(
         if artifacts is not None:
             artifacts.cleanup_paths.append(temp_dir)
         try:
-            download_path, description = youtube_channel.download(
+            download_path, description, transcript = youtube_channel.download(
                 video_url, temp_dir, pipeline.max_duration_seconds
             )
         except youtube_channel.VideoTooLong:
@@ -786,6 +787,7 @@ def _download_youtube_only(
             continue
         item.file_path = download_path
         item.description = description
+        item.transcript = transcript
         items.append(item)
     return items, skipped_dup_count
 
@@ -820,6 +822,7 @@ def _finalize_download_only(
                 item.title,
                 item.description,
                 pipeline.channel_description or "",
+                transcript=item.transcript,
             )
             if rewritten:
                 ai_title = rewritten
@@ -938,6 +941,7 @@ def run_pipeline(
         # Lazy download — only when at least one account needs upload
         download_path: Optional[str] = None
         description: str = ""
+        transcript: str = ""
         temp_dir: Optional[str] = None
 
         try:
@@ -958,7 +962,7 @@ def run_pipeline(
                             prefix="pipeline_dl_",
                             dir=os.environ.get("PIPELINE_TMP_DIR") or None,
                         )
-                        download_path, description = youtube_channel.download(
+                        download_path, description, transcript = youtube_channel.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
                         if artifacts is not None:
@@ -1014,6 +1018,7 @@ def run_pipeline(
                             video_title,
                             description,
                             pipeline.channel_description or "",
+                            transcript=transcript,
                         )
                         # Only cache on success. A transient LLM failure must
                         # not poison the cache for the rest of the tick.

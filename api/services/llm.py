@@ -30,6 +30,7 @@ litellm.success_callback = []
 litellm.failure_callback = []
 
 DESCRIPTION_MAX_CHARS = 2000      # ~500 input tokens → cheap on Gemini Flash
+TRANSCRIPT_MAX_CHARS = 1500       # opening of the video only — topic signal, not the full text
 CHANNEL_DESC_STORAGE_MAX = 2000   # max chars stored in DB (matches schema max_length)
 CHANNEL_DESC_INJECT_MAX = 1000    # cap injected into system prompt to protect token budget
 DEFAULT_TIMEOUT = 60          # seconds; longer captions + local Ollama need headroom
@@ -69,6 +70,19 @@ def _build_system_prompt(prompt: str, channel_description: str = "") -> str:
     )
 
 
+def _build_user_msg(title: str, description: str, transcript: str = "") -> str:
+    msg = (
+        f"Title: {title}\n"
+        f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
+    )
+    if transcript:
+        msg += (
+            f"\nTranscript (start of video): "
+            f"{truncate(transcript, TRANSCRIPT_MAX_CHARS, suffix='')}"
+        )
+    return msg
+
+
 def _extra_kwargs(
     api_base: str | None,
     api_version: str | None,
@@ -92,13 +106,11 @@ def rewrite_title(
     api_base: str | None = None,
     api_version: str | None = None,
     channel_description: str = "",
+    transcript: str = "",
 ) -> str:
     api_key = _decrypt_required(api_key_encrypted)
     system_msg = _build_system_prompt(prompt, channel_description)
-    user_msg = (
-        f"Title: {title}\n"
-        f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
-    )
+    user_msg = _build_user_msg(title, description, transcript)
     try:
         response = litellm.completion(
             model=model_id,
@@ -127,13 +139,11 @@ def rewrite_title_offline(
     model: str,
     base_url: str,
     channel_description: str = "",
+    transcript: str = "",
 ) -> str:
     """Call a local Ollama instance. No API key required."""
     system_msg = _build_system_prompt(prompt, channel_description)
-    user_msg = (
-        f"Title: {title}\n"
-        f"Description: {truncate(description, DESCRIPTION_MAX_CHARS, suffix='')}"
-    )
+    user_msg = _build_user_msg(title, description, transcript)
     try:
         response = litellm.completion(
             model=f"ollama/{model}",
