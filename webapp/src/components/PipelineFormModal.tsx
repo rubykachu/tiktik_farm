@@ -146,13 +146,30 @@ function buildSchema(existingTokenSet: boolean) {
 
 type FormData = z.infer<typeof baseSchema>;
 
+// Everything a discovery candidate can hand the create-pipeline form —
+// channel_url is the only field it always has; the rest are best-effort,
+// only filled in when the scan actually found the underlying data.
+export type PipelinePrefill = {
+  channel_url: string;
+  name?: string;
+  channel_description?: string;
+  fetch_count?: number;
+  interval_value?: number;
+  interval_unit?: "minutes" | "days";
+  first_fire_at_local?: string; // "HH:MM", browser-local
+  window_end_time_local?: string; // "HH:MM", browser-local
+  window_delay_minutes?: number;
+  max_duration_seconds?: number;
+  sync_from_date?: string; // "YYYY-MM-DD"
+};
+
 type Props = {
   open: boolean;
   pipeline?: Pipeline | null;
   onClose: () => void;
-  // Prefills channel_url when creating (ignored when editing). Used by the
-  // "Thêm vào lịch đăng" action on a discovery candidate.
-  prefillChannelUrl?: string;
+  // Prefills the create form (ignored when editing). Used by the "Thêm vào
+  // lịch đăng" action on a discovery candidate.
+  prefill?: PipelinePrefill;
   // Fired after a successful create (not edit) with the new pipeline.
   onCreated?: (pipeline: Pipeline) => void;
 };
@@ -242,7 +259,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   sync_from_date: TODAY_DATE,
 };
 
-export default function PipelineFormModal({ open, pipeline, onClose, prefillChannelUrl, onCreated }: Props) {
+export default function PipelineFormModal({ open, pipeline, onClose, prefill, onCreated }: Props) {
   const qc = useQueryClient();
   const isEdit = !!pipeline;
 
@@ -346,10 +363,25 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefillChan
         sync_from_date: pipeline.sync_from_date ?? "",
       });
     } else {
-      setMultipleRuns(false);
-      reset({ ...NEW_PIPELINE_DEFAULTS, channel_url: prefillChannelUrl ?? "" });
+      setMultipleRuns(!!prefill?.window_end_time_local);
+      reset({
+        ...NEW_PIPELINE_DEFAULTS,
+        channel_url: prefill?.channel_url ?? "",
+        name: prefill?.name ?? NEW_PIPELINE_DEFAULTS.name,
+        channel_description: prefill?.channel_description ?? NEW_PIPELINE_DEFAULTS.channel_description,
+        fetch_count: prefill?.fetch_count ?? NEW_PIPELINE_DEFAULTS.fetch_count,
+        interval_value: prefill?.interval_value ?? NEW_PIPELINE_DEFAULTS.interval_value,
+        interval_unit: prefill?.interval_unit ?? NEW_PIPELINE_DEFAULTS.interval_unit,
+        first_fire_at: prefill?.first_fire_at_local ?? NEW_PIPELINE_DEFAULTS.first_fire_at,
+        window_end_time: prefill?.window_end_time_local ?? NEW_PIPELINE_DEFAULTS.window_end_time,
+        window_delay_minutes: (prefill?.window_delay_minutes ??
+          NEW_PIPELINE_DEFAULTS.window_delay_minutes) as any,
+        max_duration_seconds: (prefill?.max_duration_seconds ??
+          NEW_PIPELINE_DEFAULTS.max_duration_seconds) as any,
+        sync_from_date: prefill?.sync_from_date ?? NEW_PIPELINE_DEFAULTS.sync_from_date,
+      });
     }
-  }, [open, pipeline, prefillChannelUrl, reset]);
+  }, [open, pipeline, prefill, reset]);
 
   const createMut = useMutation({
     mutationFn: (p: PipelineCreate) => Pipelines.create(p),
