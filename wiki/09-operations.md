@@ -2,53 +2,47 @@
 
 [← Index](README.md) | [← 08-videos](08-videos.md)
 
-## Makefile (`v2/Makefile`)
+## Makefile
 
-Chạy trong `v2/`. `make` = `make help`.
+Chạy trong `v2/`. `make` = danh sách lệnh thường dùng, `make help-all` = toàn bộ.
 
 | Target | Tác dụng |
 |---|---|
-| **`deploy`** | `compose build` + `up -d --force-recreate` — **dùng khi không chắc** đã có image mới chưa |
-| `deploy-prod` | Giống `deploy`, chỉ `docker-compose.yml` (VPS / prod-like) |
-| `up` / `down` / `ps` | Start / stop / status |
-| `restart` | Restart `api` + `scheduler` only — **không rebuild** |
-| `recreate` | Force-recreate mọi container — **không rebuild** |
-| `rebuild-base` | Rebuild `tiktok-base` + api/scheduler (`--no-cache` base) |
-| `rebuild` | Full no-cache rebuild mọi image |
-| `rebuild-app` | Rebuild api + scheduler + webapp (prod webapp image) |
-| `logs`, `logs-api`, … | Tail logs |
-| `test` / `test-local` | Pytest trong container / `.venv` |
-| `webapp-fresh` | Xóa `node_modules` trong container dev + reinstall |
-| `shell-api`, `shell-scheduler`, … | Exec vào container |
-| `nuke` / `nuke-all` | Xóa containers (+ images local); `nuke-all` xóa volume DB |
+| **`start`** | `compose build` + `up -d --force-recreate`. **Dùng sau mọi thay đổi** — code, `.env`, `requirements.txt`. |
+| `stop` / `restart` / `status` | Dừng / khởi động lại nhanh / xem trạng thái |
+| `update` | `git pull` rồi `start` |
+| `logs` | Tail toàn bộ log |
+| `backup` | Gói `data/`, `.env`, `.htpasswd`, khoá tunnel vào `backups/<ngày>` |
+| `rebuild` | Build `--no-cache` rồi `start` (khi build cache hỏng) |
+| `reset` | Xoá container + image của project rồi `start`. `data/` giữ nguyên. |
+| `clean-db EXTRA=yes` | Xoá `data/tiktok.db` — mất toàn bộ lịch đăng, lịch sử, tài khoản |
+| `dev` | Overlay hot-reload (Vite + `uvicorn --reload`) |
+| `test`, `shell-api`, `shell-scheduler` | Pytest trong `.venv`, exec vào container |
 
-**Anti-pattern:** `docker compose restart` hoặc `up --force-recreate` sau khi sửa code bake trong image (`tiktok_uploader/`, Dockerfile, prod `webapp` build) → container vẫn chạy layer cũ. Fix: **`make deploy`**.
+**`restart` không nạp code mới và không đọc lại `.env`.** Bản chạy thật không mount
+source: `api/`, `scheduler/`, `tiktok_uploader/` được COPY vào image lúc build, webapp
+là bundle tĩnh Vite build bên trong image. Sửa gì cũng phải `make start` — build có
+cache nên khi không đổi gì chỉ mất ~6 giây.
 
-Chi tiết deploy VPS: [03-setup-docker](03-setup-docker.md).
+Hướng dẫn vận hành đầy đủ cho người không chuyên: [RUNBOOK.md](../RUNBOOK.md).
 
-## Dev với `docker-compose.override.yml`
+## Chế độ lập trình
 
-File `docker-compose.override.yml` được Compose **tự merge** khi chạy lệnh mặc định trong thư mục `v2/` (cùng project với `docker-compose.yml`).
+`docker-compose.dev.yml` **không** tự merge (đó là lý do nó không tên `override`).
+Dùng qua `make dev`:
 
 | Lệnh | Ý nghĩa |
 |---|---|
-| `docker compose up -d` | **Dev**: Vite HMR (port host `3000` → container `5173`), API `uvicorn --reload`, mount source `webapp/` + `api/` |
-| `docker compose -f docker-compose.yml up --build -d` | **Prod-like**: không load override — nginx static webapp, không reload |
+| `make start` | Bản thật: nginx phục vụ bundle tĩnh, không reload |
+| `make dev` | Vite HMR (host `3000` → container `5173`), API `uvicorn --reload`, mount `webapp/` + `api/` |
 
-Lần đầu dev webapp: container chạy `npm ci` / `npm install` vào volume ẩn `node_modules` (tránh ghi đè deps macOS).
+Lần đầu chạy `make dev`: container chạy `npm ci` / `npm install` vào volume ẩn
+`node_modules` (tránh ghi đè deps macOS).
 
-Sửa **scheduler**: mount code có sẵn nhưng **không** auto-reload:
+Sửa **scheduler**: có mount nhưng **không** auto-reload → `make restart`.
 
-```bash
-make restart    # api + scheduler
-# hoặc: docker compose restart scheduler
-```
-
-Sửa **`tiktok_uploader/`** hoặc **`requirements.txt`**: không mount — bắt buộc **`make deploy`** (hoặc `make rebuild-base && make up`).
-
-UI dev: http://127.0.0.1:3000 — Vite proxy `/api` → `api:8000`.
-
-Chi tiết setup: [03-setup-docker](03-setup-docker.md).
+Sửa **`tiktok_uploader/`** hoặc **`requirements.txt`**: không mount ở chế độ nào →
+bắt buộc `make start`.
 
 ## Bảo mật vận hành (Phase 1)
 
@@ -82,7 +76,7 @@ tail -f /tmp/v2_webapp.log
 
 **Nginx (prod webapp) cache DNS IP upstream tại boot.** Recreate `api` mà không recreate `webapp` → 502.
 
-→ Dùng **`make deploy`** (recreate toàn stack sau build). Hoặc thủ công:
+→ Dùng **`make start`** (build rồi force-recreate cả stack). Hoặc thủ công:
 
 ```bash
 docker compose build
@@ -234,24 +228,24 @@ tar xzf v2-backup-20260515.tar.gz
 docker compose up -d
 ```
 
-## Update code (production)
+## Update code
 
 ```bash
-git pull
-make deploy-prod
+make update      # git pull + build + recreate
 ```
 
-Cookie + DB persist qua volume → không mất gì. Trên máy dev (có override): `make deploy`.
+Cookie + DB nằm trong `./data/` (mount), không bị build đụng tới.
 
 ## Reset toàn bộ (cẩn thận)
 
 ```bash
-docker compose down -v    # XÓA volume!
-rm -rf data/              # xóa cookies + DB host-side
-docker compose up -d      # fresh start
+make reset                    # xoá container + image, GIỮ data/
+make clean-db EXTRA=yes       # xoá DB, giữ cookie
+rm -rf data/                  # xoá sạch cookie + DB
 ```
 
-→ Mất hết account + history. Chỉ dùng khi debug từ zero state.
+`make reset` an toàn khi nghi image hỏng. Hai lệnh dưới mất account + history —
+chạy `make backup` trước.
 
 ---
 

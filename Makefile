@@ -1,218 +1,158 @@
-# farm_tiktik v2 — Docker Compose convenience targets.
+# farm_tiktik v2 — one environment, one set of commands.
 #
-# Layer model:
-#   docker/base.Dockerfile installs requirements.txt + the tiktok_uploader
-#   package. api/scheduler images all FROM tiktok-base:latest and
-#   only COPY their own source. So:
+# The host machine IS the server. There is no separate dev/prod deployment:
+# `make start` builds and runs exactly what the public domain serves.
 #
-#   - You changed code in api/ or scheduler/ only        -> make restart
-#   - You changed code in webapp/ (mounted dev volume)   -> nothing (Vite HMR)
-#   - You changed requirements.txt or tiktok_uploader/   -> make rebuild-base
-#   - You ran `make douyin-update` (vendor changed)       -> make rebuild-base
-#   - You added a service or changed Dockerfile         -> make rebuild
-#   - You think Docker has gone insane                   -> make nuke && make up
+# Day to day the operator only ever needs:
+#   make start | stop | restart | update | logs | status | backup
 #
-# Stop using `docker compose up --recreate` to fix dependency errors. It
-# does NOT rebuild images. Use `make rebuild-base` (or `make rebuild`)
-# instead when requirements.txt changed.
+# `make help-all` lists the rescue and development targets.
 
-# Allow overriding the compose project / file from CLI if ever needed.
-COMPOSE        ?= docker compose
-SERVICES_RUN   := api scheduler webapp
+COMPOSE  ?= docker compose
+DEV      := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
+BACKUPS  := backups
 
-# Pretty output.
 GREEN  := \033[1;32m
 YELLOW := \033[1;33m
+RED    := \033[1;31m
 RESET  := \033[0m
 
 .DEFAULT_GOAL := help
 
-# ─── Day-to-day ────────────────────────────────────────────────────────────
+# ─── Preflight ─────────────────────────────────────────────────────────────
+# .htpasswd is a bind mount: if the file is missing Docker silently creates a
+# directory with that name and nginx dies at startup with an error that says
+# nothing about the real cause. Fail here instead, with an instruction.
 
-.PHONY: deploy
-deploy:  ## Build all images + force-recreate containers (safe default after any code change)
-	@printf "$(YELLOW)Building all images (tiktok-base + services)…$(RESET)\n"
+.PHONY: check
+check:
+	@test -f .env || { \
+		printf "$(RED)Thiếu file .env$(RESET)\n"; \
+		printf "Chạy: cp .env.example .env  rồi mở ra điền HOST và PUBLIC_BASE_URL\n"; \
+		exit 1; }
+	@test -f .htpasswd || { \
+		printf "$(RED)Thiếu file .htpasswd (mật khẩu đăng nhập trang web)$(RESET)\n"; \
+		printf "Chạy: htpasswd -bc .htpasswd admin 'mat-khau-cua-ban'\n"; \
+		exit 1; }
+	@grep -q '^PUBLIC_BASE_URL=https' .env || { \
+		printf "$(RED)PUBLIC_BASE_URL trong .env chưa đặt$(RESET)\n"; \
+		printf "Link tải video gửi qua Telegram được ghép từ giá trị này.\n"; \
+		exit 1; }
+
+# ─── Everyday ──────────────────────────────────────────────────────────────
+
+.PHONY: start
+start: check  ## Bật hệ thống (build lại rồi chạy — dùng sau mọi thay đổi)
+	@printf "$(YELLOW)Đang build…$(RESET)\n"
 	$(COMPOSE) build
-	@printf "$(YELLOW)Recreating containers from fresh images…$(RESET)\n"
+	@printf "$(YELLOW)Đang khởi động…$(RESET)\n"
 	$(COMPOSE) up -d --force-recreate --remove-orphans
-	@$(MAKE) --no-print-directory ps
+	@$(MAKE) --no-print-directory status
 
-.PHONY: deploy-prod
-deploy-prod:  ## Like deploy but prod compose only (no dev override / Vite)
-	@printf "$(YELLOW)Building production images…$(RESET)\n"
-	$(COMPOSE) -f docker-compose.yml build
-	@printf "$(YELLOW)Starting production stack…$(RESET)\n"
-	$(COMPOSE) -f docker-compose.yml up -d --force-recreate --remove-orphans
-	@$(COMPOSE) -f docker-compose.yml ps
-
-.PHONY: up
-up:  ## Start the full stack in dev mode (uses docker-compose.override.yml)
-	@printf "$(GREEN)Starting stack…$(RESET)\n"
-	$(COMPOSE) up -d --remove-orphans
-	@$(MAKE) --no-print-directory ps
-
-.PHONY: down
-down:  ## Stop and remove containers (keeps volumes + images)
-	$(COMPOSE) down --remove-orphans
+.PHONY: stop
+stop:  ## Tắt hệ thống (dữ liệu giữ nguyên)
+	$(COMPOSE) down
 
 .PHONY: restart
-restart:  ## Restart api + scheduler + webapp. Use after editing api/ or scheduler/ code.
-	$(COMPOSE) restart api scheduler webapp
-	@$(MAKE) --no-print-directory ps
+restart:  ## Khởi động lại nhanh, không build lại
+	$(COMPOSE) restart
+	@$(MAKE) --no-print-directory status
 
-.PHONY: ps
-ps:  ## Show container status
-	@$(COMPOSE) ps
+.PHONY: update
+update:  ## Lấy code mới nhất rồi bật lại
+	git pull
+	@$(MAKE) --no-print-directory start
 
 .PHONY: logs
-logs:  ## Tail logs from all services (Ctrl-C to exit)
-	$(COMPOSE) logs -f --tail=50
+logs:  ## Xem log đang chạy (Ctrl-C để thoát)
+	$(COMPOSE) logs -f --tail=100
 
-.PHONY: logs-api
-logs-api:  ## Tail api logs only
-	$(COMPOSE) logs -f --tail=100 api
+.PHONY: status
+status:  ## Xem hệ thống đang chạy hay không
+	@$(COMPOSE) ps
 
-.PHONY: logs-scheduler
-logs-scheduler:  ## Tail scheduler logs only
-	$(COMPOSE) logs -f --tail=100 scheduler
+.PHONY: backup
+backup:  ## Sao lưu dữ liệu + cấu hình ra thư mục backups/
+	@mkdir -p $(BACKUPS)
+	@stamp=$$(date +%Y%m%d-%H%M); \
+	dest=$(BACKUPS)/$$stamp; mkdir -p $$dest; \
+	cp -R data/tiktok.db data/CookiesDir $$dest/ 2>/dev/null || true; \
+	cp .env .htpasswd $$dest/ 2>/dev/null || true; \
+	cp ~/.cloudflared/*.json ~/.cloudflared/config.yml $$dest/ 2>/dev/null || true; \
+	printf "$(GREEN)Đã sao lưu vào $$dest$(RESET)\n"; \
+	printf "Gồm: cơ sở dữ liệu, cookie, .env, mật khẩu web, khoá tunnel.\n"; \
+	printf "$(YELLOW)Chép thư mục này ra ổ khác. Mất khoá tunnel là mất tên miền.$(RESET)\n"
 
-.PHONY: logs-webapp
-logs-webapp:  ## Tail webapp (Vite) logs only
-	$(COMPOSE) logs -f --tail=100 webapp
-
-# ─── Rebuild paths ─────────────────────────────────────────────────────────
-
-.PHONY: rebuild-base
-rebuild-base:  ## Rebuild the shared base image (requirements.txt / tiktok_uploader changes)
-	@printf "$(YELLOW)Rebuilding tiktok-base (this picks up requirements.txt changes)…$(RESET)\n"
-	$(COMPOSE) build --no-cache tiktok-base
-	@printf "$(YELLOW)Rebuilding dependent images…$(RESET)\n"
-	$(COMPOSE) build api scheduler
-	@printf "$(GREEN)Done. Run: make up$(RESET)\n"
+# ─── Rescue ────────────────────────────────────────────────────────────────
 
 .PHONY: rebuild
-rebuild:  ## Rebuild every image (full clean build, slowest)
-	@printf "$(YELLOW)Full no-cache rebuild…$(RESET)\n"
+rebuild:  ## Build lại từ đầu, bỏ qua cache (dùng khi start bị lỗi lạ)
 	$(COMPOSE) build --no-cache
-	@printf "$(GREEN)Done. Run: make up$(RESET)\n"
+	@$(MAKE) --no-print-directory start
 
-.PHONY: rebuild-app
-rebuild-app:  ## Rebuild api + scheduler + webapp prod images (Dockerfile or code copy changed)
-	$(COMPOSE) build api scheduler webapp
-	@printf "$(GREEN)Done. Run: make up$(RESET)\n"
+.PHONY: reset
+reset:  ## Xoá container + image của dự án rồi build lại. Dữ liệu trong data/ giữ nguyên.
+	-$(COMPOSE) down --rmi local --remove-orphans
+	@$(MAKE) --no-print-directory start
 
-# ─── Recreate (when images are already correct) ───────────────────────────
+.PHONY: clean-db
+clean-db:  ## XOÁ TOÀN BỘ dữ liệu trong cơ sở dữ liệu. Cần thêm EXTRA=yes.
+ifneq ($(EXTRA),yes)
+	@printf "$(RED)Lệnh này xoá sạch lịch đăng, lịch sử và tài khoản đã lưu.$(RESET)\n"
+	@printf "Chạy lại: make clean-db EXTRA=yes\n"
+	@exit 1
+endif
+	rm -f data/tiktok.db
+	rm -rf data/douyin_tmp
+	$(COMPOSE) restart api scheduler
+	@printf "$(GREEN)Đã tạo lại cơ sở dữ liệu rỗng.$(RESET)\n"
 
-.PHONY: recreate
-recreate:  ## Recreate all containers from current images (does NOT rebuild)
-	$(COMPOSE) up -d --force-recreate --remove-orphans
-	@$(MAKE) --no-print-directory ps
+# ─── Development ───────────────────────────────────────────────────────────
 
-.PHONY: recreate-api
-recreate-api:  ## Recreate just api + scheduler from current images
-	$(COMPOSE) up -d --force-recreate --remove-orphans api scheduler
-	@$(MAKE) --no-print-directory ps
-
-.PHONY: recreate-webapp
-recreate-webapp:  ## Rebuild + recreate webapp only (prod: nginx.conf / .htpasswd / static asset changes)
-	$(COMPOSE) build webapp
-	$(COMPOSE) up -d --force-recreate --remove-orphans webapp
-	@$(MAKE) --no-print-directory ps
-
-# ─── Webapp dev volume helpers ─────────────────────────────────────────────
-
-.PHONY: webapp-fresh
-webapp-fresh:  ## Wipe node_modules in the webapp container and reinstall (use if vite errors after package.json change)
-	$(COMPOSE) exec webapp sh -c "rm -rf /app/node_modules /app/.vite && npm install"
-	$(COMPOSE) restart webapp
-
-# ─── Vendor ────────────────────────────────────────────────────────────────
-
-.PHONY: douyin-update
-douyin-update:  ## Pull latest douyin-downloader into vendor/ (backs up current first)
-	bash scripts/update-douyin-vendor.sh
-
-.PHONY: tiktok-signature-update
-tiktok-signature-update:  ## Sync tiktok-signature JS files from upstream (use when "Failed to generate signatures")
-	bash scripts/update-tiktok-signature.sh
-
-# ─── Testing ───────────────────────────────────────────────────────────────
+.PHONY: dev
+dev:  ## Chạy chế độ lập trình (Vite hot-reload, uvicorn --reload)
+	$(DEV) up -d --remove-orphans
+	@$(DEV) ps
 
 .PHONY: test
-test:  ## Run pytest in the api container
-	$(COMPOSE) exec api python -m pytest -q
-
-.PHONY: test-local
-test-local:  ## Run pytest in the local .venv (faster iteration)
+test:  ## Chạy test trong .venv
 	. .venv/bin/activate && python -m pytest -q
 
-.PHONY: build-webapp
-build-webapp:  ## Run vite build locally to type-check + bundle the frontend
-	cd webapp && npm run build
-
-# ─── Shell access ──────────────────────────────────────────────────────────
-
 .PHONY: shell-api
-shell-api:  ## Bash into the api container
+shell-api:  ## Mở shell trong container api
 	$(COMPOSE) exec api bash
 
 .PHONY: shell-scheduler
-shell-scheduler:  ## Bash into the scheduler container
+shell-scheduler:  ## Mở shell trong container scheduler
 	$(COMPOSE) exec scheduler bash
 
-.PHONY: shell-webapp
-shell-webapp:  ## Shell into the webapp (Node) container
-	$(COMPOSE) exec webapp sh
+.PHONY: douyin-update
+douyin-update:  ## Cập nhật douyin-downloader trong vendor/
+	bash scripts/update-douyin-vendor.sh
+	@printf "$(YELLOW)Chạy tiếp: make start$(RESET)\n"
 
-# ─── Nuclear options ───────────────────────────────────────────────────────
-
-.PHONY: clean
-clean: down  ## Stop containers + remove dangling images
-	docker image prune -f
-
-.PHONY: clean-db
-clean-db:  ## Delete SQLite DB file (data/tiktok.db). DB recreates on next API start. Confirm with EXTRA=yes.
-ifneq ($(EXTRA),yes)
-	@printf "$(YELLOW)This deletes all DB data. Re-run with EXTRA=yes if you mean it.$(RESET)\n"
-	@exit 1
-endif
-	@printf "$(YELLOW)Deleting data/tiktok.db and data/douyin_tmp…$(RESET)\n"
-	rm -f data/tiktok.db
-	rm -rf data/douyin_tmp
-	@printf "$(YELLOW)Restarting API to recreate DB…$(RESET)\n"
-	$(COMPOSE) restart api scheduler
-	@printf "$(GREEN)Done. DB recreated.$(RESET)\n"
-
-.PHONY: nuke
-nuke:  ## Stop everything, drop project containers + images. Keeps named volumes.
-	@printf "$(YELLOW)Removing project containers + images…$(RESET)\n"
-	-$(COMPOSE) down --rmi local --remove-orphans
-	@printf "$(GREEN)Cleared. Run: make rebuild-base && make up$(RESET)\n"
-
-.PHONY: nuke-all
-nuke-all:  ## Same as nuke but also drops named volumes (deletes data/ SQLite!). Confirm with EXTRA=yes.
-ifneq ($(EXTRA),yes)
-	@printf "$(YELLOW)This deletes container data. Re-run with EXTRA=yes if you mean it.$(RESET)\n"
-	@exit 1
-endif
-	$(COMPOSE) down --rmi local --remove-orphans --volumes
+.PHONY: tiktok-signature-update
+tiktok-signature-update:  ## Cập nhật tiktok-signature (khi lỗi "Failed to generate signatures")
+	bash scripts/update-tiktok-signature.sh
+	@printf "$(YELLOW)Chạy tiếp: make start$(RESET)\n"
 
 # ─── Self-doc ──────────────────────────────────────────────────────────────
 
+EVERYDAY := start stop restart update logs status backup
+
 .PHONY: help
-help:  ## Show this help (default target)
-	@printf "$(GREEN)farm_tiktik v2 — make targets$(RESET)\n\n"
-	@awk 'BEGIN {FS = ":.*?## "} \
+help:  ## Danh sách lệnh thường dùng
+	@printf "$(GREEN)farm_tiktik — lệnh thường dùng$(RESET)\n\n"
+	@awk 'BEGIN { FS = ":.*?## "; split("$(EVERYDAY)", keep, " ") } \
 		/^[a-zA-Z0-9_-]+:.*?## / { \
-			printf "  $(GREEN)%-18s$(RESET) %s\n", $$1, $$2 \
+			for (i in keep) if ($$1 == keep[i]) printf "  $(GREEN)%-10s$(RESET) %s\n", $$1, $$2 \
 		}' $(MAKEFILE_LIST)
-	@printf "\n$(YELLOW)Common recipes:$(RESET)\n"
-	@printf "  Unsure / shipped a feature -> make deploy  (build + recreate; always picks up new code)\n"
-	@printf "  Edited requirements.txt    -> make deploy  (or make rebuild-base && make up)\n"
-	@printf "  Updated Douyin vendor      -> make douyin-update && make rebuild-base && make up\n"
-	@printf "  Edited api/*.py (dev)      -> uvicorn --reload (or make restart)\n"
-	@printf "  Edited scheduler/*.py      -> make restart  (no auto-reload)\n"
-	@printf "  Edited webapp/*.tsx (dev)  -> (nothing — Vite HMR)\n"
-	@printf "  Edited webapp/*.tsx (prod) -> make recreate-webapp\n"
-	@printf "  VPS prod-like              -> make deploy-prod\n"
-	@printf "  Stack is broken            -> make nuke && make deploy\n"
+	@printf "\n  Hướng dẫn đầy đủ: RUNBOOK.md\n"
+	@printf "  Lệnh nâng cao:    make help-all\n"
+
+.PHONY: help-all
+help-all:  ## Danh sách toàn bộ lệnh
+	@printf "$(GREEN)farm_tiktik — toàn bộ lệnh$(RESET)\n\n"
+	@awk 'BEGIN { FS = ":.*?## " } \
+		/^[a-zA-Z0-9_-]+:.*?## / { printf "  $(GREEN)%-24s$(RESET) %s\n", $$1, $$2 }' \
+		$(MAKEFILE_LIST)

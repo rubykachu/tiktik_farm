@@ -281,11 +281,10 @@ RUN pip install -r /app/vendor/douyin-downloader/requirements.txt
 Sau khi pull code mới:
 
 ```bash
-make rebuild-base   # rebuild tiktok-base (chỉ cần lần đầu sau khi thêm vendor)
-make deploy         # build + up tất cả service
+make start          # build lại tất cả image rồi chạy
 ```
 
-Không cần rebuild-base cho mỗi deploy thông thường — vendor đã baked vào base image.
+`make start` luôn chạy `docker compose build`, nên vendor mới được nạp mà không cần lệnh riêng.
 
 ---
 

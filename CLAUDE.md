@@ -19,7 +19,7 @@ rtk pytest
 # Single test file
 . .venv/bin/activate && python -m pytest tests/test_pipeline_worker.py -q
 
-# In Docker container
+# Via make (same .venv)
 make test
 ```
 
@@ -36,15 +36,19 @@ TIKTOK_CONFIG_PATH=./config.txt ./.venv/bin/python -m scheduler.main
 cd webapp && npm run dev -- --port 3000 --host 127.0.0.1
 ```
 
-### Docker (production-like)
+### Docker — the only deployment
+
+The host machine is the server; there is no separate dev/prod deployment.
 
 ```bash
-make up              # Start full stack
-make restart         # After editing api/ or scheduler/ Python
-make rebuild-base    # After changing requirements.txt or tiktok_uploader/
-make deploy          # Build all + recreate (safe default after any change)
-make logs-api        # Tail API logs
+make start           # Build + recreate. The answer after ANY change.
+make restart         # Quick bounce. Does NOT pick up code or .env.
+make logs            # Tail everything
+make dev             # Hot-reload overlay (Vite + uvicorn --reload)
 ```
+
+`docker-compose.dev.yml` is deliberately NOT named `docker-compose.override.yml`:
+that name auto-merges, which made every "prod" command silently run Vite instead.
 
 ### Webapp
 
@@ -73,13 +77,11 @@ scheduler (Python worker)
 
 **Docker image layers**: `docker/base.Dockerfile` (tiktok-base, ~2.4 GB: Python + Node + Playwright Chromium + ffmpeg) → `api` and `scheduler` FROM tiktok-base, copy own source only. Rebuild decision:
 
-| Changed | Action |
-|---|---|
-| `api/` or `scheduler/` Python | `make restart` |
-| `requirements.txt` or `tiktok_uploader/` | `make rebuild-base` |
-| yt-dlp stops downloading YouTube | bump the `yt-dlp>=` floor, `make rebuild-base` |
-| `webapp/` src | nothing (Vite HMR) in dev; `make recreate-webapp` in prod |
-| Dockerfile or new service | `make rebuild` |
+Nothing but `data/`, `config.txt` and `.htpasswd` is mounted — all source is COPYed
+in at build time, and the webapp is a static bundle Vite builds inside the image. So
+`make start` (which always runs `docker compose build`) is the answer to every change;
+the layer cache makes a no-op build ~6s. `make rebuild` (`--no-cache`) is the escape
+hatch when the cache itself is wrong.
 
 ## Critical: `tiktok_uploader/tiktok.py` has 4 local fixes
 

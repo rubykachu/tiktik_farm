@@ -1,0 +1,197 @@
+# RUNBOOK — vận hành farm_tiktik
+
+Máy tính của bạn chính là máy chủ. Không có môi trường nào khác.
+
+Mọi lệnh trong tài liệu này chạy trong **Terminal**, tại thư mục chứa mã nguồn.
+Mở Terminal rồi gõ `cd` + khoảng trắng, kéo thả thư mục vào cửa sổ, bấm Enter.
+
+---
+
+## Phần 1 — Cài lần đầu
+
+Làm một lần duy nhất cho mỗi máy. Khoảng 30 phút, phần lớn là chờ tải.
+
+### Bước 1. Cài Docker Desktop
+
+Tải tại <https://www.docker.com/products/docker-desktop/>, cài, mở lên.
+
+Chờ đến khi biểu tượng con cá voi ở thanh trên cùng hết nhấp nháy. Kiểm tra:
+
+```bash
+docker ps
+```
+
+Ra một bảng trống là được. Báo lỗi `Cannot connect` nghĩa là Docker chưa khởi động xong.
+
+### Bước 2. Cài cloudflared
+
+```bash
+brew install cloudflared
+```
+
+Chưa có `brew` thì cài trước theo <https://brew.sh>.
+
+### Bước 3. Tạo file cấu hình
+
+```bash
+cp .env.example .env
+```
+
+### Bước 4. Đặt mật khẩu đăng nhập trang web
+
+Thay `mat-khau-cua-ban` bằng mật khẩu bạn tự nghĩ. Đặt dài, đừng dùng `admin123`
+— trang web sẽ mở ra Internet, có bot dò tự động.
+
+```bash
+htpasswd -bc .htpasswd admin 'mat-khau-cua-ban'
+```
+
+Ghi lại mật khẩu này. Không xem lại được, chỉ đặt lại được.
+
+### Bước 5. Nối tên miền
+
+Cần một tên miền đã trỏ NS về Cloudflare.
+
+```bash
+cloudflared tunnel login
+```
+
+Trình duyệt mở ra, chọn tên miền của bạn.
+
+Tiếp theo, đặt tên cho máy này. Ví dụ máy đầu tiên là `farm1`:
+
+```bash
+cloudflared tunnel create farm1
+```
+
+Dòng cuối in ra một chuỗi dài dạng `c80ed3bf-c8fc-...`. Đó là **mã tunnel**, copy lại.
+
+Nối tên miền vào tunnel — thay `tenmien.com` bằng tên miền của bạn:
+
+```bash
+cloudflared tunnel route dns farm1 farm1.tenmien.com
+```
+
+Tạo file `~/.cloudflared/config.yml` với nội dung sau. Thay hai chỗ `<MÃ TUNNEL>`
+và `<TÊN NGƯỜI DÙNG MÁC>` (xem bằng lệnh `whoami`):
+
+```yaml
+tunnel: <MÃ TUNNEL>
+credentials-file: /Users/<TÊN NGƯỜI DÙNG MÁC>/.cloudflared/<MÃ TUNNEL>.json
+
+ingress:
+  - hostname: farm1.tenmien.com
+    service: http://127.0.0.1:3000
+  - service: http_status:404
+```
+
+Cho tunnel tự chạy mỗi khi bật máy:
+
+```bash
+cloudflared service install
+```
+
+Báo lỗi quyền thì thêm `sudo` ở đầu.
+
+### Bước 6. Khai báo tên miền cho hệ thống
+
+Mở file `.env` bằng TextEdit. Sửa hai dòng này thành tên miền của bạn:
+
+```
+HOST=https://farm1.tenmien.com
+PUBLIC_BASE_URL=https://farm1.tenmien.com
+```
+
+Hai dòng phải giống hệt nhau. `PUBLIC_BASE_URL` là gốc của link tải video gửi
+qua Telegram — điền sai thì link gửi đi sẽ hỏng.
+
+### Bước 7. Bật hệ thống
+
+```bash
+make start
+```
+
+Lần đầu mất 10–20 phút vì phải tải thư viện. Các lần sau nhanh hơn nhiều.
+
+### Bước 8. Kiểm tra
+
+Mở trình duyệt vào `https://farm1.tenmien.com`. Hiện ô đăng nhập → gõ `admin`
+và mật khẩu ở Bước 4 → vào được trang quản lý là xong.
+
+---
+
+## Phần 2 — Dùng hằng ngày
+
+| Việc cần làm | Lệnh |
+|---|---|
+| Bật hệ thống | `make start` |
+| Tắt hệ thống | `make stop` |
+| Khởi động lại | `make restart` |
+| Xem đang chạy không | `make status` |
+| Xem hệ thống đang làm gì | `make logs` (Ctrl-C để thoát) |
+| Cập nhật bản mới | `make update` |
+| Sao lưu | `make backup` |
+
+Quên lệnh thì gõ `make` là hiện lại danh sách.
+
+### Sao lưu
+
+Chạy `make backup` mỗi tuần một lần:
+
+```bash
+make backup
+```
+
+Nó tạo thư mục trong `backups/` chứa cơ sở dữ liệu, cookie các tài khoản, mật
+khẩu web và **khoá tunnel**.
+
+**Chép thư mục đó sang ổ cứng ngoài hoặc Google Drive.** Mất khoá tunnel thì
+tên miền không dùng lại được, phải làm lại Bước 5 với mã tunnel mới.
+
+---
+
+## Phần 3 — Khi có sự cố
+
+Trước tiên luôn thử:
+
+```bash
+make restart
+```
+
+Không đỡ thì tra bảng dưới.
+
+| Hiện tượng | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| Trang web không vào được, báo **Error 1033** | Tunnel không chạy | `cloudflared tunnel run farm1`. Nếu chạy được thì bước cài service ở Bước 5 chưa xong. |
+| Trang web hiện **502** hoặc **503** | Hệ thống chưa bật | `make start` |
+| Trang trắng, không có ô đăng nhập | Docker chưa khởi động | Mở Docker Desktop, chờ hết nhấp nháy, rồi `make start` |
+| Quên mật khẩu web | — | Đặt lại: `htpasswd -bc .htpasswd admin 'mat-khau-moi'` rồi `make start` |
+| Link tải video trong Telegram báo lỗi | Quá 24 giờ, video đã tự xoá | Bình thường. Video chỉ giữ 24 giờ. |
+| Link tải video mở ra ô đăng nhập | `PUBLIC_BASE_URL` sai tên miền | Sửa `.env` cho khớp tên miền, rồi `make start` |
+| Không tải được video YouTube | YouTube đổi cách chặn | `make update`. Vẫn lỗi thì báo người viết phần mềm. |
+| Đăng TikTok báo lỗi cookie | Cookie hết hạn | Vào trang Tài khoản, nhập lại cookie cho tài khoản đó |
+| Chạy `make start` báo lỗi lạ | Bản build hỏng | `make rebuild` |
+| Vẫn không được | — | `make reset` (giữ nguyên dữ liệu) |
+
+### Không tự làm khi chưa hỏi
+
+- `make clean-db` — **xoá sạch** lịch đăng, lịch sử, tài khoản đã lưu.
+- `cloudflared tunnel delete` — mất tên miền, phải làm lại Bước 5.
+- Xoá thư mục `data/` — mất toàn bộ dữ liệu.
+
+---
+
+## Phần 4 — Thêm máy thứ hai
+
+Làm lại toàn bộ Phần 1 trên máy mới, đổi `farm1` thành `farm2` ở mọi chỗ:
+tên tunnel, tên miền con, và cả hai dòng trong `.env`.
+
+Hai điều **bắt buộc**:
+
+1. **Không chép file `.env` từ máy cũ sang.** `PUBLIC_BASE_URL` phải là tên miền
+   của chính máy đó, nếu không link video gửi đi sẽ trỏ nhầm sang máy kia và
+   không tải được.
+
+2. **Không cho hai máy cùng chạy một kênh với cùng một tài khoản TikTok.** Mỗi
+   máy ghi nhớ riêng nó đã đăng gì; hai máy cùng chạy sẽ đăng trùng lên cùng
+   một tài khoản, dễ bị TikTok coi là spam. Chia theo kênh, hoặc chia theo tài khoản.
