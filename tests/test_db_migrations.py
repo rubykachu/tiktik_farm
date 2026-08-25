@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import threading
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
+from sqlalchemy.exc import OperationalError
 from sqlmodel import SQLModel
 
 import api.db as _db
@@ -160,6 +163,47 @@ class TestMigrationIdempotency:
 
         _db.override_engine(make_engine("sqlite:///"))
         _sec._reset_for_tests()
+
+
+class TestMigrationErrorHandling:
+    """The concurrency fix must not turn into a blanket error swallow: a real
+    failure has to keep crashing loudly rather than leaving a half-migrated DB
+    that looks healthy."""
+
+    def test_real_operational_error_still_raises(self, bare_engine, monkeypatch):
+        monkeypatch.setitem(
+            _COLUMN_MIGRATIONS, "accounts", [("login", "TEXT DEFAULT NULL")]
+        )
+        monkeypatch.setitem(
+            _COLUMN_MIGRATIONS, "no_such_table", [("whatever", "TEXT")]
+        )
+
+        with pytest.raises(OperationalError) as exc:
+            _run_migrations(bare_engine)
+        assert "no such table" in str(exc.value).lower()
+
+    def test_duplicate_column_is_treated_as_success(self, bare_engine):
+        """Simulates the losing side of the race: the column appeared between
+        the PRAGMA read and the ALTER."""
+        real_execute = Connection.execute
+        added = {"done": False}
+
+        def execute(self, clause, *args, **kwargs):
+            sql = str(clause)
+            # Add the column behind the caller's back, right before its ALTER.
+            if "ADD COLUMN login " in sql and not added["done"]:
+                added["done"] = True
+                real_execute(
+                    self, text("ALTER TABLE accounts ADD COLUMN login TEXT DEFAULT NULL")
+                )
+            return real_execute(self, clause, *args, **kwargs)
+
+        with patch.object(Connection, "execute", execute):
+            _run_migrations(bare_engine)
+
+        assert added["done"] is True
+        assert "login" in _col_names(bare_engine, "accounts")
+        assert "login_password_encrypted" in _col_names(bare_engine, "accounts")
 
 
 class TestMigrationConcurrency:
