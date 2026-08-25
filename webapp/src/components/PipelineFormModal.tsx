@@ -698,6 +698,16 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                     <option value="minutes">phút</option>
                   </select>
                 </div>
+                {intervalUnit === "days" && (
+                  <div className="flex-1">
+                    <label className="label-required">Chạy lúc ({getTimezoneLabel()})</label>
+                    <input
+                      type="time"
+                      className="input"
+                      {...register("first_fire_at")}
+                    />
+                  </div>
+                )}
               </div>
               {errors.interval_value && (
                 <p className="field-error">{errors.interval_value.message}</p>
@@ -705,23 +715,15 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
               {repeatHint && (
                 <p className="text-xs text-slate-500">{repeatHint}</p>
               )}
+              {errors.first_fire_at && (
+                <p className="field-error">{errors.first_fire_at.message}</p>
+              )}
 
               {intervalUnit === "days" && (
                 <div className="space-y-3">
-                  <div>
-                    <label className="label-required">Chạy lúc ({getTimezoneLabel()})</label>
-                    <input
-                      type="time"
-                      className="input"
-                      {...register("first_fire_at")}
-                    />
-                    {errors.first_fire_at && (
-                      <p className="field-error">{errors.first_fire_at.message}</p>
-                    )}
-                    <p className="text-xs text-slate-400 mt-1">
-                      Nếu giờ này đã qua hôm nay, lần chạy đầu tiên sẽ vào ngày mai.
-                    </p>
-                  </div>
+                  <p className="text-xs text-slate-400">
+                    Nếu giờ này đã qua hôm nay, lần chạy đầu tiên sẽ vào ngày mai.
+                  </p>
 
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                     <input
@@ -781,60 +783,62 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
             <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
               Tải xuống
             </legend>
-            {!isEdit && (
-              <div>
-                <label className="label-required">Nguồn video</label>
-                <select className="input" {...register("source_type")}>
-                  <option value="youtube">YouTube</option>
-                  <option value="douyin">Douyin</option>
-                </select>
-              </div>
-            )}
-            {sourceType === "douyin" && (
-              <div>
-                <label className="label-required">Douyin Cookie</label>
-                <select
-                  className="input"
-                  {...register("douyin_cookie_id", { valueAsNumber: true })}
-                >
-                  <option value="">— Chọn cookie —</option>
-                  {douyinCookies?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.douyin_cookie_id && (
-                  <p className="field-error">{errors.douyin_cookie_id.message}</p>
-                )}
-                {(!douyinCookies || douyinCookies.length === 0) && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    Chưa có cookie Douyin nào. Thêm cookie trong{" "}
-                    <Link to="/accounts" className="text-brand-600 hover:underline">
-                      Tài khoản → Douyin Cookies
-                    </Link>
-                    .
-                  </p>
-                )}
-              </div>
-            )}
-            <div>
-              <label className="label-required">
-                {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
-              </label>
-              <input
-                className="input"
-                {...register("channel_url")}
-                placeholder={
-                  sourceType === "douyin"
-                    ? "https://www.douyin.com/user/MS4wLjAB..."
-                    : "https://youtube.com/@channel/videos"
-                }
-              />
-              {errors.channel_url && (
-                <p className="field-error">{errors.channel_url.message}</p>
+            <div className="flex gap-3 items-end">
+              {!isEdit && (
+                <div className="flex-1">
+                  <label className="label-required">Nguồn video</label>
+                  <select className="input" {...register("source_type")}>
+                    <option value="youtube">YouTube</option>
+                    <option value="douyin">Douyin</option>
+                  </select>
+                </div>
               )}
+              {sourceType === "douyin" && (
+                <div className="flex-1">
+                  <label className="label-required">Douyin Cookie</label>
+                  <select
+                    className="input"
+                    {...register("douyin_cookie_id", { valueAsNumber: true })}
+                  >
+                    <option value="">— Chọn cookie —</option>
+                    {douyinCookies?.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex-[2]">
+                <label className="label-required">
+                  {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
+                </label>
+                <input
+                  className="input"
+                  {...register("channel_url")}
+                  placeholder={
+                    sourceType === "douyin"
+                      ? "https://www.douyin.com/user/MS4wLjAB..."
+                      : "https://youtube.com/@channel/videos"
+                  }
+                />
+              </div>
             </div>
+            {errors.douyin_cookie_id && (
+              <p className="field-error">{errors.douyin_cookie_id.message}</p>
+            )}
+            {sourceType === "douyin" && (!douyinCookies || douyinCookies.length === 0) && (
+              <p className="text-xs text-amber-600">
+                Chưa có cookie Douyin nào. Thêm cookie trong{" "}
+                <Link to="/accounts" className="text-brand-600 hover:underline">
+                  Tài khoản → Douyin Cookies
+                </Link>
+                .
+              </p>
+            )}
+            {errors.channel_url && (
+              <p className="field-error">{errors.channel_url.message}</p>
+            )}
             <div>
               <label className="label">
                 Mô tả channel{" "}
@@ -891,8 +895,9 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
               </div>
             </div>
             <p className="text-xs text-slate-400">
-              Video dài hơn "độ dài tối đa" sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên. "Lấy
-              video từ ngày" chỉ xử lý video đăng từ ngày đó trở đi, để trống nếu muốn lấy tất cả.
+              Video dài hơn 3× "độ dài tối đa" sẽ bị bỏ qua hoàn toàn; ngắn hơn mức đó thì được
+              tải về và cắt ngắn về đúng N giây đầu. "Lấy video từ ngày" chỉ xử lý video đăng từ
+              ngày đó trở đi, để trống nếu muốn lấy tất cả.
             </p>
             {Number(fetchCount) > 1 && (
               <div>
