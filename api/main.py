@@ -17,6 +17,7 @@ from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import (
     accounts,
+    discovery,
     douyin_cookies,
     downloads,
     llm_models,
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(downloads.router)
     app.include_router(overview.router)
     app.include_router(downloads.public_router)
+    app.include_router(discovery.router)
     return app
 
 

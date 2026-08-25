@@ -677,3 +677,83 @@ class PromptTestResponse(BaseModel):
     original_title: str
     ai_title: str
     description_snippet: str
+
+
+# ---------- channel discovery (Phase 5) -----------------------------------
+
+
+class DiscoveryKeywordCreate(BaseModel):
+    keyword: str = Field(min_length=1, max_length=200)
+
+
+class DiscoveryKeywordRead(BaseModel):
+    id: int
+    keyword: str
+    created_at: datetime
+    last_scanned_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DiscoveryKeywordSuggestionsResponse(BaseModel):
+    suggestions: List[str]
+
+
+class DiscoveryCandidateRead(BaseModel):
+    id: int
+    channel_id: str
+    channel_url: str
+    channel_title: str
+    found_via_keyword: str
+    subscriber_count: int
+    median_view_count: int
+    days_since_last_video: float
+    cadence_days_per_video: Optional[float] = None
+    cadence_tab: Optional[str] = None
+    has_shorts_tab: bool
+    recent_shorts_count: int
+    score: float
+    status: Literal["new", "added", "skipped"]
+    added_pipeline_id: Optional[int] = None
+    created_at: datetime
+    last_scanned_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DiscoveryCandidateMarkAdded(BaseModel):
+    pipeline_id: int
+
+
+class DiscoveryScanRunRead(BaseModel):
+    id: int
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    keywords: List[str]
+    channels_total: int
+    channels_done: int
+    candidates_found: int
+    status: Literal["running", "done", "error"]
+    error_text: Optional[str] = None
+
+
+class DiscoverySettingsRead(BaseModel):
+    min_subscribers: int
+    silent_months: int
+    target_days_per_video: float
+    scans_per_day: int
+    keywords_per_scan: int
+    market_gl: str
+    market_hl: str
+    view_score_reference: int
+
+
+class DiscoverySettingsUpdate(BaseModel):
+    min_subscribers: Optional[int] = Field(default=None, ge=0)
+    silent_months: Optional[int] = Field(default=None, ge=1)
+    target_days_per_video: Optional[float] = Field(default=None, gt=0)
+    scans_per_day: Optional[int] = Field(default=None, ge=1)
+    keywords_per_scan: Optional[int] = Field(default=None, ge=1)
+    market_gl: Optional[str] = Field(default=None, min_length=2, max_length=8)
+    market_hl: Optional[str] = Field(default=None, min_length=2, max_length=8)
+    view_score_reference: Optional[int] = Field(default=None, gt=0)
