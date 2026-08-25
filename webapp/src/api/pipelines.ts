@@ -42,7 +42,9 @@ export interface PipelineCreate {
   interval_unit: "minutes" | "hours" | "days";
   first_fire_at: string;
   caption_template: string;
-  upload_options: {
+  // Comment / duet / stitch / visibility are not exposed in the UI; omit the
+  // field and the server applies its PipelineUploadOptions defaults.
+  upload_options?: {
     allow_comment: 0 | 1;
     allow_duet: 0 | 1;
     allow_stitch: 0 | 1;
