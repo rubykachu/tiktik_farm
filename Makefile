@@ -107,6 +107,22 @@ endif
 	$(COMPOSE) restart api scheduler
 	@printf "$(GREEN)Đã tạo lại cơ sở dữ liệu rỗng.$(RESET)\n"
 
+# ─── Networking ────────────────────────────────────────────────────────────
+# cloudflared chạy trên host, ngoài Docker — xem RUNBOOK.md để tạo tunnel +
+# trỏ domain lần đầu. Lệnh này chỉ khởi động lại tunnel đã cấu hình sẵn.
+
+.PHONY: tunnel
+tunnel:  ## Chạy cloudflared tunnel (đưa web ra domain public, cần cấu hình theo RUNBOOK.md trước)
+	@command -v cloudflared >/dev/null || { \
+		printf "$(RED)Chưa cài cloudflared$(RESET)\n"; \
+		printf "Chạy: brew install cloudflared — xem RUNBOOK.md, bước Cài cloudflared\n"; \
+		exit 1; }
+	@test -f $$HOME/.cloudflared/config.yml || { \
+		printf "$(RED)Chưa có ~/.cloudflared/config.yml$(RESET)\n"; \
+		printf "Xem RUNBOOK.md, mục cấu hình tunnel, để tạo tunnel + trỏ domain trước.\n"; \
+		exit 1; }
+	cloudflared tunnel run
+
 # ─── Development ───────────────────────────────────────────────────────────
 
 .PHONY: dev
