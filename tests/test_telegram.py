@@ -76,30 +76,149 @@ class TestNoRedirectFollow:
         mock_cls.assert_called_once_with(follow_redirects=False, timeout=10)
 
 
+def _mock_post(mock_cls):
+    """Wire a patched httpx.Client and hand back its .post mock."""
+    mock_client = MagicMock()
+    mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+    mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+    return mock_client.post
+
+
+def _response(status_code, json_body=None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = "body"
+    resp.json.return_value = json_body if json_body is not None else {}
+    return resp
+
+
 class TestNetworkError:
+    @patch("api.services.telegram.time.sleep")
     @patch("api.services.telegram.httpx.Client")
-    def test_network_exception_returns_false(self, mock_cls):
+    def test_network_exception_returns_false(self, mock_cls, _sleep):
         import httpx
 
-        mock_client = MagicMock()
-        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.side_effect = httpx.ConnectError("connection refused")
+        _mock_post(mock_cls).side_effect = httpx.ConnectError("connection refused")
 
         result = send_message(VALID_TOKEN, VALID_CHAT, "msg")
         assert result is False
 
+    @patch("api.services.telegram.time.sleep")
     @patch("api.services.telegram.httpx.Client")
-    def test_timeout_returns_false(self, mock_cls):
+    def test_timeout_returns_false(self, mock_cls, _sleep):
         import httpx
 
-        mock_client = MagicMock()
-        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
-        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_client.post.side_effect = httpx.ReadTimeout("timed out")
+        _mock_post(mock_cls).side_effect = httpx.ReadTimeout("timed out")
 
         result = send_message(VALID_TOKEN, VALID_CHAT, "msg")
         assert result is False
+
+
+class TestRetry:
+    """A downloaded video is deleted right after notifying, so a transient
+    failure has to be retried before the send is written off."""
+
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_retries_until_success(self, mock_cls, mock_sleep):
+        import httpx
+
+        post = _mock_post(mock_cls)
+        post.side_effect = [
+            httpx.ConnectError("down"),
+            _response(500),
+            _response(200),
+        ]
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is True
+        assert post.call_count == 3
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [1.0, 2.0]
+
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_gives_up_after_max_attempts(self, mock_cls, mock_sleep):
+        from api.services.telegram import MAX_SEND_ATTEMPTS
+
+        _mock_post(mock_cls).return_value = _response(503)
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is False
+        assert mock_cls.return_value.__enter__.return_value.post.call_count == MAX_SEND_ATTEMPTS
+        # Backoff doubles and there is no sleep after the final attempt.
+        assert [c.args[0] for c in mock_sleep.call_args_list] == [1.0, 2.0, 4.0, 8.0]
+
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_client_error_is_not_retried(self, mock_cls, mock_sleep):
+        post = _mock_post(mock_cls)
+        post.return_value = _response(400)
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is False
+        assert post.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_429_honours_retry_after(self, mock_cls, mock_sleep):
+        post = _mock_post(mock_cls)
+        post.side_effect = [
+            _response(429, {"parameters": {"retry_after": 7}}),
+            _response(200),
+        ]
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is True
+        assert mock_sleep.call_args_list[0].args[0] == 7.0
+
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_429_retry_after_is_capped(self, mock_cls, mock_sleep):
+        from api.services.telegram import MAX_RETRY_AFTER_SECONDS
+
+        post = _mock_post(mock_cls)
+        post.side_effect = [
+            _response(429, {"parameters": {"retry_after": 99999}}),
+            _response(200),
+        ]
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is True
+        assert mock_sleep.call_args_list[0].args[0] == MAX_RETRY_AFTER_SECONDS
+
+    @patch("api.services.telegram.time.monotonic")
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_deadline_stops_retrying(self, mock_cls, mock_sleep, mock_monotonic):
+        from api.services.telegram import RETRY_DEADLINE_SECONDS
+
+        post = _mock_post(mock_cls)
+        post.return_value = _response(500)
+        # Second reading is past the deadline, so no retry is scheduled.
+        mock_monotonic.side_effect = [0.0, RETRY_DEADLINE_SECONDS + 1]
+
+        assert send_message(VALID_TOKEN, VALID_CHAT, "msg") is False
+        assert post.call_count == 1
+        mock_sleep.assert_not_called()
+
+
+class TestUploadRetry:
+    @patch("api.services.telegram.time.sleep")
+    @patch("api.services.telegram.httpx.Client")
+    def test_file_handles_reopened_per_attempt(self, mock_cls, _sleep, tmp_path):
+        from api.services.telegram import send_document
+
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"data")
+
+        post = _mock_post(mock_cls)
+        sent_bytes = []
+
+        def _capture(url, data=None, files=None):
+            sent_bytes.append(files["document"][1].read())
+            return _response(500) if len(sent_bytes) == 1 else _response(200)
+
+        post.side_effect = _capture
+
+        assert send_document(VALID_TOKEN, VALID_CHAT, str(video)) is True
+        # A reused handle would send b"" on the retry.
+        assert sent_bytes == [b"data", b"data"]
 
 
 class TestDetectChatsHelpers:

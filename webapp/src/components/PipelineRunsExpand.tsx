@@ -4,11 +4,8 @@ import { Bell, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
+import { asUtcDate as asUtc } from "../utils/datetime";
 import { toast } from "sonner";
-
-function asUtc(s: string): Date {
-  return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
-}
 
 function statusLabel(s: string): string {
   if (s === "succeeded") return "thành công";

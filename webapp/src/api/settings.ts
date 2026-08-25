@@ -20,6 +20,10 @@ export interface PromptTestResult {
 
 export const Settings = {
   get: () => api.get<AppSettings>("/settings").then((r) => r.data),
+  sampleCaptionPrompt: () =>
+    api
+      .get<{ prompt: string }>("/settings/sample-caption-prompt")
+      .then((r) => r.data.prompt),
   patch: (payload: Partial<AppSettings>) =>
     api.patch<AppSettings>("/settings", payload).then((r) => r.data),
   testLLM: (

@@ -82,6 +82,13 @@ class ChannelPipeline(SQLModel, table=True):
 
     telegram_bot_token: Optional[str] = Field(default=None)
     telegram_chat_id: Optional[str] = Field(default=None)
+    # Upload the video file into the Telegram chat as well as linking it.
+    # Telegram caps bot uploads at 50 MB, so this is the optional extra; the
+    # download link in the message text is what always works.
+    telegram_attach_video: bool = Field(default=False)
+    # JSON array of Account field names to include in the notification,
+    # e.g. ["login", "login_password"].
+    telegram_attach_fields_json: str = Field(default="[]")
 
     # Anti-race. lock_until is the soft TTL the worker bumps every 5min while
     # a tick is in flight. run_now_requested_at is set by POST /run-now and
@@ -152,6 +159,55 @@ class VideoUpload(SQLModel, table=True):
     attempt_count: int = Field(default=1)
     error_text: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=now_utc, index=True)
+
+
+class PipelineSeenVideo(SQLModel, table=True):
+    """Dedupe key for pipelines with no TikTok account.
+
+    The normal dedupe key is (account_id, video_id) on VideoUpload, but a
+    pipeline whose account_ids_json is "[]" never writes VideoUpload rows —
+    without this table it would re-download and re-notify the same videos on
+    every tick. source_key is the YouTube video id or the Douyin aweme id.
+
+    Rows are kept for the life of the pipeline — unlike PipelineRun there is no
+    age cutoff, because an old video still sitting in the channel's top-N must
+    stay deduped. They are deleted with their pipeline.
+    """
+    __tablename__ = "pipeline_seen_videos"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    pipeline_id: int = Field(foreign_key="channel_pipelines.id", index=True)
+    source_key: str = Field(max_length=64)
+    created_at: datetime = Field(default_factory=now_utc, index=True)
+
+
+class ManualDownload(SQLModel, table=True):
+    """A video pulled from a pasted URL for the operator to upload by hand.
+
+    No pipeline, no account, no TikTok upload: the file is kept on disk until
+    `expires_at`, then the retention purge deletes both the row and the file.
+    """
+    __tablename__ = "manual_downloads"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    url: str
+    source_type: str = Field(max_length=16)  # "youtube" | "tiktok" | "douyin"
+    # "manual" (pasted URL) or "pipeline" (kept so a Telegram link can serve
+    # it). No FK on pipeline_id — deleting a pipeline must not be blocked by,
+    # or cascade into, a file the operator has not fetched yet.
+    origin: str = Field(default="manual", max_length=16)
+    pipeline_id: Optional[int] = Field(default=None)
+    # queued → downloading → ready | failed
+    status: str = Field(default="queued", index=True, max_length=16)
+    title: Optional[str] = Field(default=None, max_length=500)
+    description: Optional[str] = Field(default=None)
+    file_path: Optional[str] = Field(default=None)
+    file_size: Optional[int] = Field(default=None)
+    duration_seconds: Optional[int] = Field(default=None)
+    ai_caption: Optional[str] = Field(default=None)
+    error_text: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=now_utc, index=True)
+    expires_at: datetime = Field(index=True)
 
 
 # ---------- LLM caption rewrite (Phase 3) -----------------------------------

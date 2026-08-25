@@ -4,11 +4,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from api.schemas import (
+    TelegramAttachFieldsResponse,
     TelegramDetectChatsRequest,
     TelegramDetectChatsResponse,
     TelegramTestRequest,
     TelegramTestResponse,
 )
+from api.services.account_fields import ATTACH_FIELDS
 from api.services.telegram import (
     TELEGRAM_TEST_MESSAGE,
     TelegramApiError,
@@ -49,4 +51,12 @@ def telegram_test(body: TelegramTestRequest):
     return TelegramTestResponse(
         ok=True,
         message="Test message sent successfully",
+    )
+
+
+@router.get("/attach-fields", response_model=TelegramAttachFieldsResponse)
+def telegram_attach_fields():
+    """Account fields the pipeline form can offer for Telegram notifications."""
+    return TelegramAttachFieldsResponse(
+        fields=[{"key": k, "label": v[0]} for k, v in ATTACH_FIELDS.items()]
     )

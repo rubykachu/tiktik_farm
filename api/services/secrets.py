@@ -16,6 +16,8 @@ loser reads the winner's key.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 from pathlib import Path
@@ -62,6 +64,23 @@ def _get_fernet() -> Fernet:
     if _fernet is None:
         _fernet = Fernet(_load_or_create_key())
     return _fernet
+
+
+def sign(message: str) -> str:
+    """HMAC-SHA256 of `message`, hex, keyed by the same at-rest secret.
+
+    Used for download links that leave the app (Telegram). The signature only
+    proves the server issued the link — it carries no expiry, so the file's own
+    retention is what limits how long the link is useful.
+    """
+    return hmac.new(_load_or_create_key(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def verify(message: str, signature: str) -> bool:
+    """Constant-time signature check. False on any malformed input."""
+    if not signature:
+        return False
+    return hmac.compare_digest(sign(message), signature)
 
 
 def encrypt(plain: str) -> str:

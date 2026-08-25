@@ -23,6 +23,8 @@ export interface Pipeline {
   douyin_cookie_id: number | null;
   telegram_bot_token_set: boolean;
   telegram_chat_id: string | null;
+  telegram_attach_video: boolean;
+  telegram_attach_fields: string[];
   run_now_requested_at: string | null;
   lock_until: string | null;
   created_at: string;
@@ -55,6 +57,8 @@ export interface PipelineCreate {
   window_delay_minutes?: number | null;
   telegram_bot_token?: string;
   telegram_chat_id?: string;
+  telegram_attach_video?: boolean;
+  telegram_attach_fields?: string[];
   sync_from_date?: string | null;
 }
 
@@ -79,6 +83,8 @@ export interface PipelineUpdate {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
   clear_bot_token?: boolean;
+  telegram_attach_video?: boolean;
+  telegram_attach_fields?: string[];
   sync_from_date?: string | null;
 }
 

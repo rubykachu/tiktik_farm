@@ -17,6 +17,7 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -25,9 +26,24 @@ from sqlmodel import Session, select
 
 import api.db as _api_db
 from api.db import now_utc
-from api.models import Account, ChannelPipeline, DouyinCookie, PipelineRun, VideoUpload
-from api.services import douyin_channel, llm, tiktok_adapter, telegram, youtube_channel
+from api.models import (
+    Account,
+    ChannelPipeline,
+    DouyinCookie,
+    PipelineRun,
+    PipelineSeenVideo,
+    VideoUpload,
+)
+from api.services import (
+    account_fields,
+    douyin_channel,
+    manual_download,
+    telegram,
+    tiktok_adapter,
+    youtube_channel,
+)
 from api.services import secrets
+from api.services.llm_rewrite import rewrite_with_llm as _rewrite_with_llm
 from api.services.caption import render_caption, template_uses_ai_title
 from api.services.llm_config import (
     get_default_llm_model,
@@ -44,6 +60,8 @@ HEARTBEAT_INTERVAL = 300  # 5 min
 ORPHAN_STALE_AFTER = timedelta(minutes=15)
 MAX_UPLOAD_ATTEMPTS = 3
 SUMMARY_MAX = 4096
+# Shown in the Telegram link block. Kept in sync with the store's retention.
+_LINK_RETENTION_HOURS = int(manual_download.RETENTION.total_seconds() // 3600)
 def _parse_max_pipeline_seconds() -> int:
     raw = os.getenv("MAX_PIPELINE_SECONDS", "1800")
     try:
@@ -57,6 +75,54 @@ def _parse_max_pipeline_seconds() -> int:
     return val
 
 MAX_PIPELINE_SECONDS = _parse_max_pipeline_seconds()
+
+
+@dataclass
+class RunVideo:
+    """One downloaded file, kept together with where it came from.
+
+    Paired at collection time: the upload path and the download-only path fill
+    these in at different points, so matching a file to its URL by list index
+    afterwards would silently mismatch.
+    """
+
+    path: str
+    source_url: str
+    title: str
+
+
+@dataclass
+class RunArtifacts:
+    """Files and URLs the outer run context still needs after run_pipeline ends.
+
+    Populated only when the pipeline attaches videos to Telegram or has no
+    TikTok account. Deleting `cleanup_paths` is deferred to the outer context
+    because the Telegram notification attaches files that live inside them.
+    """
+
+    cleanup_paths: list[str] = field(default_factory=list)
+    videos: list[RunVideo] = field(default_factory=list)
+    source_urls: list[str] = field(default_factory=list)
+
+
+def _seen_source(pipeline_id: int, source_key: str) -> bool:
+    with Session(_api_db.engine) as s:
+        return s.exec(
+            select(PipelineSeenVideo).where(
+                PipelineSeenVideo.pipeline_id == pipeline_id,
+                PipelineSeenVideo.source_key == source_key,
+            )
+        ).first() is not None
+
+
+def _mark_source_seen(pipeline_id: int, source_key: str) -> None:
+    with Session(_api_db.engine) as s:
+        s.add(PipelineSeenVideo(pipeline_id=pipeline_id, source_key=source_key))
+        try:
+            s.commit()
+        except Exception:
+            # Unique index hit — a concurrent tick already recorded it.
+            s.rollback()
 
 
 # ─── E1: Orphan reaper ─────────────────────────────────────────────────────
@@ -76,11 +142,13 @@ def reap_orphans() -> int:
             )
         ).all()
 
+        reaped_pipeline_ids: list[int] = []
         for run in stale_runs:
             run.finished_at = now
             run.error_text = "worker crashed"
             run.failed_count = run.pulled_count
             s.add(run)
+            reaped_pipeline_ids.append(run.pipeline_id)
             count += 1
 
         if count:
@@ -98,7 +166,36 @@ def reap_orphans() -> int:
         s.commit()
         count += result.rowcount  # type: ignore[operator]
 
+    for pipeline_id in reaped_pipeline_ids:
+        _notify_pipeline_alert(
+            pipeline_id,
+            "⚠️ Pipeline run reaped (stale/orphaned — likely a previous crash)",
+        )
+
     return count
+
+
+def _notify_pipeline_alert(pipeline_id: int, text: str) -> None:
+    """Best-effort Telegram alert for a pipeline that never reported itself.
+
+    Silent on a deleted pipeline or a Telegram failure — the caller is already
+    on an error path and must not be derailed by the notification.
+    """
+    try:
+        with Session(_api_db.engine) as s:
+            pipeline = s.get(ChannelPipeline, pipeline_id)
+        if pipeline is None:
+            log.debug("Pipeline %d gone — skipping alert", pipeline_id)
+            return
+        if not pipeline.telegram_bot_token or not pipeline.telegram_chat_id:
+            return
+        telegram.send_message(
+            pipeline.telegram_bot_token,
+            pipeline.telegram_chat_id,
+            f"📋 [{pipeline.name}]\n{text}",
+        )
+    except Exception as e:
+        log.warning("Telegram alert failed for pipeline %d: %s", pipeline_id, e)
 
 
 # ─── E1b: Retention purge ─────────────────────────────────────────────────
@@ -334,61 +431,6 @@ def _ai_config_warn(pipeline: ChannelPipeline) -> Optional[str]:
     return None
 
 
-def _sanitize_llm_title(value: str) -> str:
-    """Strip Unicode control/format chars from LLM output and cap at 500 chars."""
-    return "".join(itertools.islice(
-        (c for c in value if not unicodedata.category(c).startswith("C")), 500
-    ))
-
-
-def _rewrite_with_llm(
-    prompt: str, title: str, description: str, channel_description: str = ""
-) -> str:
-    """Return the rewritten title, or `title` on any failure path."""
-    if not is_llm_enabled():
-        log.warning("LLM globally disabled; using raw title: %s", title)
-        return title
-
-    if get_llm_mode() == "offline":
-        model, base_url = get_ollama_config()
-        if not model or not base_url:
-            log.warning("OLLAMA_MODEL/OLLAMA_BASE_URL not set; using raw title")
-            return title
-        try:
-            rewritten = llm.rewrite_title_offline(
-                prompt,
-                title=title,
-                description=description,
-                model=model,
-                base_url=base_url,
-                channel_description=channel_description,
-            )
-        except llm.LLMCallFailed as e:
-            log.warning("Ollama rewrite skipped: %s", e)
-            return title
-        return _sanitize_llm_title(rewritten) if rewritten else title
-
-    default = get_default_llm_model()
-    if default is None:
-        log.warning("Pipeline has caption_ai_prompt but no default LLM is set")
-        return title
-    try:
-        rewritten = llm.rewrite_title(
-            prompt,
-            title=title,
-            description=description,
-            model_id=default.model_id,
-            api_key_encrypted=default.api_key_encrypted,
-            api_base=default.api_base,
-            api_version=default.api_version,
-            channel_description=channel_description,
-        )
-    except (llm.LLMNotConfigured, llm.LLMCallFailed) as e:
-        log.warning("LLM rewrite skipped: %s", e)
-        return title
-    return _sanitize_llm_title(rewritten) if rewritten else title
-
-
 def _load_douyin_cookie(pipeline: ChannelPipeline) -> Optional[dict]:
     """Return decrypted cookie dict or None if cookie row is missing."""
     if not pipeline.douyin_cookie_id:
@@ -450,7 +492,12 @@ def _record_douyin_upload(
         s.commit()
 
 
-def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id: int) -> None:
+def _run_douyin_pipeline(
+    pipeline: ChannelPipeline,
+    trigger_reason: str,
+    run_id: int,
+    artifacts: Optional[RunArtifacts] = None,
+) -> None:
     """Download from Douyin creator and upload each video per account.
 
     Mutates the PipelineRun row (via _finalize_run) on completion or error.
@@ -482,7 +529,10 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
     except Exception as e:
         log.error("Douyin download failed for pipeline %d: %s", pipeline.id, e)
         _finalize_run(run_id, error_text=f"download failed: {e}")
-        shutil.rmtree(output_dir, ignore_errors=True)
+        if artifacts is None:
+            shutil.rmtree(output_dir, ignore_errors=True)
+        else:
+            artifacts.cleanup_paths.append(output_dir)
         return
 
     try:
@@ -496,6 +546,24 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
 
         account_ids: list[int] = json.loads(pipeline.account_ids_json)
         upload_opts: dict = json.loads(pipeline.upload_options_json)
+
+        if not account_ids:
+            fresh, skipped_dup_count = _split_seen(
+                pipeline.id,  # type: ignore[arg-type]
+                [
+                    _SourceItem(
+                        source_key=v.aweme_id,
+                        source_url=douyin_channel.post_url(v.aweme_id),
+                        title=v.title,
+                        file_path=v.file_path,
+                    )
+                    for v in videos
+                ],
+            )
+            _finalize_download_only(
+                pipeline, run_id, artifacts, fresh, skipped_dup_count
+            )
+            return
 
         use_ai_title = bool(
             pipeline.caption_ai_prompt
@@ -596,7 +664,14 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
                     failed_count += 1
                     fail_details.append(f"- aweme:{aweme_id} [{username}]: {truncate(error_msg or '', 120, suffix='')}")
 
-            douyin_channel.cleanup_aweme_files(output_dir, aweme_id)
+            if artifacts is None:
+                douyin_channel.cleanup_aweme_files(output_dir, aweme_id)
+            else:
+                artifacts.videos.append(RunVideo(
+                    path=video.file_path,
+                    source_url=douyin_channel.post_url(aweme_id),
+                    title=video.title,
+                ))
 
         summary_parts = [f"Pulled: {pulled_count}", f"Uploaded: {uploaded_count}"]
         if skipped_dup_count:
@@ -627,12 +702,143 @@ def _run_douyin_pipeline(pipeline: ChannelPipeline, trigger_reason: str, run_id:
             summary_text=summary_text,
         )
     finally:
-        if os.path.exists(output_dir):
+        if artifacts is not None:
+            artifacts.cleanup_paths.append(output_dir)
+        elif os.path.exists(output_dir):
             shutil.rmtree(output_dir, ignore_errors=True)
 
 
-def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
-    """Execute one pipeline tick. Returns the finalized PipelineRun."""
+@dataclass
+class _SourceItem:
+    """One video from the source channel on the download-only path."""
+
+    source_key: str  # YouTube video id or Douyin aweme id
+    source_url: str
+    title: str
+    file_path: str = ""
+
+
+def _split_seen(
+    pipeline_id: int, items: list[_SourceItem]
+) -> tuple[list[_SourceItem], int]:
+    """Split source items into not-yet-reported and already-reported.
+
+    Without a TikTok account there is no VideoUpload row to dedupe against, so
+    PipelineSeenVideo is the only thing stopping a repeat notification.
+    """
+    fresh: list[_SourceItem] = []
+    skipped = 0
+    for item in items:
+        if _seen_source(pipeline_id, item.source_key):
+            skipped += 1
+        else:
+            fresh.append(item)
+    return fresh, skipped
+
+
+def _download_youtube_only(
+    pipeline: ChannelPipeline,
+    run_id: int,
+    videos: list[dict],
+    artifacts: Optional[RunArtifacts],
+) -> tuple[list[_SourceItem], int]:
+    """Download every not-yet-seen video without uploading anywhere.
+
+    Returns (successfully downloaded items, already-seen count). Download
+    failures are logged and dropped so one bad video does not abort the tick.
+    """
+    candidates = [
+        _SourceItem(
+            source_key=v["id"],
+            source_url=v.get("url", f"https://www.youtube.com/watch?v={v['id']}"),
+            title=v.get("title", ""),
+        )
+        for v in videos
+    ]
+    fresh, skipped_dup_count = _split_seen(pipeline.id, candidates)  # type: ignore[arg-type]
+
+    items: list[_SourceItem] = []
+    for vi, item in enumerate(fresh):
+        video_url = item.source_url
+        _update_run_status(run_id, f"Downloading video {vi + 1}/{len(fresh)}…")
+        temp_dir = tempfile.mkdtemp(
+            prefix="pipeline_dl_",
+            dir=os.environ.get("PIPELINE_TMP_DIR") or None,
+        )
+        if artifacts is not None:
+            artifacts.cleanup_paths.append(temp_dir)
+        try:
+            download_path, _description = youtube_channel.download(
+                video_url, temp_dir, pipeline.max_duration_seconds
+            )
+        except youtube_channel.VideoTooLong:
+            log.info("Skipping %s — longer than max_duration_seconds", video_url)
+            if artifacts is None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            continue
+        except Exception as e:
+            log.error("Download failed for %s: %s", video_url, e)
+            if artifacts is None:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            continue
+        item.file_path = download_path
+        items.append(item)
+    return items, skipped_dup_count
+
+
+def _finalize_download_only(
+    pipeline: ChannelPipeline,
+    run_id: int,
+    artifacts: Optional[RunArtifacts],
+    fresh: list[_SourceItem],
+    skipped_dup_count: int,
+) -> None:
+    """Finish a tick that has no TikTok account: nothing is uploaded, the
+    downloaded files and their source URLs go to the Telegram notification.
+
+    `fresh` is already filtered against PipelineSeenVideo by the caller.
+    """
+    for item in fresh:
+        _mark_source_seen(pipeline.id, item.source_key)  # type: ignore[arg-type]
+        if artifacts is not None:
+            artifacts.source_urls.append(item.source_url)
+            if os.path.exists(item.file_path):
+                artifacts.videos.append(RunVideo(
+                    path=item.file_path,
+                    source_url=item.source_url,
+                    title=item.title,
+                ))
+
+    summary_parts = [f"Pulled: {len(fresh)}", "Uploaded: 0 (no TikTok account)"]
+    if skipped_dup_count:
+        summary_parts.append(f"Skipped (dup): {skipped_dup_count}")
+    summary_text = "\n".join(summary_parts)
+    if fresh:
+        summary_text += "\n\nDownloaded:\n" + "\n".join(
+            f"- {item.source_url}" for item in fresh
+        )
+    summary_text = truncate(summary_text, SUMMARY_MAX, suffix="\n…(truncated)")
+
+    _finalize_run(
+        run_id,
+        pulled_count=len(fresh),
+        uploaded_count=0,
+        skipped_dup_count=skipped_dup_count,
+        summary_text=summary_text,
+    )
+
+
+def run_pipeline(
+    pipeline: ChannelPipeline,
+    trigger_reason: str,
+    artifacts: Optional[RunArtifacts] = None,
+) -> PipelineRun:
+    """Execute one pipeline tick. Returns the finalized PipelineRun.
+
+    When `artifacts` is given, downloaded files are recorded there and their
+    directories are NOT deleted here — the caller deletes them after the
+    Telegram notification has had a chance to attach them.
+    """
     now = now_utc()
     run = PipelineRun(
         pipeline_id=pipeline.id,  # type: ignore[arg-type]
@@ -657,7 +863,7 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
 
     # Route Douyin pipelines to pass 3
     if pipeline.source_type == "douyin":
-        _run_douyin_pipeline(pipeline, trigger_reason, run_id)
+        _run_douyin_pipeline(pipeline, trigger_reason, run_id, artifacts)
         return _get_run(run_id)
 
     # List top-N videos
@@ -682,6 +888,15 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
 
     account_ids: list[int] = json.loads(pipeline.account_ids_json)
     upload_opts: dict = json.loads(pipeline.upload_options_json)
+
+    if not account_ids:
+        fresh, skipped_dup_count = _download_youtube_only(
+            pipeline, run_id, videos, artifacts
+        )
+        _finalize_download_only(
+            pipeline, run_id, artifacts, fresh, skipped_dup_count
+        )
+        return _get_run(run_id)
 
     # LLM rewrite is opt-in per pipeline. Cache per video so multi-account
     # pipelines only pay for one rewrite per video.
@@ -722,6 +937,12 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                         download_path, description = youtube_channel.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
+                        if artifacts is not None:
+                            artifacts.videos.append(RunVideo(
+                                path=download_path,
+                                source_url=video_url,
+                                title=video_title,
+                            ))
                     except youtube_channel.VideoTooLong:
                         skipped_exhausted_count += 1
                         break  # skip all accounts for this video
@@ -847,8 +1068,11 @@ def run_pipeline(pipeline: ChannelPipeline, trigger_reason: str) -> PipelineRun:
                     )
 
         finally:
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            if temp_dir:
+                if artifacts is not None:
+                    artifacts.cleanup_paths.append(temp_dir)
+                elif os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     # Build summary
     summary_parts = [
@@ -1051,7 +1275,107 @@ def release_lock(pipeline_id: int) -> None:
 # ─── E5: Telegram summary ──────────────────────────────────────────────────
 
 
-def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
+def _attach_fields_block(pipeline: ChannelPipeline) -> list[str]:
+    """Render the credentials block, or [] when there is nothing to render.
+
+    Every account on the pipeline is listed — the operator picks which one to
+    upload with by hand.
+    """
+    try:
+        fields = json.loads(pipeline.telegram_attach_fields_json or "[]")
+        account_ids = json.loads(pipeline.account_ids_json or "[]")
+    except ValueError:
+        return []
+    if not fields or not account_ids:
+        return []
+
+    with Session(_api_db.engine) as s:
+        accounts = [s.get(Account, aid) for aid in account_ids]
+
+    lines: list[str] = ["", "🔑 Tài khoản:"]
+    for acct in accounts:
+        if acct is None:
+            continue
+        lines.append(f"[{acct.username}]")
+        for f in fields:
+            value = account_fields.resolve(acct, f)
+            lines.append(f"  {account_fields.label(f)}: {value or '—'}")
+    # Header only, no account resolved.
+    return lines if len(lines) > 2 else []
+
+
+def _publish_video_links(
+    pipeline: ChannelPipeline, artifacts: RunArtifacts
+) -> list[str]:
+    """Move each downloaded video into the retained store, return its link.
+
+    Sidesteps Telegram's 50 MB upload cap: the message carries a signed URL
+    instead of the file. The files then live under the same 24h retention as a
+    manually pasted download.
+    """
+    links: list[str] = []
+    for video in artifacts.videos:
+        published = manual_download.publish(
+            file_path=video.path,
+            url=video.source_url,
+            source_type=pipeline.source_type,
+            title=video.title,
+            pipeline_id=pipeline.id,
+        )
+        if published is None:
+            continue
+        # The file moved out of the run's temp dir. Follow it, or the attach
+        # step below would upload nothing.
+        video.path = published.file_path
+        links.append(published.url)
+    return links
+
+
+def _send_video_attachments(pipeline: ChannelPipeline, video_paths: list[str]) -> None:
+    """Attach downloaded videos to the notification, best effort.
+
+    Telegram caps bot uploads at 50 MB, so anything larger degrades to the
+    text-only message that was already sent (which carries the source URLs).
+    """
+    existing = [p for p in video_paths if os.path.exists(p)]
+    if not existing:
+        return
+
+    token = pipeline.telegram_bot_token
+    chat_id = pipeline.telegram_chat_id
+    total = sum(os.path.getsize(p) for p in existing)
+    try:
+        if total <= telegram.TELEGRAM_MAX_UPLOAD_BYTES:
+            dropped = len(existing) - telegram.TELEGRAM_MEDIA_GROUP_MAX
+            telegram.send_media_group(token, chat_id, existing)  # type: ignore[arg-type]
+            if dropped > 0:
+                log.info(
+                    "Pipeline %d: %d video(s) over the sendMediaGroup limit were "
+                    "not attached; their source URLs are in the message",
+                    pipeline.id, dropped,
+                )
+            return
+        first = existing[0]
+        if os.path.getsize(first) > telegram.TELEGRAM_MAX_UPLOAD_BYTES:
+            log.info(
+                "Pipeline %d: video %s exceeds the Telegram upload limit — "
+                "sent source URLs only", pipeline.id, first,
+            )
+            return
+        telegram.send_document(token, chat_id, first)  # type: ignore[arg-type]
+        log.info(
+            "Pipeline %d: total %d bytes over the Telegram limit — attached the "
+            "first video only", pipeline.id, total,
+        )
+    except Exception as e:
+        log.warning("Telegram attachment failed for pipeline %d: %s", pipeline.id, e)
+
+
+def send_telegram_summary(
+    pipeline: ChannelPipeline,
+    run: PipelineRun,
+    artifacts: Optional[RunArtifacts] = None,
+) -> None:
     """Send Telegram notification if pipeline has bot config."""
     if not pipeline.telegram_bot_token or not pipeline.telegram_chat_id:
         return
@@ -1078,6 +1402,22 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
             parts.append(f"⏭️ Bỏ qua (hết): {run.skipped_exhausted_count}")
         if run.failed_count:
             parts.append(f"⚠️ Thất bại: {run.failed_count}")
+
+    if artifacts is not None and artifacts.source_urls:
+        parts.extend(["", "📼 Đã tải (chưa đăng):"])
+        parts.extend(f"- {u}" for u in artifacts.source_urls)
+
+    # Every notification carries download links: the message is cheap, the
+    # bytes only move when someone clicks. Publishing moves the files out of
+    # the run's temp dirs, so it has to happen before the message is sent and
+    # before the outer context deletes those dirs.
+    if artifacts is not None:
+        links = _publish_video_links(pipeline, artifacts)
+        if links:
+            parts.extend(["", f"⬇️ Tải video (còn {_LINK_RETENTION_HOURS}h):"])
+            parts.extend(f"- {link}" for link in links)
+
+    parts.extend(_attach_fields_block(pipeline))
 
     uploads: list[VideoUpload] = []
     if run.id is not None:
@@ -1133,17 +1473,41 @@ def send_telegram_summary(pipeline: ChannelPipeline, run: PipelineRun) -> None:
     except Exception as e:
         log.warning("Telegram notify failed for pipeline %d: %s", pipeline.id, e)
 
+    if pipeline.telegram_attach_video and artifacts is not None:
+        _send_video_attachments(pipeline, [v.path for v in artifacts.videos])
+
 
 # ─── Pipeline run context manager ─────────────────────────────────────────
+
+
+def _has_accounts(pipeline: ChannelPipeline) -> bool:
+    try:
+        return bool(json.loads(pipeline.account_ids_json or "[]"))
+    except ValueError:
+        return False
+
+
+def _needs_artifacts(pipeline: ChannelPipeline) -> bool:
+    """True when downloaded files must outlive run_pipeline.
+
+    A pipeline wired to Telegram gets a download link per video, so its files
+    move into the 24h store instead of being deleted at the end of the tick. A
+    pipeline with no Telegram and at least one account keeps deleting each
+    video right after its upload, so disk use there stays flat.
+    """
+    return bool(pipeline.telegram_bot_token and pipeline.telegram_chat_id) or not _has_accounts(
+        pipeline
+    )
 
 
 @contextmanager
 def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
     """Run pipeline with timeout, always send Telegram summary in finally (even on crash)."""
     run: Optional[PipelineRun] = None
+    artifacts = RunArtifacts() if _needs_artifacts(pipeline) else None
     try:
         ex = ThreadPoolExecutor(max_workers=1)
-        fut = ex.submit(run_pipeline, pipeline, trigger_reason)
+        fut = ex.submit(run_pipeline, pipeline, trigger_reason, artifacts)
         try:
             run = fut.result(timeout=MAX_PIPELINE_SECONDS)
         except FutureTimeoutError:
@@ -1158,6 +1522,10 @@ def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
     except Exception:
         log.exception("Unhandled error in pipeline_tick for pipeline %d", pipeline.id)
         _emergency_finalize(pipeline.id)  # type: ignore[arg-type]
+        _notify_pipeline_alert(
+            pipeline.id,  # type: ignore[arg-type]
+            "⚠️ Pipeline crashed (worker timeout or unhandled exception)",
+        )
         try:
             with Session(_api_db.engine) as s:
                 run = s.exec(
@@ -1170,7 +1538,18 @@ def _pipeline_run_context(pipeline: ChannelPipeline, trigger_reason: str):
         raise
     finally:
         if run is not None:
-            send_telegram_summary(pipeline, run)
+            try:
+                send_telegram_summary(pipeline, run, artifacts)
+            except Exception:
+                # Deletion below must still run, so the notification failure
+                # is logged here instead of escaping the finally block.
+                log.exception("send_telegram_summary failed for pipeline %d", pipeline.id)
+        # Deleted even when the run crashed (run is None) so a failed tick
+        # never leaves downloaded videos behind.
+        if artifacts is not None:
+            for path in artifacts.cleanup_paths:
+                if os.path.exists(path):
+                    shutil.rmtree(path, ignore_errors=True)
 
 
 # ─── Pipeline tick (composed) ──────────────────────────────────────────────
@@ -1189,7 +1568,14 @@ def pipeline_tick() -> bool:
 
     try:
         with _pipeline_run_context(pipeline, trigger_reason) as run:
-            skip_window = run is not None and run.uploaded_count > 0
+            # A download-only pipeline never uploads, so "did something new
+            # happen" is measured by pulled_count instead — otherwise a
+            # windowed pipeline would re-fire (and re-notify) all window long.
+            produced = run is not None and (
+                run.uploaded_count > 0
+                or (not _has_accounts(pipeline) and run.pulled_count > 0)
+            )
+            skip_window = produced
             advance_next_fire(pipeline, trigger_reason, skip_window=skip_window)
     except Exception:
         advance_next_fire(pipeline, trigger_reason)

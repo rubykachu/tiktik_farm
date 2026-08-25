@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { DouyinCookies } from "../api/douyin_cookies";
-import { Telegram, TelegramChatItem } from "../api/telegram";
+import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram";
 import { Settings } from "../api/settings";
 
 const baseSchema = z.object({
@@ -30,7 +30,7 @@ const baseSchema = z.object({
   allow_duet: z.coerce.number().min(0).max(1),
   allow_stitch: z.coerce.number().min(0).max(1),
   visibility_type: z.coerce.number().min(0).max(1),
-  account_ids: z.array(z.number()).min(1, "Choose at least one account"),
+  account_ids: z.array(z.number()),
   window_end_time: z.string().optional().default(""),
   window_delay_minutes: z.coerce.number().int().min(3).optional().or(z.literal("")),
   telegram_bot_token: z.string().optional().default(""),
@@ -42,6 +42,8 @@ const baseSchema = z.object({
       message: "Chat ID must be numeric (e.g. -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
+  telegram_attach_video: z.boolean().optional().default(false),
+  telegram_attach_fields: z.array(z.string()).optional().default([]),
   sync_from_date: z.string().optional().default(""),
 });
 
@@ -233,6 +235,8 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   telegram_bot_token: "",
   telegram_chat_id: "",
   clear_bot_token: false,
+  telegram_attach_video: false,
+  telegram_attach_fields: [],
   sync_from_date: TODAY_DATE,
 };
 
@@ -243,6 +247,13 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const { data: accounts } = useQuery({
     queryKey: ["accounts"],
     queryFn: Accounts.list,
+    enabled: open,
+  });
+
+  // Server-owned list so adding a field there does not need a webapp change.
+  const { data: telegramAttachFields } = useQuery<TelegramAttachField[]>({
+    queryKey: ["telegram-attach-fields"],
+    queryFn: Telegram.attachFields,
     enabled: open,
   });
 
@@ -293,6 +304,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       telegram_bot_token: "",
       telegram_chat_id: "",
       clear_bot_token: false,
+      telegram_attach_video: false,
+      telegram_attach_fields: [],
       sync_from_date: TODAY_DATE,
     },
   });
@@ -342,6 +355,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
         clear_bot_token: false,
+        telegram_attach_video: pipeline.telegram_attach_video ?? false,
+        telegram_attach_fields: pipeline.telegram_attach_fields ?? [],
         sync_from_date: pipeline.sync_from_date ?? "",
       });
     } else {
@@ -439,6 +454,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
+        telegram_attach_video: data.telegram_attach_video,
+        telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
       };
       if (data.telegram_bot_token) {
@@ -466,6 +483,8 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
+        telegram_attach_video: data.telegram_attach_video,
+        telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
       });
     }
@@ -490,6 +509,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
+  const attachFields = watch("telegram_attach_fields") ?? [];
   const captionTemplate = watch("caption_template");
   const captionAiPrompt = watch("caption_ai_prompt");
 
@@ -862,11 +882,14 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             {/* Accounts */}
             <div className="space-y-2">
               <label className="label">
-                Tài khoản TikTok<span className="text-red-500">*</span>{" "}
+                Tài khoản TikTok{" "}
                 <span className="text-slate-400 font-normal">
                   ({selectedAccounts.length} đã chọn)
                 </span>
               </label>
+              <p className="text-xs text-slate-500">
+                Bỏ trống nếu chỉ muốn tải video và nhận qua Telegram để tự đăng.
+              </p>
               {validAccounts.length === 0 && (
                 <p className="text-xs text-amber-600">
                   Chưa có tài khoản hợp lệ. Hãy nhập cookie trước.
@@ -945,24 +968,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     <button
                       type="button"
                       className="ml-1 text-xs text-brand-600 hover:underline font-normal"
-                      onClick={() =>
-                        setValue(
-                          "caption_ai_prompt",
-                          `You are a TikTok caption writer. Rewrite the video TITLE and DESCRIPTION below into one short English caption for reposting on TikTok.
-
-Output rules (strict):
-- English only. Never include Chinese or any other source-language text — no original text in parentheses, no transliteration.
-- Return only the caption itself: no quotation marks around it, no labels, no explanations.
-- Maximum 150 characters including hashtags. One or two short sentences.
-
-Content rules:
-- If the source already contains an English line, use it as the base and only polish it.
-- If the title is a poem or mood line unrelated to the video, translate its feeling into natural English — do not invent product or marketing details that are not in the source.
-- Stay accurate to the source; never invent facts.
-- Remove episode or series numbering (e.g. "第178集:", "Ep 12").
-- Hashtags: translate the original hashtags into natural English equivalents. You may add at most 1-2 broadly relevant tags; never invent specific tags with no basis in the source.`,
-                        )
-                      }
+                      onClick={() => {
+                        void Settings.sampleCaptionPrompt()
+                          .then((prompt) =>
+                            setValue("caption_ai_prompt", prompt, {
+                              shouldValidate: true,
+                            })
+                          )
+                          .catch(() => toast.error("Không tải được prompt mẫu"));
+                      }}
                     >
                       Dùng mẫu
                     </button>
@@ -1170,6 +1184,47 @@ Content rules:
             {telegramDetectErr && (
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs text-slate-500">
+                Thông báo luôn kèm link tải video, dùng được cả với video lớn.
+                Video giữ trên máy chủ 24 giờ.
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" {...register("telegram_attach_video")} />
+                Đính kèm luôn file video vào tin nhắn
+              </label>
+              <p className="text-xs text-slate-500">
+                Telegram chỉ nhận file tối đa 50 MB — vượt quá thì chỉ còn link.
+              </p>
+              {selectedAccounts.length > 0 && (telegramAttachFields?.length ?? 0) > 0 && (
+                <div>
+                  <label className="label">Gửi kèm thông tin tài khoản</label>
+                  <div className="flex flex-wrap gap-4">
+                    {telegramAttachFields!.map((f) => (
+                      <label key={f.key} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={attachFields.includes(f.key)}
+                          onChange={(e) => {
+                            setValue(
+                              "telegram_attach_fields",
+                              e.target.checked
+                                ? [...attachFields, f.key]
+                                : attachFields.filter((x) => x !== f.key),
+                              { shouldValidate: true }
+                            );
+                          }}
+                        />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Thông tin đăng nhập sẽ hiển thị dạng chữ thường trong tin nhắn Telegram.
+                  </p>
+                </div>
+              )}
+            </div>
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">
                 <input type="checkbox" {...register("clear_bot_token")} />

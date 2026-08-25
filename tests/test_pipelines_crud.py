@@ -188,13 +188,15 @@ class TestCreate:
         )
         assert r.status_code in (400, 422)
 
-    def test_400_empty_accounts(self, client):
+    def test_201_empty_accounts(self, client):
+        """No TikTok account = download-only pipeline; the run notifies instead."""
         r = client.post(
             "/api/pipelines",
             json=_valid_payload(account_id=1, account_ids=[]),
             headers=HEADERS_OK,
         )
-        assert r.status_code in (400, 422)
+        assert r.status_code == 201
+        assert r.json()["account_ids_json"] == "[]"
 
     def test_400_account_id_does_not_exist(self, client):
         r = client.post(

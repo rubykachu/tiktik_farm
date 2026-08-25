@@ -10,6 +10,8 @@ from typing import Optional
 
 import yt_dlp
 
+from api.services.ytdlp_opts import extractor_args
+
 from api.services.youtube_validate import is_youtube_url
 
 
@@ -36,6 +38,7 @@ def list_top_n(channel_url: str, n: int = 5, sync_from_date: Optional[date] = No
         "quiet": True,
         "no_warnings": True,
         "ignoreerrors": True,
+        **extractor_args(),
     }
     if sync_from_date is not None:
         opts["dateafter"] = sync_from_date.strftime("%Y%m%d")
@@ -65,7 +68,12 @@ def get_video_info(video_url: str) -> dict:
     """Fetch title and description without downloading. Returns {title, description}."""
     if not is_youtube_url(video_url):
         raise ValueError(f"Not a valid YouTube URL: {video_url}")
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        **extractor_args(),
+    }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=False)
     if not info:
@@ -109,6 +117,7 @@ def download(
         "quiet": True,
         "no_warnings": True,
         "overwrites": True,
+        **extractor_args(),
     }
 
     if max_duration_seconds is not None:

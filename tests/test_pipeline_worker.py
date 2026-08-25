@@ -2,7 +2,7 @@
 import json
 import pytest
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import ANY, patch, MagicMock
 
 from sqlmodel import Session, SQLModel, select
 
@@ -1025,7 +1025,7 @@ class TestPipelineRunContext:
         with _pipeline_run_context(pipeline, "scheduled") as r:
             assert r is run
 
-        mock_notify.assert_called_once_with(pipeline, run)
+        mock_notify.assert_called_once_with(pipeline, run, ANY)
 
     @patch("scheduler.pipeline_worker.send_telegram_summary")
     @patch("scheduler.pipeline_worker._emergency_finalize")
@@ -1070,7 +1070,7 @@ class TestPipelineRunContext:
         with _pipeline_run_context(pipeline, "scheduled"):
             pass
 
-        mock_notify.assert_called_once_with(pipeline, run)
+        mock_notify.assert_called_once_with(pipeline, run, ANY)
 
     @patch("scheduler.pipeline_worker.send_telegram_summary")
     @patch("scheduler.pipeline_worker._emergency_finalize")
@@ -1184,7 +1184,7 @@ class TestPipelineRunContext:
                     with _pipeline_run_context(pipeline, "scheduled"):
                         pass
 
-        mock_notify.assert_called_once_with(pipeline, db_run)
+        mock_notify.assert_called_once_with(pipeline, db_run, ANY)
 
 
 class TestEmergencyFinalize:

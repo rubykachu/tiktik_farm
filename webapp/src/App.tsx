@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import Sidebar from "./components/Sidebar";
 import AccountsPage from "./pages/Accounts";
+import DownloadsPage from "./pages/Downloads";
 import SchedulesPage from "./pages/Schedules";
 import HistoriesPage from "./pages/Histories";
 import SettingsPage from "./pages/Settings";
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/accounts" replace />} />
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
+          <Route path="/downloads" element={<DownloadsPage />} />
           <Route path="/histories" element={<HistoriesPage />} />
           <Route path="/videos" element={<Navigate to="/histories" replace />} />
           <Route path="/settings" element={<SettingsPage />} />

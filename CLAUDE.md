@@ -58,10 +58,13 @@ cd webapp && npm run build   # Type-check + bundle
 webapp (React/Vite → nginx, :3000)
   └─ /api/* proxied to →
 api (FastAPI, :8000 internal)
-  ├─ api/models.py       SQLModel: Account, ChannelPipeline, PipelineRun, VideoUpload, DouyinCookie
+  ├─ api/models.py       SQLModel: Account, ChannelPipeline, PipelineRun, VideoUpload, DouyinCookie,
+  │                      PipelineSeenVideo (dedupe for account-less pipelines), ManualDownload
   ├─ api/schemas.py      Pydantic request/response shapes
-  ├─ api/routers/        endpoint groups (accounts, pipelines, videos, telegram, settings, llm_models, douyin_cookies)
-  └─ api/services/       tiktok_adapter, youtube_channel, douyin_channel, caption, llm, secrets, telegram, ...
+  ├─ api/routers/        endpoint groups (accounts, pipelines, videos, telegram, settings, llm_models,
+  │                      douyin_cookies, downloads)
+  └─ api/services/       tiktok_adapter, youtube_channel, douyin_channel, caption, llm, llm_rewrite,
+                         manual_download, account_fields, caption_prompt, secrets, telegram, ...
 scheduler (Python worker)
   └─ polls DB every 30s → pipeline_worker.py: claim lock → yt-dlp/douyin-downloader → tiktok_adapter → VideoUpload
 ```
@@ -74,6 +77,7 @@ scheduler (Python worker)
 |---|---|
 | `api/` or `scheduler/` Python | `make restart` |
 | `requirements.txt` or `tiktok_uploader/` | `make rebuild-base` |
+| yt-dlp stops downloading YouTube | bump the `yt-dlp>=` floor, `make rebuild-base` |
 | `webapp/` src | nothing (Vite HMR) in dev; `make recreate-webapp` in prod |
 | Dockerfile or new service | `make rebuild` |
 
@@ -98,6 +102,28 @@ To sync only the signing JS (safe): `bash scripts/update-tiktok-signature.sh`.
 - `config.txt` (not `.env`) is what `Config` class reads for uploader settings. `.env` is only used for `TIKTOK_LOGIN_URL`.
 - Native dev cookie dir is `./CookiesDir/`; Docker uses `./data/CookiesDir/`. They don't share.
 - `api/logging.py` scrubs Telegram `bot_token` from all log output.
+- A pipeline with `account_ids_json = "[]"` uploads nothing: it downloads, notifies Telegram
+  (optionally with the video file and the accounts' login/password), then deletes the files.
+  Deletion is deferred to `_pipeline_run_context` so the notification can still attach them.
+- Telegram sends retry transient failures (network, 5xx, 429 with its `retry_after`) up to
+  `MAX_SEND_ATTEMPTS` with doubling backoff; other 4xx are not retried. Constants live in
+  `api/services/telegram.py`. Tests must patch `api.services.telegram.time.sleep`.
+- Manual downloads (`/api/downloads`) run as FastAPI background tasks in the api process and are
+  kept under `MANUAL_DOWNLOAD_DIR` for 24h. Expired ones are deleted by the scheduler's daily
+  retention pass and by `GET /api/downloads`, so retention holds without the scheduler.
+- Every Telegram notification carries a signed download link per video: the message is cheap and
+  the bytes only move when someone clicks, which is also the only way past Telegram's 50 MB
+  bot-upload cap. Publishing MOVES the file into the manual-download store, so anything holding
+  the old path must follow `PublishedVideo.file_path`. Needs `PUBLIC_BASE_URL` (or `HOST`);
+  without one the notification degrades to text. `telegram_attach_video` additionally uploads
+  the file into the chat.
+- `tiktok_uploader` calls `load_dotenv()` on import, so the developer's real `.env` reaches tests.
+  Any test whose behavior depends on `HOST` / `PUBLIC_BASE_URL` must set or clear them itself.
+- `/api/public/downloads/{id}/{token}` is the ONLY route nginx exempts from Basic Auth
+  (`webapp/nginx.conf`), because the link has to open on a phone. The HMAC (`secrets.sign`) is the
+  authentication there. Never put another endpoint under `/api/public/`.
+- `pipeline_seen_videos` rows have no age cutoff — they are the only dedupe key for account-less
+  pipelines and are deleted only with their pipeline.
 - `fake-useragent` must stay pinned in `requirements.txt` to prevent bug #2 regression.
 
 ---
