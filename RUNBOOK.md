@@ -181,7 +181,55 @@ Không đỡ thì tra bảng dưới.
 
 ---
 
-## Phần 4 — Thêm máy thứ hai
+## Phần 4 — AI viết caption (không bắt buộc)
+
+Bỏ qua phần này cũng được. Không cài thì caption dùng nguyên tiêu đề gốc của
+video nguồn, mọi thứ khác chạy bình thường.
+
+Muốn AI viết lại caption thì cài Ollama ngay trên máy này:
+
+```bash
+brew install ollama
+ollama serve          # để cửa sổ này chạy, hoặc bật app Ollama
+ollama pull llama3.2
+```
+
+Mở file `.env`, tìm hai dòng sau và **bỏ dấu `#`** ở đầu:
+
+```
+OLLAMA_MODEL=llama3.2:latest
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+**Giữ nguyên `host.docker.internal`.** Đó là cách container gọi ngược về máy này.
+Sửa thành địa chỉ máy khác trong mạng LAN sẽ bị chặn vì lý do an toàn, và hệ
+thống sẽ không khởi động được.
+
+Rồi:
+
+```bash
+make start
+```
+
+Cuối cùng vào web → **Cài đặt** → chuyển chế độ AI sang **Local (Ollama)**.
+
+Muốn AI thật sự chạy cho một lịch đăng, mở lịch đó ra và làm cả hai việc:
+
+1. Trong ô Caption, thêm `{ai_title}`
+2. Mở mục "Viết lại caption bằng AI", bấm **Dùng mẫu**, rồi bấm **Thử nghiệm**
+   để xem AI viết ra gì trước khi chạy thật
+
+Thiếu một trong hai thì AI không được gọi.
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| Bật xong mà caption vẫn là tiêu đề gốc | Lịch đăng chưa có `{ai_title}` hoặc chưa điền prompt |
+| Sau khi sửa `.env`, web không vào được | `make logs` xem lỗi. Thường do sửa sai `OLLAMA_BASE_URL`. |
+| AI trả về chậm hoặc lỗi | Kiểm tra Ollama còn chạy: `ollama list` |
+
+---
+
+## Phần 5 — Thêm máy thứ hai
 
 Làm lại toàn bộ Phần 1 trên máy mới, đổi `farm1` thành `farm2` ở mọi chỗ:
 tên tunnel, tên miền con, và cả hai dòng trong `.env`.
