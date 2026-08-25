@@ -10,6 +10,7 @@ import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { DouyinCookies } from "../api/douyin_cookies";
 import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram";
+import { TelegramConfigs } from "../api/telegram_configs";
 import { Settings } from "../api/settings";
 
 const baseSchema = z.object({
@@ -287,6 +288,12 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
   const { data: douyinCookies } = useQuery({
     queryKey: ["douyin-cookies"],
     queryFn: DouyinCookies.list,
+    enabled: open,
+  });
+
+  const { data: telegramConfigs } = useQuery({
+    queryKey: ["telegram-configs"],
+    queryFn: TelegramConfigs.list,
     enabled: open,
   });
 
@@ -1088,6 +1095,31 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
             <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
               Thông báo <span className="text-slate-400 font-normal text-sm">(tùy chọn)</span>
             </legend>
+            {telegramConfigs && telegramConfigs.length > 0 && (
+              <div>
+                <label className="label">Chọn Telegram config</label>
+                <select
+                  className="input"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) return;
+                    const cfg = telegramConfigs.find((c) => String(c.id) === v);
+                    if (cfg) {
+                      setValue("telegram_bot_token", cfg.bot_token, { shouldValidate: true });
+                      setValue("telegram_chat_id", cfg.chat_id, { shouldValidate: true });
+                    }
+                  }}
+                >
+                  <option value="">Tự nhập...</option>
+                  {telegramConfigs.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid lg:grid-cols-2 gap-3">
               <div>
                 <label className="label">Bot Token</label>

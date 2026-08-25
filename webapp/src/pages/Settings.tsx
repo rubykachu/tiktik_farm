@@ -4,6 +4,8 @@ import { Plus, Star, Trash2, Edit, X, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Settings as SettingsApi } from "../api/settings";
 import { LLMModels, LLMModel, LLMModelCreate } from "../api/llmModels";
+import { TelegramConfigs, TelegramConfig } from "../api/telegram_configs";
+import { Telegram, TelegramChatItem } from "../api/telegram";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 type EditState =
@@ -220,6 +222,8 @@ export default function SettingsPage() {
           </>
         )}
       </section>
+
+      <TelegramConfigsSection />
 
       {editState && (
         <LLMModelModal
@@ -583,6 +587,315 @@ function LLMModelModal({
             onClick={onSave}
           >
             {isEdit ? "Lưu" : "Thêm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Telegram configs ───────────────────────────────────────────────────────
+
+function maskBotToken(token: string): string {
+  return `${token.slice(0, 6)}••••••`;
+}
+
+function TelegramConfigsSection() {
+  const qc = useQueryClient();
+  const { data: configs, isLoading, isError } = useQuery({
+    queryKey: ["telegram-configs"],
+    queryFn: TelegramConfigs.list,
+  });
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<TelegramConfig | null>(null);
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => TelegramConfigs.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["telegram-configs"] });
+      toast.success(`Đã xóa cấu hình "${deleteTarget?.name ?? ""}"`);
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => {
+      toast.error("Xóa thất bại", { description: e?.response?.data?.detail ?? e.message });
+      setDeleteTarget(null);
+    },
+  });
+
+  return (
+    <section className="card p-6 space-y-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium">Telegram</h3>
+          <p className="text-sm text-slate-500">
+            Lưu sẵn bot_token/chat_id để chọn nhanh khi tạo lịch đăng, không cần nhập lại mỗi lần.
+          </p>
+        </div>
+        <button className="btn-primary" onClick={() => setAddOpen(true)}>
+          <Plus size={16} /> Thêm cấu hình
+        </button>
+      </header>
+
+      <div className="card p-0 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left p-3">Tên</th>
+              <th className="text-left p-3">Chat ID</th>
+              <th className="text-left p-3">Bot Token</th>
+              <th className="p-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {isLoading && (
+              <tr>
+                <td className="p-4 text-slate-500" colSpan={4}>Đang tải…</td>
+              </tr>
+            )}
+            {isError && (
+              <tr>
+                <td className="p-4 text-center text-red-400" colSpan={4}>
+                  Không thể tải. Kiểm tra kết nối.
+                </td>
+              </tr>
+            )}
+            {!isLoading && !isError && configs && configs.length === 0 && (
+              <tr>
+                <td className="p-6 text-center text-slate-500" colSpan={4}>
+                  Chưa có cấu hình Telegram nào.
+                </td>
+              </tr>
+            )}
+            {configs?.map((c) => (
+              <tr key={c.id}>
+                <td className="p-3 font-medium">{c.name}</td>
+                <td className="p-3 text-slate-600">
+                  <code className="text-xs bg-slate-100 px-1 rounded">{c.chat_id}</code>
+                </td>
+                <td className="p-3 text-slate-500">
+                  <code className="text-xs">{maskBotToken(c.bot_token)}</code>
+                </td>
+                <td className="p-3 text-right">
+                  <button
+                    className="text-xs text-red-600"
+                    onClick={() => setDeleteTarget(c)}
+                  >
+                    <Trash2 size={14} className="inline" /> Xóa
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {addOpen && <TelegramConfigModal onClose={() => setAddOpen(false)} />}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Xóa "${deleteTarget?.name ?? ""}"?`}
+        body={<p>Cấu hình sẽ bị xóa khỏi danh sách. Các lịch đăng đã dùng giá trị này trước đó không bị ảnh hưởng.</p>}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+      />
+    </section>
+  );
+}
+
+function formatTelegramApiError(e: any): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => `${(d.loc ?? []).join(".")}: ${d.msg}`).join("; ");
+  }
+  return e?.message || "Request failed";
+}
+
+function TelegramConfigModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+
+  const [name, setName] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
+  const [detectLoading, setDetectLoading] = useState(false);
+  const [detectChats, setDetectChats] = useState<TelegramChatItem[] | null>(null);
+  const [detectErr, setDetectErr] = useState<string | null>(null);
+  const [testSending, setTestSending] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const createMut = useMutation({
+    mutationFn: () => TelegramConfigs.create(name.trim(), botToken.trim(), chatId.trim()),
+    onMutate: () => setNotice(null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["telegram-configs"] });
+      onClose();
+    },
+    onError: (e: any) => setNotice({ ok: false, message: formatTelegramApiError(e) }),
+  });
+
+  async function handleDetect() {
+    const token = botToken.trim();
+    if (!token) return;
+    setDetectLoading(true);
+    setDetectErr(null);
+    try {
+      const data = await Telegram.detectChats(token);
+      setDetectChats(data.chats);
+    } catch (e: any) {
+      setDetectChats(null);
+      setDetectErr(formatTelegramApiError(e));
+    } finally {
+      setDetectLoading(false);
+    }
+  }
+
+  async function handleTest() {
+    const token = botToken.trim();
+    const chat = chatId.trim();
+    if (!token || !chat) return;
+    setTestSending(true);
+    setNotice(null);
+    try {
+      const r = await Telegram.sendTest(token, chat);
+      setNotice({ ok: r.ok, message: r.message });
+    } catch (e: any) {
+      setNotice({ ok: false, message: formatTelegramApiError(e) });
+    } finally {
+      setTestSending(false);
+    }
+  }
+
+  const canSubmit = name.trim() && botToken.trim() && chatId.trim();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="rounded-lg bg-white shadow-xl w-full max-w-lg p-6 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Thêm cấu hình Telegram</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="label-required">Tên</label>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Kênh chính"
+            />
+          </div>
+
+          <div>
+            <label className="label-required">Bot Token</label>
+            <div className="flex gap-2 items-stretch">
+              <input
+                type="password"
+                className="input flex-1 min-w-0"
+                value={botToken}
+                onChange={(e) => {
+                  setBotToken(e.target.value);
+                  setDetectChats(null);
+                  setDetectErr(null);
+                  setNotice(null);
+                }}
+                placeholder="123456:ABC-DEF..."
+              />
+              <button
+                type="button"
+                className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                disabled={detectLoading || !botToken.trim()}
+                onClick={() => void handleDetect()}
+              >
+                {detectLoading ? "Đang tìm…" : "Dò chat"}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="label-required">Chat ID</label>
+            <div className="flex gap-2 items-stretch">
+              <input
+                className="input flex-1 min-w-0"
+                value={chatId}
+                onChange={(e) => {
+                  setChatId(e.target.value);
+                  setNotice(null);
+                }}
+                placeholder="-1001234567890"
+                inputMode="numeric"
+              />
+              <button
+                type="button"
+                className="btn-secondary shrink-0 whitespace-nowrap px-3 text-sm"
+                disabled={testSending || !botToken.trim() || !chatId.trim()}
+                onClick={() => void handleTest()}
+              >
+                {testSending ? "Đang gửi…" : "Gửi thử"}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Chỉ nhập số (kênh private thường bắt đầu bằng{" "}
+              <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot làm admin kênh.
+            </p>
+          </div>
+
+          {detectChats && detectChats.length > 0 && (
+            <div>
+              <label className="label">Chọn chat đã tìm thấy</label>
+              <select
+                className="input"
+                key={detectChats.map((c) => c.id).join(",")}
+                defaultValue=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setChatId(v);
+                }}
+              >
+                <option value="">— Chọn —</option>
+                {detectChats.map((c) => (
+                  <option key={c.id} value={String(c.id)}>
+                    {`${c.title} (${c.type}) — ${c.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {detectChats && detectChats.length === 0 && !detectLoading && (
+            <p className="text-sm text-amber-700">
+              Không tìm thấy chat nào. Hãy gửi một tin nhắn cho bot rồi thử lại.
+            </p>
+          )}
+          {detectErr && <p className="text-sm text-red-600">{detectErr}</p>}
+
+          {notice && (
+            <div
+              className={
+                "text-xs break-words rounded-md px-3 py-2 max-h-32 overflow-y-auto " +
+                (notice.ok
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-red-50 text-red-700 border border-red-200")
+              }
+            >
+              <span className="font-medium">{notice.ok ? "✓ " : "✗ "}</span>
+              {notice.message}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <button className="btn-secondary" onClick={onClose}>
+            Hủy
+          </button>
+          <button
+            className="btn-primary"
+            disabled={!canSubmit || createMut.isPending}
+            onClick={() => createMut.mutate()}
+          >
+            Lưu
           </button>
         </div>
       </div>

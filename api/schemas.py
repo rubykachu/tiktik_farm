@@ -397,6 +397,36 @@ class PipelineRead(BaseModel):
 # ---------- telegram (web UI helpers) --------------------------------------
 
 
+class TelegramConfigCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    bot_token: str = Field(min_length=1)
+    chat_id: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat_id_shape(cls, v: str) -> str:
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("chat_id format invalid")
+        return v
+
+
+class TelegramConfigRead(BaseModel):
+    id: int
+    name: str
+    bot_token: str
+    chat_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TelegramDetectChatsRequest(BaseModel):
     bot_token: str = Field(min_length=1)
 
