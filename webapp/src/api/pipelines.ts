@@ -2,8 +2,19 @@ import { api } from "./client";
 
 export type TelegramNotifyMode = "changes_only" | "cycle" | "every_tick";
 
+export type LastRunStatus = "ok" | "partial" | "failed" | "error" | "running";
+
+export interface PipelineLastRun {
+  at: string | null;
+  status: LastRunStatus;
+  uploaded_count: number;
+  failed_count: number;
+  error_text: string | null;
+}
+
 export interface Pipeline {
   id: number;
+  last_run: PipelineLastRun | null;
   name: string;
   channel_url: string;
   source_type: "youtube" | "douyin";
@@ -95,6 +106,13 @@ export interface PipelineUpdate {
   sync_from_date?: string | null;
 }
 
+export interface RunPage {
+  items: PipelineRunItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface PipelineRunItem {
   id: number;
   pipeline_id: number;
@@ -140,7 +158,9 @@ export const Pipelines = {
   runNow: (id: number) =>
     api.post<{ ok: boolean; message: string }>(`/pipelines/${id}/run-now`).then((r) => r.data),
   listRuns: (pipelineId: number, page = 1) =>
-    api.get<PipelineRunItem[]>(`/pipelines/${pipelineId}/runs`, { params: { page } }).then((r) => r.data),
+    api
+      .get<RunPage>(`/pipelines/${pipelineId}/runs`, { params: { page } })
+      .then((r) => r.data),
   listRunVideos: (pipelineId: number, runId: number) =>
     api.get<VideoUploadItem[]>(`/pipelines/${pipelineId}/runs/${runId}/videos`).then((r) => r.data),
   clearRuns: (pipelineId: number, runIds: number[]) => {

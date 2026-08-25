@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { Bell, ChevronDown, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
 import { Pipelines, PipelineRunItem } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
@@ -353,23 +353,34 @@ function DayGroupRow({
   );
 }
 
+// Mirrors the API default; the expand panel does not override `size`.
+const RUNS_PAGE_SIZE = 50;
+
 const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at);
 
 export default function PipelineRunsExpand({ pipelineId }: Props) {
   const qc = useQueryClient();
+  const [page, setPage] = useState(1);
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["pipeline-runs", pipelineId],
-    queryFn: () => Pipelines.listRuns(pipelineId),
+    queryKey: ["pipeline-runs", pipelineId, page],
+    queryFn: () => Pipelines.listRuns(pipelineId, page),
     refetchInterval: (query) => {
-      const runs = query.state.data;
-      return runs && hasRunning(runs) ? 5000 : false;
+      const rows = query.state.data?.items;
+      return rows && hasRunning(rows) ? 5000 : false;
     },
+    placeholderData: (prev) => prev,
   });
+
+  const runs = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(1, Math.ceil(total / RUNS_PAGE_SIZE));
 
   const clearMut = useMutation({
     mutationFn: (runIds: number[]) => Pipelines.clearRuns(pipelineId, runIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipeline-runs", pipelineId] });
+      // Deleting rows can leave the current page past the end of the list.
+      setPage(1);
       toast.success("Đã xóa log");
     },
     onError: (e: any) => toast.error("Xóa log thất bại", { description: e.message }),
@@ -377,9 +388,9 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
 
   if (isLoading) return <div className="p-3 text-xs text-slate-400">Đang tải…</div>;
   if (isError) return <div className="p-3 text-xs text-red-400">Không thể tải. Kiểm tra kết nối.</div>;
-  if (!data?.length) return <div className="p-3 text-xs text-slate-400">Chưa có lần chạy nào.</div>;
+  if (!runs.length) return <div className="p-3 text-xs text-slate-400">Chưa có lần chạy nào.</div>;
 
-  const groups = groupByDay(data);
+  const groups = groupByDay(runs);
 
   return (
     <div className="bg-slate-50 border-t py-2">
@@ -405,6 +416,40 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
           ))}
         </tbody>
       </table>
+
+      {total > RUNS_PAGE_SIZE && (
+        <div className="flex items-center justify-between px-3 pt-2 text-xs">
+          <span className="text-slate-500 tabular-nums">
+            {(page - 1) * RUNS_PAGE_SIZE + 1}–
+            {Math.min(page * RUNS_PAGE_SIZE, total)} trên {total} lần chạy
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary px-2 py-0.5 disabled:opacity-40"
+              disabled={page <= 1}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPage((n) => Math.max(1, n - 1));
+              }}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-slate-600 tabular-nums">
+              {page}/{lastPage}
+            </span>
+            <button
+              className="btn-secondary px-2 py-0.5 disabled:opacity-40"
+              disabled={page >= lastPage}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPage((n) => n + 1);
+              }}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

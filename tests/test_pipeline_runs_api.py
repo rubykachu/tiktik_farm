@@ -87,9 +87,10 @@ class TestListRuns:
         resp = client.get(f"/api/pipelines/{ids['pipeline_id']}/runs")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["trigger_reason"] == "manual"
-        assert data[0]["pulled_count"] == 3
+        assert len(data["items"]) == 1
+        assert data["total"] == 1
+        assert data["items"][0]["trigger_reason"] == "manual"
+        assert data["items"][0]["pulled_count"] == 3
 
     def test_empty_runs(self, client):
         ids = _seed()
@@ -116,7 +117,30 @@ class TestListRuns:
 
         resp = client.get(f"/api/pipelines/{p2_id}/runs")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
+        assert resp.json()["total"] == 0
+
+    def test_total_counts_all_runs_not_just_the_page(self, client):
+        """The expand panel silently showed only the newest page before this."""
+        from api.models import PipelineRun
+
+        ids = _seed()
+        with Session(_api_db.engine) as s:
+            for i in range(4):
+                s.add(PipelineRun(
+                    pipeline_id=ids["pipeline_id"],
+                    started_at=now_utc() - timedelta(hours=i + 1),
+                    finished_at=now_utc(),
+                    trigger_reason="scheduled",
+                ))
+            s.commit()
+
+        body = client.get(
+            f"/api/pipelines/{ids['pipeline_id']}/runs", params={"size": "2"}
+        ).json()
+
+        assert len(body["items"]) == 2
+        assert body["total"] == 5
 
     def test_pipeline_not_found(self, client):
         resp = client.get("/api/pipelines/999/runs")

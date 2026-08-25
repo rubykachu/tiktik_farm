@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
@@ -50,8 +50,61 @@ def _load_attach_fields(raw: Optional[str]) -> List[str]:
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
-def _to_read(row: ChannelPipeline) -> dict:
+def _summarise_run(run: Optional[PipelineRun]) -> Optional[dict]:
+    """Condense a run into the one thing the list needs: did it go well?
+
+    `state` on a pipeline says whether the operator switched it on, not whether
+    it works. Without this the only way to spot a broken pipeline is to expand
+    every row.
+    """
+    if run is None:
+        return None
+    if run.finished_at is None:
+        status = "running"
+    elif run.error_text:
+        status = "error"
+    elif run.failed_count and not run.uploaded_count:
+        status = "failed"
+    elif run.failed_count:
+        status = "partial"
+    else:
+        status = "ok"
     return {
+        "at": run.started_at.isoformat() if run.started_at else None,
+        "status": status,
+        "uploaded_count": run.uploaded_count,
+        "failed_count": run.failed_count,
+        "error_text": run.error_text,
+    }
+
+
+def _latest_runs(session: Session, pipeline_ids: list[int]) -> dict[int, PipelineRun]:
+    """Newest run per pipeline, in two queries rather than one per row."""
+    if not pipeline_ids:
+        return {}
+    newest = (
+        select(
+            PipelineRun.pipeline_id.label("pid"),  # type: ignore[attr-defined]
+            func.max(PipelineRun.started_at).label("started"),
+        )
+        .where(PipelineRun.pipeline_id.in_(pipeline_ids))  # type: ignore[union-attr]
+        .group_by(PipelineRun.pipeline_id)
+        .subquery()
+    )
+    rows = session.exec(
+        select(PipelineRun).join(
+            newest,
+            (PipelineRun.pipeline_id == newest.c.pid)
+            & (PipelineRun.started_at == newest.c.started),
+        )
+    ).all()
+    # Two runs can share a started_at; last one wins, either is representative.
+    return {r.pipeline_id: r for r in rows}
+
+
+def _to_read(row: ChannelPipeline, last_run: Optional[PipelineRun] = None) -> dict:
+    return {
+        "last_run": _summarise_run(last_run),
         "id": row.id,
         "name": row.name,
         "channel_url": row.channel_url,
@@ -123,7 +176,8 @@ def list_pipelines(
     if state:
         stmt = stmt.where(ChannelPipeline.state == state)
     rows = session.exec(stmt).all()
-    return [_to_read(r) for r in rows]
+    latest = _latest_runs(session, [r.id for r in rows if r.id is not None])
+    return [_to_read(r, latest.get(r.id)) for r in rows]
 
 
 @router.get("/{pipeline_id}", response_model=PipelineRead)
@@ -131,7 +185,7 @@ def get_pipeline(pipeline_id: int, session: Session = Depends(get_session)):
     row = session.get(ChannelPipeline, pipeline_id)
     if not row:
         raise HTTPException(status_code=404, detail="pipeline not found")
-    return _to_read(row)
+    return _to_read(row, _latest_runs(session, [pipeline_id]).get(pipeline_id))
 
 
 @router.post("", response_model=PipelineRead, status_code=status.HTTP_201_CREATED)
@@ -469,6 +523,12 @@ def list_runs(
     if not pipeline:
         raise HTTPException(status_code=404, detail="pipeline not found")
 
+    total = session.exec(
+        select(func.count())
+        .select_from(PipelineRun)
+        .where(PipelineRun.pipeline_id == pipeline_id)
+    ).one()
+
     offset = (page - 1) * size
     rows = session.exec(
         select(PipelineRun)
@@ -478,7 +538,7 @@ def list_runs(
         .limit(size)
     ).all()
 
-    return [
+    items = [
         {
             "id": r.id,
             "pipeline_id": r.pipeline_id,
@@ -497,6 +557,7 @@ def list_runs(
         }
         for r in rows
     ]
+    return {"items": items, "total": total, "page": page, "size": size}
 
 
 @router.delete("/{pipeline_id}/runs", status_code=status.HTTP_204_NO_CONTENT)

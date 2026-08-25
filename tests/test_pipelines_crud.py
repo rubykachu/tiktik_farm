@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 from api.middleware.origin import LOCAL_ORIGIN
 
 HEADERS_OK = {"Origin": LOCAL_ORIGIN}
@@ -407,6 +408,85 @@ class TestPatch:
 
 
 # ----------------- DELETE ---------------------------------------------------
+
+class TestLastRunSummary:
+    """`state` says whether the operator switched a pipeline on; it says
+    nothing about whether the thing works. The list needs both."""
+
+    _seq = 0
+
+    def _pipeline_with_run(self, client, **run_kw):
+        from api import db as _db
+        from api.models import PipelineRun
+
+        TestLastRunSummary._seq += 1
+        n = TestLastRunSummary._seq
+        aid = _make_account(client, username=f"acct_lr{n}")
+        pid = client.post("/api/pipelines", json=_valid_payload(aid, name=f"pipe {n}"),
+                          headers=HEADERS_OK).json()["id"]
+        with Session(_db.engine) as s:
+            s.add(PipelineRun(pipeline_id=pid, started_at=_now(),
+                              trigger_reason="scheduled", **run_kw))
+            s.commit()
+        return pid
+
+    def _last_run(self, client, pid):
+        rows = client.get("/api/pipelines").json()
+        return next(r for r in rows if r["id"] == pid)["last_run"]
+
+    def test_never_run_is_null(self, client):
+        aid = _make_account(client)
+        pid = client.post("/api/pipelines", json=_valid_payload(aid),
+                          headers=HEADERS_OK).json()["id"]
+        assert self._last_run(client, pid) is None
+
+    def test_clean_run_is_ok(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(), uploaded_count=2)
+        assert self._last_run(client, pid)["status"] == "ok"
+
+    def test_all_uploads_failed_is_failed(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(), failed_count=2)
+        assert self._last_run(client, pid)["status"] == "failed"
+
+    def test_some_uploads_failed_is_partial(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(),
+                                      uploaded_count=1, failed_count=1)
+        assert self._last_run(client, pid)["status"] == "partial"
+
+    def test_system_error_outranks_counts(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(),
+                                      uploaded_count=1, error_text="low_disk")
+        summary = self._last_run(client, pid)
+        assert summary["status"] == "error"
+        assert summary["error_text"] == "low_disk"
+
+    def test_unfinished_run_is_running(self, client):
+        pid = self._pipeline_with_run(client)
+        assert self._last_run(client, pid)["status"] == "running"
+
+    def test_reports_the_newest_run_only(self, client):
+        from datetime import timedelta
+
+        from api import db as _db
+        from api.models import PipelineRun
+
+        pid = self._pipeline_with_run(client, finished_at=_now(), failed_count=3)
+        with Session(_db.engine) as s:
+            s.add(PipelineRun(pipeline_id=pid, started_at=_now() + timedelta(hours=1),
+                              finished_at=_now() + timedelta(hours=1),
+                              trigger_reason="scheduled", uploaded_count=1))
+            s.commit()
+
+        assert self._last_run(client, pid)["status"] == "ok"
+
+    def test_each_pipeline_gets_its_own_run(self, client):
+        """One query serves every row; a join bug would smear them together."""
+        good = self._pipeline_with_run(client, finished_at=_now(), uploaded_count=1)
+        bad = self._pipeline_with_run(client, finished_at=_now(), failed_count=1)
+
+        assert self._last_run(client, good)["status"] == "ok"
+        assert self._last_run(client, bad)["status"] == "failed"
+
 
 class TestDelete:
     def test_delete_204_when_not_locked(self, client):
