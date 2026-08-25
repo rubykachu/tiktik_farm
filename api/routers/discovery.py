@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlmodel import Session, delete, select
 
 import api.db as _db
@@ -169,6 +169,21 @@ def get_scan_run(scan_run_id: int, session: Session = Depends(get_session)):
     if run is None:
         raise HTTPException(status_code=404, detail="scan run not found")
     return _to_run_read(run)
+
+
+@router.delete("/scan-runs/{scan_run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_scan_run(scan_run_id: int, session: Session = Depends(get_session)):
+    """Removes one history entry and its result snapshot. Never touches
+    DiscoveryCandidate — a channel's added/skipped decision must survive
+    even after the run that found it is deleted from history."""
+    row = session.get(DiscoveryScanRun, scan_run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="scan run not found")
+    if row.status == "running":
+        raise HTTPException(status_code=409, detail="Lượt quét đang chạy, không xoá được lúc này")
+    session.exec(delete(DiscoveryScanResult).where(DiscoveryScanResult.scan_run_id == scan_run_id))
+    session.delete(row)
+    session.commit()
 
 
 def _to_run_read(row: DiscoveryScanRun) -> DiscoveryScanRunRead:

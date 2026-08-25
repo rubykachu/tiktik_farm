@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from api.middleware.origin import LOCAL_ORIGIN
 from api.models import ChannelPipeline, DiscoveryCandidate, DiscoveryScanResult, DiscoveryScanRun
@@ -268,6 +268,58 @@ class TestScanRuns:
     def test_results_missing_run_404(self, client):
         r = client.get("/api/discovery/scan-runs/9999/results", headers=HEADERS_OK)
         assert r.status_code == 404
+
+    def test_delete_removes_run_and_results(self, client):
+        from api import db as _db
+
+        run_id = self._create_run(client)
+        with Session(_db.engine) as s:
+            run = s.get(DiscoveryScanRun, run_id)
+            run.status = "done"
+            s.add(run)
+            s.add(
+                DiscoveryScanResult(
+                    scan_run_id=run_id, channel_id="UC-a", channel_url="u", channel_title="t", found_via_keyword="kw"
+                )
+            )
+            s.commit()
+
+        r = client.delete(f"/api/discovery/scan-runs/{run_id}", headers=HEADERS_OK)
+        assert r.status_code == 204
+
+        assert client.get(f"/api/discovery/scan-runs/{run_id}", headers=HEADERS_OK).status_code == 404
+        with Session(_db.engine) as s:
+            remaining = s.exec(
+                select(DiscoveryScanResult).where(DiscoveryScanResult.scan_run_id == run_id)
+            ).all()
+        assert remaining == []
+
+    def test_delete_running_run_409(self, client):
+        run_id = self._create_run(client)  # status stays "running" from scan_now's mocked background task
+        r = client.delete(f"/api/discovery/scan-runs/{run_id}", headers=HEADERS_OK)
+        assert r.status_code == 409
+
+    def test_delete_missing_run_404(self, client):
+        r = client.delete("/api/discovery/scan-runs/9999", headers=HEADERS_OK)
+        assert r.status_code == 404
+
+    def test_delete_does_not_touch_candidate_decision(self, client):
+        from api import db as _db
+
+        run_id = self._create_run(client)
+        with Session(_db.engine) as s:
+            run = s.get(DiscoveryScanRun, run_id)
+            run.status = "done"
+            s.add(run)
+            s.add(DiscoveryCandidate(channel_id="UC-a", channel_url="u", channel_title="t", status="added"))
+            s.commit()
+
+        client.delete(f"/api/discovery/scan-runs/{run_id}", headers=HEADERS_OK)
+
+        with Session(_db.engine) as s:
+            candidate = s.exec(select(DiscoveryCandidate).where(DiscoveryCandidate.channel_id == "UC-a")).first()
+        assert candidate is not None
+        assert candidate.status == "added"
 
 
 class TestChannelActions:
