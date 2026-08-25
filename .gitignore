@@ -164,3 +164,6 @@ tiktok_uploader/tiktok-signature/command.txt
 
 # OS
 .DS_Store
+
+# Local backups made by `make backup` — contain the DB, cookies and tunnel key.
+backups/

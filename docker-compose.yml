@@ -29,6 +29,9 @@ services:
     environment:
       - TIKTOK_API_DB_PATH=/data/tiktok.db
       - TIKTOK_CONFIG_PATH=/app/config.txt
+      - MANUAL_DOWNLOAD_DIR=/data/manual_downloads
+      - YTDLP_PLAYER_CLIENTS=${YTDLP_PLAYER_CLIENTS:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - HOST=${HOST:-}
@@ -58,6 +61,9 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - SCHEDULER_CONCURRENCY=4
       - PIPELINE_TMP_DIR=/data/pipeline_tmp
+      - MANUAL_DOWNLOAD_DIR=/data/manual_downloads
+      - YTDLP_PLAYER_CLIENTS=${YTDLP_PLAYER_CLIENTS:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       - DOUYIN_TMP_DIR=/data/douyin_tmp
     extra_hosts:
       - "host.docker.internal:host-gateway"

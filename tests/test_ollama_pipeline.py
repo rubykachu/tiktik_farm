@@ -83,8 +83,8 @@ class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_mode_calls_rewrite_title_offline(
         self, mock_offline, mock_cloud, mock_list, mock_download, mock_upload
     ):
@@ -109,8 +109,8 @@ class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_mode_uses_env_model_and_url(
         self, mock_offline, mock_cloud, mock_list, mock_download, mock_upload
     ):
@@ -136,7 +136,7 @@ class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_failure_falls_back_to_raw_title(
         self, mock_offline, mock_list, mock_download, mock_upload
     ):
@@ -164,8 +164,8 @@ class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_cloud_mode_does_not_call_offline(
         self, mock_offline, mock_cloud, mock_list, mock_download, mock_upload
     ):
@@ -188,7 +188,7 @@ class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_skipped_when_llm_disabled(
         self, mock_offline, mock_list, mock_download, mock_upload
     ):
@@ -213,7 +213,7 @@ class TestOfflineModeEdgeCases:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.youtube_channel.download")
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_empty_offline_response_falls_back_to_raw_title(
         self, mock_offline, mock_list, mock_download, mock_upload
     ):
@@ -240,7 +240,7 @@ class TestOfflineModeEdgeCases:
 class TestDouyinOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_douyin_offline_mode_calls_rewrite_title_offline(
         self, mock_offline, mock_dl, mock_upload
     ):
@@ -282,7 +282,7 @@ class TestDouyinOfflineMode:
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.douyin_channel.download_creator_posts")
-    @patch("scheduler.pipeline_worker.llm.rewrite_title_offline")
+    @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_douyin_offline_failure_falls_back_to_raw_title(
         self, mock_offline, mock_dl, mock_upload
     ):

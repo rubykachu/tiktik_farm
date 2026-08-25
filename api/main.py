@@ -18,12 +18,14 @@ from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import (
     accounts,
     douyin_cookies,
+    downloads,
     llm_models,
     pipelines,
     settings,
     telegram,
     videos,
 )
+from api.services import manual_download
 from tiktok_uploader.Config import Config
 
 
@@ -70,6 +72,10 @@ def create_app() -> FastAPI:
         # Fail-closed: a bad OLLAMA_BASE_URL (SSRF) must refuse to start, not boot silently.
         from api.services.llm_config import get_ollama_config
         get_ollama_config()
+        # Background downloads live in this process: a restart abandons any
+        # that were in flight, and nothing else deletes the expired files.
+        downloads.fail_interrupted()
+        manual_download.purge_expired()
 
     @app.get("/health", tags=["meta"])
     def health():
@@ -82,6 +88,8 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(llm_models.router)
     app.include_router(douyin_cookies.router)
+    app.include_router(downloads.router)
+    app.include_router(downloads.public_router)
     return app
 
 

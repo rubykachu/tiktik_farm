@@ -1,5 +1,7 @@
 import { api } from "./client";
 
+export type TelegramNotifyMode = "changes_only" | "cycle" | "every_tick";
+
 export interface Pipeline {
   id: number;
   name: string;
@@ -23,6 +25,9 @@ export interface Pipeline {
   douyin_cookie_id: number | null;
   telegram_bot_token_set: boolean;
   telegram_chat_id: string | null;
+  telegram_notify_mode: TelegramNotifyMode;
+  telegram_attach_video: boolean;
+  telegram_attach_fields: string[];
   run_now_requested_at: string | null;
   lock_until: string | null;
   created_at: string;
@@ -40,7 +45,9 @@ export interface PipelineCreate {
   interval_unit: "minutes" | "hours" | "days";
   first_fire_at: string;
   caption_template: string;
-  upload_options: {
+  // Comment / duet / stitch / visibility are not exposed in the UI; omit the
+  // field and the server applies its PipelineUploadOptions defaults.
+  upload_options?: {
     allow_comment: 0 | 1;
     allow_duet: 0 | 1;
     allow_stitch: 0 | 1;
@@ -55,6 +62,9 @@ export interface PipelineCreate {
   window_delay_minutes?: number | null;
   telegram_bot_token?: string;
   telegram_chat_id?: string;
+  telegram_notify_mode?: TelegramNotifyMode;
+  telegram_attach_video?: boolean;
+  telegram_attach_fields?: string[];
   sync_from_date?: string | null;
 }
 
@@ -79,6 +89,9 @@ export interface PipelineUpdate {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
   clear_bot_token?: boolean;
+  telegram_notify_mode?: TelegramNotifyMode;
+  telegram_attach_video?: boolean;
+  telegram_attach_fields?: string[];
   sync_from_date?: string | null;
 }
 

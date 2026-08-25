@@ -4,9 +4,12 @@ Security: follow_redirects=False, host asserted to api.telegram.org.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
-from typing import Any
+import time
+from typing import Any, Callable, NamedTuple, Optional
 
 import httpx
 
@@ -34,36 +37,197 @@ def _method_url(bot_token: str, method: str) -> str:
     return str(url)
 
 
-def send_message(bot_token: str, chat_id: str, text: str) -> bool:
+# A send is attempted this many times before the caller gives up. The pipeline
+# deletes the downloaded video right after notifying, so a transient network
+# blip must not be the reason the operator never receives it.
+MAX_SEND_ATTEMPTS = 5
+# Sleep between attempts: 1s, 2s, 4s, 8s.
+RETRY_BACKOFF_BASE_SECONDS = 1.0
+# The retry loop runs inside the pipeline tick and holds a scheduler slot, so
+# it stops retrying once this much wall time has passed regardless of attempts.
+RETRY_DEADLINE_SECONDS = 900.0
+# Cap on the server-supplied 429 wait, so a hostile value can't stall a tick.
+MAX_RETRY_AFTER_SECONDS = 60.0
+
+
+class _Attempt(NamedTuple):
+    ok: bool
+    retryable: bool
+    # Telegram's own "wait this long" from a 429, when it sent one.
+    retry_after: Optional[float] = None
+
+
+def _retry_after_seconds(resp: httpx.Response) -> Optional[float]:
+    """Telegram puts the 429 cool-off in parameters.retry_after."""
+    try:
+        value = resp.json().get("parameters", {}).get("retry_after")
+    except ValueError:
+        return None
+    if not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return min(float(value), MAX_RETRY_AFTER_SECONDS)
+
+
+def _classify(resp: httpx.Response, method: str) -> _Attempt:
+    if resp.status_code == 200:
+        return _Attempt(ok=True, retryable=False)
+    # 429 and 5xx are transient. Any other 4xx (bad chat_id, bot kicked out,
+    # file too large) will fail identically on every retry.
+    retryable = resp.status_code == 429 or resp.status_code >= 500
+    logger.warning(
+        "Telegram %s failed: status=%d retryable=%s body=%s",
+        method, resp.status_code, retryable, resp.text[:200],
+    )
+    return _Attempt(
+        ok=False,
+        retryable=retryable,
+        retry_after=_retry_after_seconds(resp) if resp.status_code == 429 else None,
+    )
+
+
+def _send_with_retry(method: str, attempt: Callable[[], _Attempt]) -> bool:
+    """Run `attempt` until it succeeds, is refused, or the budget runs out."""
+    started = time.monotonic()
+    for i in range(MAX_SEND_ATTEMPTS):
+        try:
+            result = attempt()
+        except httpx.HTTPError as exc:
+            logger.warning("Telegram %s network error: %s", method, exc)
+            result = _Attempt(ok=False, retryable=True)
+
+        if result.ok:
+            return True
+        if not result.retryable or i == MAX_SEND_ATTEMPTS - 1:
+            return False
+
+        delay = result.retry_after or RETRY_BACKOFF_BASE_SECONDS * (2 ** i)
+        if time.monotonic() - started + delay > RETRY_DEADLINE_SECONDS:
+            logger.warning(
+                "Telegram %s giving up: retry deadline %.0fs reached after %d attempt(s)",
+                method, RETRY_DEADLINE_SECONDS, i + 1,
+            )
+            return False
+        logger.info(
+            "Telegram %s retry %d/%d in %.1fs",
+            method, i + 1, MAX_SEND_ATTEMPTS - 1, delay,
+        )
+        time.sleep(delay)
+    return False
+
+
+def send_message(bot_token: str, chat_id: str, text: str, html: bool = False) -> bool:
     """Send a text message via Telegram Bot API.
 
-    Returns True on success, False on network/API error.
-    Raises ValueError if token or chat_id format is invalid.
+    Set html=True to send with parse_mode=HTML; the caller is then responsible
+    for escaping every value it interpolates. Retries transient failures (see
+    MAX_SEND_ATTEMPTS). Returns True on success, False once the attempts or the
+    deadline are exhausted. Raises ValueError if token or chat_id is malformed.
     """
+    _check_credentials(bot_token, chat_id)
+    url = _method_url(bot_token, "sendMessage")
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if html:
+        payload["parse_mode"] = "HTML"
+        # Telegram renders a preview card for the first link otherwise, which
+        # buries the message under a thumbnail.
+        payload["disable_web_page_preview"] = True
+
+    def _attempt() -> _Attempt:
+        with httpx.Client(follow_redirects=False, timeout=10) as client:
+            resp = client.post(url, json=payload)
+        return _classify(resp, "sendMessage")
+
+    return _send_with_retry("sendMessage", _attempt)
+
+
+# Bot API refuses uploads above 50 MB; callers degrade to a text-only message.
+TELEGRAM_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# sendMediaGroup accepts at most 10 items per call.
+TELEGRAM_MEDIA_GROUP_MAX = 10
+
+
+def _check_credentials(bot_token: str, chat_id: str) -> None:
     if not _BOT_TOKEN_RE.match(bot_token):
         raise ValueError("telegram bot_token format invalid")
     if not _CHAT_ID_RE.match(chat_id):
         raise ValueError("telegram chat_id format invalid")
 
-    url = _method_url(bot_token, "sendMessage")
 
-    try:
-        with httpx.Client(follow_redirects=False, timeout=10) as client:
-            resp = client.post(
-                str(url),
-                json={"chat_id": chat_id, "text": text},
-            )
-        if resp.status_code == 200:
-            return True
-        logger.warning(
-            "Telegram sendMessage failed: status=%d body=%s",
-            resp.status_code,
-            resp.text[:200],
-        )
+def _post_files(
+    bot_token: str, method: str, data: dict[str, Any], file_paths: dict[str, str]
+) -> bool:
+    """Upload local files, reopening them on each attempt.
+
+    The handles have to be reopened per attempt: a retry replays the request
+    body, and a consumed handle would upload zero bytes.
+    """
+    url = _method_url(bot_token, method)
+
+    def _attempt() -> _Attempt:
+        handles = []
+        try:
+            files = {}
+            for key, path in file_paths.items():
+                fh = open(path, "rb")
+                handles.append(fh)
+                files[key] = (os.path.basename(path), fh)
+            with httpx.Client(follow_redirects=False, timeout=300) as client:
+                resp = client.post(url, data=data, files=files)
+        finally:
+            for fh in handles:
+                fh.close()
+        return _classify(resp, method)
+
+    return _send_with_retry(method, _attempt)
+
+
+def send_document(
+    bot_token: str, chat_id: str, file_path: str, caption: str | None = None
+) -> bool:
+    """Upload one local file via sendDocument.
+
+    Returns True on success, False on network/API error.
+    Raises ValueError if token or chat_id format is invalid.
+    """
+    _check_credentials(bot_token, chat_id)
+
+    data: dict[str, Any] = {"chat_id": chat_id}
+    if caption:
+        data["caption"] = caption[:1024]
+    return _post_files(bot_token, "sendDocument", data, {"document": file_path})
+
+
+def send_media_group(
+    bot_token: str, chat_id: str, file_paths: list[str], caption: str | None = None
+) -> bool:
+    """Upload up to TELEGRAM_MEDIA_GROUP_MAX local videos in one album.
+
+    The caption rides on the first item (Telegram shows it for the album).
+    Returns True on success, False on network/API error or an empty list.
+    Raises ValueError if token or chat_id format is invalid.
+    """
+    _check_credentials(bot_token, chat_id)
+
+    paths = file_paths[:TELEGRAM_MEDIA_GROUP_MAX]
+    if not paths:
         return False
-    except httpx.HTTPError as exc:
-        logger.warning("Telegram network error: %s", exc)
-        return False
+
+    media: list[dict[str, Any]] = []
+    file_paths: dict[str, str] = {}
+    for i, path in enumerate(paths):
+        key = f"file{i}"
+        item: dict[str, Any] = {"type": "video", "media": f"attach://{key}"}
+        if i == 0 and caption:
+            item["caption"] = caption[:1024]
+        media.append(item)
+        file_paths[key] = path
+
+    return _post_files(
+        bot_token,
+        "sendMediaGroup",
+        {"chat_id": chat_id, "media": json.dumps(media)},
+        file_paths,
+    )
 
 
 def _chats_from_updates_result(result: list[Any]) -> list[dict[str, Any]]:

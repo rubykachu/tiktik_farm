@@ -7,7 +7,10 @@ python-dotenv>=1.0
 requests>=2.31
 requests-auth-aws-sigv4>=0.7
 selenium>=4.18
-yt-dlp
+# Floor, not a pin: YouTube breaks extraction every few months and only a
+# newer yt-dlp fixes it. 2026.8.19 is the first release that downloads
+# long videos without a mid-transfer HTTP 403.
+yt-dlp>=2026.8.19
 undetected-chromedriver @ git+https://github.com/dustinfarris/undetected-chromedriver.git@b6b58a1eecdadf37e1b159cf2b8138047a0ecc3f
 
 # --- API + scheduler (used by web service, optional for CLI-only users) ---

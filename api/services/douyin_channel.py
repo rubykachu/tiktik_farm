@@ -121,6 +121,11 @@ def _scan_output_dir(output_dir: str) -> list[DownloadedVideo]:
     return videos
 
 
+def post_url(aweme_id: str) -> str:
+    """Public Douyin URL for a post, rebuilt from its aweme_id."""
+    return f"https://www.douyin.com/video/{aweme_id}"
+
+
 def cleanup_aweme_files(output_dir: str, aweme_id: str) -> None:
     """Delete files belonging to an aweme. Uses recursive glob since vendor
     writes to subdirectories. The whole output_dir is removed after the run

@@ -10,11 +10,24 @@ import os
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
+from api.services.manual_download import purge_expired as purge_expired_downloads
 from scheduler.pipeline_worker import pipeline_tick, purge_old_runs, reap_orphans
 
 log = logging.getLogger("scheduler.worker")
 
 _PURGE_INTERVAL = 86_400  # seconds — once per day
+
+
+def _run_purges() -> None:
+    """Retention pass. Each purge is isolated so one failure keeps the other."""
+    try:
+        purge_old_runs()
+    except Exception:
+        log.exception("purge_old_runs failed, skipping this cycle")
+    try:
+        purge_expired_downloads()
+    except Exception:
+        log.exception("purge_expired_downloads failed, skipping this cycle")
 
 
 def tick() -> bool:
@@ -30,10 +43,7 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
         concurrency = 1
     log.info("scheduler loop starting, poll_interval=%gs concurrency=%d", poll_interval, concurrency)
     reap_orphans()
-    try:
-        purge_old_runs()
-    except Exception:
-        log.exception("purge_old_runs failed at startup, continuing")
+    _run_purges()
     last_purge = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -48,10 +58,7 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
             pending -= done
 
             if time.monotonic() - last_purge >= _PURGE_INTERVAL:
-                try:
-                    purge_old_runs()
-                except Exception:
-                    log.exception("purge_old_runs failed, skipping this cycle")
+                _run_purges()
                 last_purge = time.monotonic()
 
             slots = concurrency - len(pending)

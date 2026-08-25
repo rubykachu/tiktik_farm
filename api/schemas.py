@@ -143,6 +143,21 @@ def _validate_window_fields(
             )
 
 
+def _check_attach_fields(v):
+    """Reject unknown Telegram attach field keys; dedupe while keeping order."""
+    if v is None:
+        return v
+    from api.services.account_fields import ATTACH_FIELD_KEYS
+
+    unknown = [f for f in v if f not in ATTACH_FIELD_KEYS]
+    if unknown:
+        raise ValueError(
+            f"unknown telegram_attach_fields: {', '.join(unknown)}. "
+            f"Allowed: {', '.join(sorted(ATTACH_FIELD_KEYS))}"
+        )
+    return list(dict.fromkeys(v))
+
+
 class PipelineUploadOptions(BaseModel):
     """Subset of UploadOptions exposed in the pipeline form."""
     allow_comment: Literal[0, 1] = 1
@@ -162,7 +177,8 @@ class PipelineCreate(BaseModel):
     first_fire_at: datetime
     caption_template: str = Field(min_length=1, max_length=2200)
     upload_options: PipelineUploadOptions = Field(default_factory=PipelineUploadOptions)
-    account_ids: List[int] = Field(min_length=1)
+    # Empty list = no TikTok upload; the run only downloads and notifies.
+    account_ids: List[int] = Field(default_factory=list)
     max_duration_seconds: Optional[int] = Field(default=None, ge=1)
     upload_delay_minutes: int = Field(default=0, ge=0, le=30)
     caption_ai_prompt: Optional[str] = Field(default=None, max_length=2000)
@@ -172,7 +188,14 @@ class PipelineCreate(BaseModel):
     window_delay_minutes: Optional[int] = Field(default=None, ge=3)
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    telegram_notify_mode: Literal["changes_only", "cycle", "every_tick"] = "cycle"
+    telegram_attach_video: bool = False
+    telegram_attach_fields: List[str] = Field(default_factory=list)
     sync_from_date: Optional[date] = None
+
+    _validate_attach_fields = field_validator("telegram_attach_fields")(
+        _check_attach_fields
+    )
 
     @field_validator("channel_url")
     @classmethod
@@ -265,7 +288,14 @@ class PipelineUpdate(BaseModel):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     clear_bot_token: bool = False
+    telegram_notify_mode: Optional[Literal["changes_only", "cycle", "every_tick"]] = None
+    telegram_attach_video: Optional[bool] = None
+    telegram_attach_fields: Optional[List[str]] = None
     sync_from_date: Optional[date] = None
+
+    _validate_attach_fields = field_validator("telegram_attach_fields")(
+        _check_attach_fields
+    )
 
     @field_validator("caption_template")
     @classmethod
@@ -342,6 +372,9 @@ class PipelineRead(BaseModel):
     window_delay_minutes: Optional[int] = None
     telegram_bot_token_set: bool
     telegram_chat_id: Optional[str]
+    telegram_notify_mode: str = "cycle"
+    telegram_attach_video: bool = False
+    telegram_attach_fields: List[str] = []
     run_now_requested_at: Optional[datetime]
     lock_until: Optional[datetime]
     created_at: datetime
@@ -397,6 +430,47 @@ class TelegramTestRequest(BaseModel):
 class TelegramTestResponse(BaseModel):
     ok: bool
     message: str
+
+
+class SampleCaptionPromptResponse(BaseModel):
+    prompt: str
+
+
+class ManualDownloadCreate(BaseModel):
+    # One paste can hold several links; each becomes its own download row.
+    # Capped low on purpose: every row runs yt-dlp inside the API process.
+    urls: List[str] = Field(min_length=1, max_length=5)
+
+
+class ManualDownloadRead(BaseModel):
+    id: int
+    url: str
+    source_type: str
+    origin: str = "manual"
+    status: str
+    title: Optional[str] = None
+    file_size: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    ai_caption: Optional[str] = None
+    error_text: Optional[str] = None
+    created_at: datetime
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ManualDownloadCaptionRequest(BaseModel):
+    # Absent → the server's sample prompt is used.
+    prompt: Optional[str] = Field(default=None, max_length=2000)
+
+
+class TelegramAttachField(BaseModel):
+    key: str
+    label: str
+
+
+class TelegramAttachFieldsResponse(BaseModel):
+    fields: List[TelegramAttachField]
 
 
 # ---------- LLM caption rewrite (Phase 3) -----------------------------------

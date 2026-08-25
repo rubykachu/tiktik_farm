@@ -6,7 +6,17 @@ export interface TelegramChatItem {
   type: string;
 }
 
+export interface TelegramAttachField {
+  key: string;
+  label: string;
+}
+
 export const Telegram = {
+  attachFields: () =>
+    api
+      .get<{ fields: TelegramAttachField[] }>("/telegram/attach-fields")
+      .then((r) => r.data.fields),
+
   detectChats: (bot_token: string) =>
     api
       .post<{ chats: TelegramChatItem[] }>("/telegram/detect-chats", { bot_token })

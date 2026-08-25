@@ -10,9 +10,11 @@ from api.schemas import (
     LLMTestResponse,
     PromptTestRequest,
     PromptTestResponse,
+    SampleCaptionPromptResponse,
     SettingsRead,
     SettingsUpdate,
 )
+from api.services.caption_prompt import SAMPLE_CAPTION_PROMPT
 from api.services import llm, secrets
 from api.services.llm_config import (
     get_llm_mode,
@@ -123,3 +125,9 @@ def test_prompt(payload: PromptTestRequest):
         ai_title=ai_title or title,
         description_snippet=(description[:300] + "…") if len(description) > 300 else description,
     )
+
+
+@router.get("/sample-caption-prompt", response_model=SampleCaptionPromptResponse)
+def sample_caption_prompt():
+    """Starting-point prompt offered by the caption AI fields in the webapp."""
+    return SampleCaptionPromptResponse(prompt=SAMPLE_CAPTION_PROMPT)

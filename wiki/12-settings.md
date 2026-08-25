@@ -295,8 +295,7 @@ litellm>=1.85,<2
 Trên môi trường Docker:
 
 ```bash
-make rebuild-base   # rebuild tiktok-base để pickup requirements.txt mới
-make up
+make start          # build lại (gồm cả requirements.txt mới) rồi chạy
 ```
 
 Trên môi trường native (dev):
@@ -325,7 +324,7 @@ OLLAMA_MODEL=llama3.2
 OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
 
-Recreate api + scheduler để pickup env mới (`make recreate-api` — `restart` không đọc lại `.env`). Vào Settings → chuyển sang **Local (Ollama)**.
+Chạy `make start` để nạp env mới (`make restart` **không** đọc lại `.env`). Vào Settings → chuyển sang **Local (Ollama)**.
 
 #### Docker reach Ollama trên host
 

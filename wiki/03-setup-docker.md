@@ -1,8 +1,23 @@
-# 03 — Setup Docker (production path)
+# 03 — Setup Docker
 
 [← Index](README.md) | [← 02-architecture](02-architecture.md)
 
-> Đây là cách deploy lên VPS Ubuntu thực tế. Trên mac M-series chip cũng work (đã verify M4).
+> Cài đặt từng bước cho người vận hành: **[RUNBOOK.md](../RUNBOOK.md)**.
+> Trang này giải thích *vì sao* stack chạy như vậy, cho người sửa code.
+
+## Một môi trường duy nhất
+
+Máy host chính là máy chủ. Không có bản "dev" và bản "prod" riêng — `make start`
+build và chạy đúng thứ mà tên miền công khai phục vụ.
+
+| File | Vai trò |
+|---|---|
+| `docker-compose.yml` | Bản duy nhất được chạy. nginx + bundle tĩnh. |
+| `docker-compose.dev.yml` | Overlay hot-reload, chỉ dùng qua `make dev`. **Không** tự merge. |
+
+Tên file thứ hai là cố ý. Trước đây nó tên `docker-compose.override.yml` — Compose
+tự merge file tên đó, khiến `make deploy` âm thầm chạy Vite thay vì bản nginx thật,
+và mọi lần kiểm tra đều kiểm tra nhầm thứ.
 
 ## Yêu cầu
 
@@ -13,111 +28,31 @@
 | Disk | ≥ 8 GB free | Image stack ~12.5 GB nhưng layer share |
 | RAM | ≥ 4 GB | Idle ~1.5 GB, peak ~3-4 GB |
 
-## Makefile — lệnh chính
+## Vì sao `make start` luôn build
 
-Chạy trong thư mục `v2/`. Gõ `make` hoặc `make help` để xem đầy đủ.
+Bản chạy thật **không mount source**. Chỉ ba thứ được mount:
 
-| Lệnh | Khi nào dùng |
+| Mount | Lý do |
 |---|---|
-| **`make deploy`** | **Mặc định an toàn** sau mọi thay đổi code: `build` toàn bộ image rồi `--force-recreate` container. Tránh lỗi “đã sửa code nhưng container vẫn chạy image cũ”. |
-| `make up` | Lần đầu start stack (không rebuild). |
-| `make down` | Stop + xóa container (giữ volume + image). |
-| `make restart` | Kick lại `api` + `scheduler` + `webapp` (không rebuild — **không** lấy code bake trong image mới, **không** đọc lại `.env`). |
-| `make recreate` | Tạo lại mọi container từ image **hiện có** (không build). Đọc lại `.env`. |
-| `make recreate-api` | Tạo lại `api` + `scheduler` (đọc lại `.env` — dùng khi đổi `HOST`/`OLLAMA_*`). |
-| `make recreate-webapp` | Build + tạo lại riêng `webapp` (đổi `nginx.conf` / `.htpasswd` / asset prod). |
-| `make rebuild-base` | `requirements.txt` hoặc `tiktok_uploader/` đổi — rebuild base + api/scheduler. |
-| `make rebuild` | Full `build --no-cache` (chậm nhất). |
-| `make deploy-prod` | Giống `deploy` nhưng **không** merge `docker-compose.override.yml` (nginx static, không Vite). |
-| `make logs` / `make logs-api` | Tail log. |
-| `make test` | `pytest` trong container `api`. |
-| `make nuke` | Xóa container + image local; volume `data/` giữ nguyên. |
+| `./data:/data` | DB SQLite, cookie, video — phải sống qua các lần build |
+| `./config.txt` | Cấu hình uploader, đọc lúc chạy |
+| `./.htpasswd` | Mật khẩu Basic Auth của nginx |
 
-**Quy tắc vàng:** `docker compose restart` và `docker compose up --force-recreate` **không** rebuild image. Nếu không chắc → **`make deploy`**.
+Code `api/`, `scheduler/`, `tiktok_uploader/` được COPY vào image lúc build, còn
+webapp là bundle tĩnh do Vite build **bên trong** image. Nên `git pull` không đổi
+gì cho tới khi build lại. Build có cache: không đổi gì thì mất ~6 giây; sửa
+`api/` thì chỉ layer copy source chạy lại. Lần đầu mới mất 10–20 phút (pip
+install + tải Playwright Chromium).
 
-```bash
-cd v2/
-make deploy    # build + recreate — dùng sau git pull hoặc thêm tính năng
-```
+Hệ quả: **`make restart` không nạp code mới và không đọc lại `.env`.** Đổi `.env`
+hay `git pull` xong đều phải `make start`.
 
-## Build (lần đầu hoặc thủ công)
+## Layer image
 
-Tương đương bước build trong `make deploy` (không recreate):
-
-```bash
-cd v2/
-docker compose build
-# hoặc: make deploy   # khuyên dùng — gồm cả recreate
-```
-
-Build mất ~10-15 phút trên VPS 2-core, ~5 phút trên M4. 4 images sinh ra:
-
-- `tiktok-base:latest`
-- `tiktok-api:latest`
-- `tiktok-scheduler:latest`
-- `tiktok-webapp:latest`
-
-## Up / Down
-
-```bash
-make up                           # start dev stack (detached)
-make down                         # stop + remove containers (volume vẫn còn)
-make ps                           # trạng thái container
-
-# tương đương thuần compose:
-docker compose up -d
-docker compose ps
-docker compose stop               # stop tạm, giữ volume
-docker compose down
-make nuke-all EXTRA=yes           # ⚠️ xóa cả named volumes (mất DB) — cần xác nhận
-```
-
-Sau khi up:
-
-| URL | Service |
-|---|---|
-| http://127.0.0.1:3000 | Webapp UI |
-| http://127.0.0.1:8000/docs | Swagger UI (FastAPI auto-doc) |
-| http://127.0.0.1:8000/openapi.json | Schema raw |
-
-
-## Workflow update code
-
-### Một lệnh (khuyên dùng)
-
-```bash
-make deploy
-```
-
-Làm đủ: `docker compose build` (mọi service, gồm `tiktok-base` khi `tiktok_uploader/` hoặc `requirements.txt` đổi) + `up -d --force-recreate` (mọi container, gồm `webapp` — tránh nginx/Vite proxy DNS stale).
-
-### Dev với override — khi nào *không* cần deploy
-
-| Thay đổi | Cách lấy code mới |
-|---|---|
-| `api/*.py` | Uvicorn `--reload` tự load (mount `./api`) |
-| `webapp/src/*` | Vite HMR (mount `./webapp`) |
-| `scheduler/*.py` | `make restart` hoặc `docker compose restart scheduler` |
-| `tiktok_uploader/*`, `requirements.txt` | **Bắt buộc** `make deploy` hoặc `make rebuild-base && make up` (không mount vào container) |
-| Không chắc / vừa merge feature | **`make deploy`** |
-
-### Prod / VPS (không override)
-
-```bash
-git pull
-make deploy-prod
-```
-
-### Thủ công (nếu không dùng make)
-
-**Rule quan trọng**: rebuild service nào → recreate cả `webapp`. Nginx cache DNS upstream IP lúc boot.
-
-```bash
-docker compose build
-docker compose up -d --force-recreate
-```
-
-Chỉ data (cookie, video) trong `./data/` — không cần rebuild: `docker compose restart <service>`.
+`docker/base.Dockerfile` dựng `tiktok-base` (~2.6 GB: Python + Node + Playwright
+Chromium + ffmpeg). `api` và `scheduler` đều `FROM tiktok-base` rồi chỉ copy source
+của mình. Sửa `requirements.txt` hoặc `tiktok_uploader/` làm cache của base vỡ và
+`make start` tự build lại — không cần lệnh riêng.
 
 ## Lần đầu setup data
 
@@ -133,64 +68,62 @@ Chỉ data (cookie, video) trong `./data/` — không cần rebuild: `docker com
 cp my_video.mp4 ./data/VideosDirPath/
 ```
 
-**Lưu ý path**: trong Docker stack working_dir = `/data`, nên `Config.cookies_dir = ./CookiesDir` resolve thành `/data/CookiesDir`. Host path tương ứng = `./data/CookiesDir/`. **KHÔNG** dùng `./CookiesDir/` (path đó chỉ cho native run).
+**Lưu ý path**: trong Docker stack working_dir = `/data`, nên
+`Config.cookies_dir = ./CookiesDir` resolve thành `/data/CookiesDir`. Host path
+tương ứng = `./data/CookiesDir/`. **KHÔNG** dùng `./CookiesDir/` (path đó chỉ cho
+native run).
 
-## Expose qua Cloudflare Tunnel
+## Expose ra Internet
 
-Webapp bind `127.0.0.1:3000` (không ra ngoài). Để truy cập từ xa dùng Cloudflare Tunnel + HTTP Basic Auth.
+Webapp bind `127.0.0.1:3000`, không ra ngoài. Đường ra là Cloudflare Tunnel với
+**named tunnel** + tên miền riêng — các bước ở [RUNBOOK](../RUNBOOK.md) Bước 5.
 
-### Script `restart.sh`
-
-```bash
-bash restart.sh
-```
-
-Làm theo thứ tự: `make recreate` → start `cloudflared tunnel --url http://localhost:3000` → parse URL tunnel → ghi `HOST=<url>` vào `.env` → `make recreate-api` để api nạp `HOST` mới → giữ `cloudflared` chạy foreground (Ctrl-C để dừng). URL tunnel đổi mỗi lần chạy; script tự cập nhật `.env`.
+Quick tunnel (`trycloudflare.com`) đổi URL mỗi lần khởi động lại. Không dùng được
+nữa: `PUBLIC_BASE_URL` là gốc của link tải video gửi qua Telegram, URL đổi là mọi
+link đã gửi cùng chết.
 
 ### Basic Auth
 
-Bắt buộc khi expose. Tạo credential trên host:
-
 ```bash
-sudo apt install apache2-utils
-htpasswd -c .htpasswd <username>          # nhập password khi hỏi
+htpasswd -bc .htpasswd admin 'mat-khau'
 ```
 
-- **Prod (nginx)**: `docker-compose.yml` mount `./.htpasswd` → `/etc/nginx/.htpasswd`; `webapp/nginx.conf` bật `auth_basic`. Đổi file → `make recreate-webapp`.
-- **Dev (Vite)**: set `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` trong `.env`; `vite.config.ts` thêm middleware basic-auth khi cả hai biến có giá trị (không set → không auth).
+`docker-compose.yml` mount `./.htpasswd` → `/etc/nginx/.htpasswd`; `webapp/nginx.conf`
+bật `auth_basic` cho toàn bộ server. Đổi file → `make start`.
+
+Một ngoại lệ duy nhất: `location /api/public/` tắt `auth_basic`, vì link tải video
+gửi qua Telegram phải mở được trên điện thoại không có credential — chữ ký HMAC
+trong đường dẫn là lớp xác thực ở đó. `webapp/vite.config.ts` miễn trừ đúng prefix
+đó cho `make dev`.
 
 `.htpasswd` và `.env` đều gitignored; mẫu xem `.env.example`.
 
-### `HOST` — origin check
+### `HOST` và `PUBLIC_BASE_URL`
 
-API có CSRF origin middleware (`api/middleware/origin.py`) chặn POST/PUT/PATCH/DELETE từ origin lạ (mặc định chỉ `localhost:3000`). Origin tunnel bị chặn → `403 INVALID_ORIGIN`. Set `HOST=<tunnel-url>` (hostname hoặc full URL, tự thêm `https://`) để whitelist. `restart.sh` set tự động; sửa tay thì phải `make recreate-api` (không phải `restart` — `restart` không đọc lại `.env`).
+| Biến | Dùng để |
+|---|---|
+| `HOST` | Whitelist origin cho CSRF middleware (`api/middleware/origin.py`). Thiếu → `403 INVALID_ORIGIN` khi bấm nút trên web. |
+| `PUBLIC_BASE_URL` | Gốc của link tải video trong thông báo Telegram. Thiếu → thông báo tự hạ xuống dạng chỉ có chữ. |
 
-## Production VPS — checklist
+Cả hai đặt bằng tên miền của **chính máy đó**. Sửa xong phải `make start`.
 
-Trước khi expose ra Internet:
+## Checklist trước khi expose
 
-- [x] Webapp bind `127.0.0.1` (đã sẵn) → đặt Cloudflare Tunnel / Caddy / Traefik trước
-- [x] Basic Auth (xem § trên) — tối thiểu khi expose qua tunnel
-- [x] HTTPS: Cloudflare Tunnel cấp sẵn cert cho `*.trycloudflare.com`
-- [x] `HOST` whitelist origin tunnel cho CSRF middleware
-- [ ] CORS API hiện `allow_origins=["*"]` → đổi sang domain thực
-- [ ] Auth mạnh hơn (JWT) — Phase 2, xem [11-roadmap](11-roadmap.md)
-- [ ] Backup `./data/` định kỳ (cookies + DB)
-- [ ] Log rotation `docker compose logs` không xoay tự động — config `docker-compose.yml` thêm `logging` driver `json-file` với `max-size`
+- [x] Webapp bind `127.0.0.1` → đặt Cloudflare Tunnel phía trước
+- [x] Basic Auth qua `.htpasswd`
+- [x] `HOST` + `PUBLIC_BASE_URL` trỏ tên miền thật
+- [x] Tunnel cài dạng service để tự chạy lại sau reboot
+- [ ] Backup `./data/` định kỳ — `make backup` gói sẵn cả khoá tunnel
+- [ ] Log rotation: `docker compose logs` không tự xoay, thêm driver `json-file` với `max-size` nếu chạy dài ngày
 
-## Tự động hóa deploy (gợi ý)
+## Nhiều máy
 
-```bash
-cd v2/
-git pull
-make deploy-prod    # VPS: không dùng dev override
-# hoặc trên máy dev:
-make deploy
-```
+Mỗi máy một tunnel và một tên miền con riêng. Đừng chạy chung một tunnel: đó là
+chế độ HA replica, Cloudflare chia tải ngẫu nhiên giữa các máy, mà mỗi máy có DB
+và file video riêng → link tải 404 khoảng một nửa số lần.
 
-Cron / CI: gọi `make deploy-prod` sau `git pull`. **Không** chỉ `docker compose up --force-recreate` — sẽ bỏ qua code mới trong image.
-
-Xem thêm bảng lệnh: [09-operations](09-operations.md) § Makefile.
+Dedupe nằm trong SQLite của từng máy, nên hai máy cùng chạy một kênh với cùng một
+tài khoản TikTok sẽ đăng trùng. Chia theo kênh hoặc theo tài khoản.
 
 ---
 

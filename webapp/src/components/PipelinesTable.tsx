@@ -6,6 +6,7 @@ import { Accounts } from "../api/client";
 import { toast } from "sonner";
 import ConfirmDialog from "./ConfirmDialog";
 import PipelineRunsExpand from "./PipelineRunsExpand";
+import { asUtcDate } from "../utils/datetime";
 
 type Props = {
   onEdit?: (pipeline: Pipeline) => void;
@@ -15,10 +16,6 @@ const stateClass = (s: string) =>
   s === "active"
     ? "bg-emerald-100 text-emerald-700"
     : "bg-amber-100 text-amber-700";
-
-function asUtcDate(s: string): Date {
-  return new Date(/Z|[+-]\d{2}:\d{2}$/.test(s) ? s : s + "Z");
-}
 
 const UNIT_VI: Record<string, string> = { minutes: "phút", hours: "giờ", days: "ngày", weeks: "tuần" };
 

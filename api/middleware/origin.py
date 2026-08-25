@@ -21,18 +21,10 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-def _parse_host_origin(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return ""
-    if value.startswith("http://") or value.startswith("https://"):
-        u = urlparse(value)
-        return f"{u.scheme}://{u.netloc}"
-    return f"https://{value}"
-
+from api.services.public_url import normalize_base_url
 
 _host = os.environ.get("HOST", "")
-_extra = {_parse_host_origin(_host)} - {""} if _host else set()
+_extra = {normalize_base_url(_host)} - {""} if _host else set()
 
 ALLOWED_ORIGINS = frozenset({
     "http://127.0.0.1:3000",

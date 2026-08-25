@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { Users, Calendar, History, Settings as SettingsIcon } from "lucide-react";
+import { Users, Calendar, Download, History, Settings as SettingsIcon } from "lucide-react";
 import clsx from "clsx";
 
 const items = [
   { to: "/accounts", label: "Tài khoản", icon: Users },
   { to: "/schedules", label: "Lịch đăng", icon: Calendar },
+  { to: "/downloads", label: "Tải video", icon: Download },
   { to: "/histories", label: "Lịch sử", icon: History },
   { to: "/settings", label: "Cài đặt", icon: SettingsIcon },
 ];

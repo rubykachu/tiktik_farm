@@ -24,6 +24,10 @@ _COMPOSITE_INDEXES = (
     # Douyin dedup lookup: "already succeeded/failed for (account, aweme)?"
     "CREATE INDEX IF NOT EXISTS ix_video_upload_account_aweme "
     "ON video_uploads (account_id, douyin_aweme_id)",
+    # No-account pipelines dedupe on (pipeline_id, source_key) instead of
+    # (account_id, video_id); the unique index makes a repeat insert a no-op.
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_pipeline_seen_videos "
+    "ON pipeline_seen_videos (pipeline_id, source_key)",
     # At-most-one default LLM model. SQLite partial index lets two writers
     # race set-default without ending up with two default rows.
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_llm_models_one_default "
@@ -101,6 +105,52 @@ def apply_schema_patches(engine: Engine) -> None:
                 try:
                     conn.exec_driver_sql(
                         "ALTER TABLE channel_pipelines ADD COLUMN sync_from_date TEXT"
+                    )
+                except Exception:
+                    pass
+            if "telegram_notify_mode" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "telegram_notify_mode TEXT NOT NULL DEFAULT 'cycle'"
+                    )
+                except Exception:
+                    pass
+            if "telegram_attach_video" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "telegram_attach_video INTEGER NOT NULL DEFAULT 0"
+                    )
+                except Exception:
+                    pass
+            if "telegram_attach_fields_json" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN "
+                        "telegram_attach_fields_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                except Exception:
+                    pass
+
+        has_manual_downloads = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='manual_downloads'"
+        ).fetchone()
+        if has_manual_downloads:
+            md_rows = conn.exec_driver_sql("PRAGMA table_info(manual_downloads)").fetchall()
+            md_cols = {row[1] for row in md_rows}
+            if "origin" not in md_cols:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE manual_downloads ADD COLUMN "
+                        "origin TEXT NOT NULL DEFAULT 'manual'"
+                    )
+                except Exception:
+                    pass
+            if "pipeline_id" not in md_cols:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE manual_downloads ADD COLUMN pipeline_id INTEGER"
                     )
                 except Exception:
                     pass

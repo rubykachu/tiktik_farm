@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { DouyinCookies } from "../api/douyin_cookies";
-import { Telegram, TelegramChatItem } from "../api/telegram";
+import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram";
 import { Settings } from "../api/settings";
 
 const baseSchema = z.object({
@@ -26,11 +26,7 @@ const baseSchema = z.object({
   caption_template: z.string().min(1, "Required").max(2200),
   caption_ai_prompt: z.string().max(2000).optional().default(""),
   channel_description: z.string().max(2000).optional().default(""),
-  allow_comment: z.coerce.number().min(0).max(1),
-  allow_duet: z.coerce.number().min(0).max(1),
-  allow_stitch: z.coerce.number().min(0).max(1),
-  visibility_type: z.coerce.number().min(0).max(1),
-  account_ids: z.array(z.number()).min(1, "Choose at least one account"),
+  account_ids: z.array(z.number()),
   window_end_time: z.string().optional().default(""),
   window_delay_minutes: z.coerce.number().int().min(3).optional().or(z.literal("")),
   telegram_bot_token: z.string().optional().default(""),
@@ -42,6 +38,12 @@ const baseSchema = z.object({
       message: "Chat ID must be numeric (e.g. -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
+  telegram_notify_mode: z
+    .enum(["changes_only", "cycle", "every_tick"])
+    .optional()
+    .default("cycle"),
+  telegram_attach_video: z.boolean().optional().default(false),
+  telegram_attach_fields: z.array(z.string()).optional().default([]),
   sync_from_date: z.string().optional().default(""),
 });
 
@@ -223,16 +225,15 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   caption_template: "{title}",
   caption_ai_prompt: "",
   channel_description: "",
-  allow_comment: 1,
-  allow_duet: 0,
-  allow_stitch: 0,
-  visibility_type: 0,
   account_ids: [],
   window_end_time: "",
   window_delay_minutes: "" as any,
   telegram_bot_token: "",
   telegram_chat_id: "",
   clear_bot_token: false,
+  telegram_notify_mode: "cycle" as const,
+  telegram_attach_video: false,
+  telegram_attach_fields: [],
   sync_from_date: TODAY_DATE,
 };
 
@@ -243,6 +244,13 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const { data: accounts } = useQuery({
     queryKey: ["accounts"],
     queryFn: Accounts.list,
+    enabled: open,
+  });
+
+  // Server-owned list so adding a field there does not need a webapp change.
+  const { data: telegramAttachFields } = useQuery<TelegramAttachField[]>({
+    queryKey: ["telegram-attach-fields"],
+    queryFn: Telegram.attachFields,
     enabled: open,
   });
 
@@ -283,16 +291,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       max_duration_seconds: "" as any,
       caption_template: "{title}",
       caption_ai_prompt: "",
-      allow_comment: 1,
-      allow_duet: 0,
-      allow_stitch: 0,
-      visibility_type: 0,
       account_ids: [],
       window_end_time: "",
       window_delay_minutes: "" as any,
       telegram_bot_token: "",
       telegram_chat_id: "",
       clear_bot_token: false,
+      telegram_notify_mode: "cycle" as const,
+  telegram_attach_video: false,
+      telegram_attach_fields: [],
       sync_from_date: TODAY_DATE,
     },
   });
@@ -303,16 +310,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       let accountIds: number[] = [];
       try {
         accountIds = JSON.parse(pipeline.account_ids_json);
-      } catch {}
-
-      let uploadOpts = {
-        allow_comment: 1,
-        allow_duet: 0,
-        allow_stitch: 0,
-        visibility_type: 0,
-      };
-      try {
-        uploadOpts = { ...uploadOpts, ...JSON.parse(pipeline.upload_options_json) };
       } catch {}
 
       setMultipleRuns(!!pipeline.window_end_time);
@@ -332,16 +329,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         caption_template: pipeline.caption_template,
         caption_ai_prompt: pipeline.caption_ai_prompt ?? "",
         channel_description: pipeline.channel_description ?? "",
-        allow_comment: uploadOpts.allow_comment as 0 | 1,
-        allow_duet: uploadOpts.allow_duet as 0 | 1,
-        allow_stitch: uploadOpts.allow_stitch as 0 | 1,
-        visibility_type: uploadOpts.visibility_type as 0 | 1,
         account_ids: accountIds,
         window_end_time: pipeline.window_end_time ? utcHHMMtoLocal(pipeline.window_end_time) : "",
         window_delay_minutes: (pipeline.window_delay_minutes ?? "") as any,
         telegram_bot_token: "",
         telegram_chat_id: pipeline.telegram_chat_id ?? "",
         clear_bot_token: false,
+        telegram_notify_mode: pipeline.telegram_notify_mode ?? "cycle",
+        telegram_attach_video: pipeline.telegram_attach_video ?? false,
+        telegram_attach_fields: pipeline.telegram_attach_fields ?? [],
         sync_from_date: pipeline.sync_from_date ?? "",
       });
     } else {
@@ -411,13 +407,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         : Number(data.window_delay_minutes);
     const douyinCookieId = data.source_type === "douyin" ? (data.douyin_cookie_id ?? null) : undefined;
     const syncFromDate = (data.sync_from_date || "").trim() || null;
-    const upload_options = {
-      allow_comment: data.allow_comment as 0 | 1,
-      allow_duet: data.allow_duet as 0 | 1,
-      allow_stitch: data.allow_stitch as 0 | 1,
-      visibility_type: data.visibility_type as 0 | 1,
-    };
-
     if (isEdit && pipeline) {
       const payload: PipelineUpdate = {
         name: data.name,
@@ -431,7 +420,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt,
         channel_description: channelDescription,
-        upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur ?? null,
         upload_delay_minutes: data.upload_delay_minutes,
@@ -439,6 +427,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_chat_id: data.telegram_chat_id || undefined,
         clear_bot_token: data.clear_bot_token,
+        telegram_notify_mode: data.telegram_notify_mode,
+        telegram_attach_video: data.telegram_attach_video,
+        telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
       };
       if (data.telegram_bot_token) {
@@ -458,7 +449,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         caption_template: data.caption_template,
         caption_ai_prompt: aiPrompt ?? undefined,
         channel_description: channelDescription ?? undefined,
-        upload_options,
         account_ids: data.account_ids,
         max_duration_seconds: maxDur,
         upload_delay_minutes: data.upload_delay_minutes,
@@ -466,13 +456,16 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         window_delay_minutes: windowDelayMinutes,
         telegram_bot_token: data.telegram_bot_token || undefined,
         telegram_chat_id: data.telegram_chat_id || undefined,
+        telegram_notify_mode: data.telegram_notify_mode,
+        telegram_attach_video: data.telegram_attach_video,
+        telegram_attach_fields: data.telegram_attach_fields,
         sync_from_date: syncFromDate,
       });
     }
   }
 
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
+  const [uploadSectionOpen, setUploadSectionOpen] = useState(false);
   const [multipleRuns, setMultipleRuns] = useState(false);
   const [testUrl, setTestUrl] = useState("");
   const [telegramDetectLoading, setTelegramDetectLoading] = useState(false);
@@ -490,6 +483,7 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
+  const attachFields = watch("telegram_attach_fields") ?? [];
   const captionTemplate = watch("caption_template");
   const captionAiPrompt = watch("caption_ai_prompt");
 
@@ -510,10 +504,18 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       setTelegramDetectErr(null);
       setTelegramDetectLoading(false);
       setTelegramTestSending(false);
-      setAdvancedOpen(false);
       setAiSectionOpen(false);
+      setUploadSectionOpen(false);
     }
   }, [open]);
+
+  // Caption lives in this section and is required, so a collapsed section must
+  // not hide the reason a submit was rejected.
+  const uploadSectionHasError =
+    !!errors.caption_template || !!errors.caption_ai_prompt || !!errors.account_ids;
+  useEffect(() => {
+    if (uploadSectionHasError) setUploadSectionOpen(true);
+  }, [uploadSectionHasError]);
 
   // Resync douyin_cookie_id after cookies load (reset() may fire before query resolves)
   useEffect(() => {
@@ -855,18 +857,27 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
 
           {/* Section 3: Đăng tải */}
           <fieldset className="space-y-3">
-            <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
+            <button
+              type="button"
+              className="text-base font-semibold text-slate-800 border-b pb-1 w-full flex items-center gap-1"
+              onClick={() => setUploadSectionOpen(!uploadSectionOpen)}
+            >
+              {uploadSectionOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               Đăng tải
-            </legend>
+            </button>
 
+            <div className={uploadSectionOpen ? "space-y-3" : "hidden"}>
             {/* Accounts */}
             <div className="space-y-2">
               <label className="label">
-                Tài khoản TikTok<span className="text-red-500">*</span>{" "}
+                Tài khoản TikTok{" "}
                 <span className="text-slate-400 font-normal">
                   ({selectedAccounts.length} đã chọn)
                 </span>
               </label>
+              <p className="text-xs text-slate-500">
+                Bỏ trống nếu chỉ muốn tải video và nhận qua Telegram để tự đăng.
+              </p>
               {validAccounts.length === 0 && (
                 <p className="text-xs text-amber-600">
                   Chưa có tài khoản hợp lệ. Hãy nhập cookie trước.
@@ -945,24 +956,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     <button
                       type="button"
                       className="ml-1 text-xs text-brand-600 hover:underline font-normal"
-                      onClick={() =>
-                        setValue(
-                          "caption_ai_prompt",
-                          `You are a TikTok caption writer. Rewrite the video TITLE and DESCRIPTION below into one short English caption for reposting on TikTok.
-
-Output rules (strict):
-- English only. Never include Chinese or any other source-language text — no original text in parentheses, no transliteration.
-- Return only the caption itself: no quotation marks around it, no labels, no explanations.
-- Maximum 150 characters including hashtags. One or two short sentences.
-
-Content rules:
-- If the source already contains an English line, use it as the base and only polish it.
-- If the title is a poem or mood line unrelated to the video, translate its feeling into natural English — do not invent product or marketing details that are not in the source.
-- Stay accurate to the source; never invent facts.
-- Remove episode or series numbering (e.g. "第178集:", "Ep 12").
-- Hashtags: translate the original hashtags into natural English equivalents. You may add at most 1-2 broadly relevant tags; never invent specific tags with no basis in the source.`,
-                        )
-                      }
+                      onClick={() => {
+                        void Settings.sampleCaptionPrompt()
+                          .then((prompt) =>
+                            setValue("caption_ai_prompt", prompt, {
+                              shouldValidate: true,
+                            })
+                          )
+                          .catch(() => toast.error("Không tải được prompt mẫu"));
+                      }}
                     >
                       Dùng mẫu
                     </button>
@@ -1026,37 +1028,6 @@ Content rules:
                 </div>
               )}
             </div>
-
-            {/* Advanced flags */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                className="flex items-center gap-1 text-sm font-medium text-slate-700"
-                onClick={() => setAdvancedOpen(!advancedOpen)}
-              >
-                {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Tùy chọn nâng cao
-              </button>
-              {advancedOpen && (
-                <div className="grid grid-cols-2 gap-3 pl-4">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" value={1} {...register("allow_comment")} defaultChecked />
-                    Cho phép bình luận
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" value={1} {...register("allow_duet")} />
-                    Cho phép Duet
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" value={1} {...register("allow_stitch")} />
-                    Cho phép Stitch
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" value={1} {...register("visibility_type")} />
-                    Chế độ riêng tư
-                  </label>
-                </div>
-              )}
             </div>
           </fieldset>
 
@@ -1170,6 +1141,58 @@ Content rules:
             {telegramDetectErr && (
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
+            <div className="space-y-2 border-t pt-3">
+              <label className="label">Khi không có video mới</label>
+              <select className="input" {...register("telegram_notify_mode")}>
+                <option value="cycle">Báo một lần cuối mỗi chu kỳ</option>
+                <option value="changes_only">Không báo</option>
+                <option value="every_tick">Báo mọi lần chạy</option>
+              </select>
+              <p className="text-xs text-slate-500">
+                Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục
+                cho tới khi bắt được video — chọn “một lần cuối mỗi chu kỳ” để
+                không bị mỗi lần quét một tin nhắn.
+              </p>
+              <p className="text-xs text-slate-500 pt-2 border-t">
+                Thông báo luôn kèm link tải video, dùng được cả với video lớn.
+                Video giữ trên máy chủ 24 giờ.
+              </p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" {...register("telegram_attach_video")} />
+                Đính kèm luôn file video vào tin nhắn
+              </label>
+              <p className="text-xs text-slate-500">
+                Telegram chỉ nhận file tối đa 50 MB — vượt quá thì chỉ còn link.
+              </p>
+              {selectedAccounts.length > 0 && (telegramAttachFields?.length ?? 0) > 0 && (
+                <div>
+                  <label className="label">Gửi kèm thông tin tài khoản</label>
+                  <div className="flex flex-wrap gap-4">
+                    {telegramAttachFields!.map((f) => (
+                      <label key={f.key} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={attachFields.includes(f.key)}
+                          onChange={(e) => {
+                            setValue(
+                              "telegram_attach_fields",
+                              e.target.checked
+                                ? [...attachFields, f.key]
+                                : attachFields.filter((x) => x !== f.key),
+                              { shouldValidate: true }
+                            );
+                          }}
+                        />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Thông tin đăng nhập sẽ hiển thị dạng chữ thường trong tin nhắn Telegram.
+                  </p>
+                </div>
+              )}
+            </div>
             {isEdit && pipeline?.telegram_bot_token_set && (
               <label className="flex items-center gap-2 text-sm text-red-600">
                 <input type="checkbox" {...register("clear_bot_token")} />

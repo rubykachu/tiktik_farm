@@ -19,7 +19,13 @@ from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
-from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
+from api.models import (
+    Account,
+    ChannelPipeline,
+    PipelineRun,
+    PipelineSeenVideo,
+    VideoUpload,
+)
 from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, _validate_window_fields, is_douyin_url
 from api.services.caption import template_uses_ai_title, template_uses_ai_title_hashtag
 from api.services.llm_config import get_default_llm_model, get_llm_mode, is_llm_enabled
@@ -33,6 +39,15 @@ def _as_utc(dt: datetime | None) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
+
+
+def _load_attach_fields(raw: Optional[str]) -> List[str]:
+    """Tolerate legacy rows whose column is NULL or holds non-list JSON."""
+    try:
+        value = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    return [str(v) for v in value] if isinstance(value, list) else []
 
 
 def _to_read(row: ChannelPipeline) -> dict:
@@ -59,6 +74,9 @@ def _to_read(row: ChannelPipeline) -> dict:
         "window_delay_minutes": row.window_delay_minutes,
         "telegram_bot_token_set": bool(row.telegram_bot_token),
         "telegram_chat_id": row.telegram_chat_id,
+        "telegram_notify_mode": row.telegram_notify_mode or "cycle",
+        "telegram_attach_video": bool(row.telegram_attach_video),
+        "telegram_attach_fields": _load_attach_fields(row.telegram_attach_fields_json),
         "run_now_requested_at": row.run_now_requested_at,
         "lock_until": row.lock_until,
         "created_at": row.created_at,
@@ -155,6 +173,9 @@ def create_pipeline(payload: PipelineCreate, session: Session = Depends(get_sess
         window_delay_minutes=payload.window_delay_minutes,
         telegram_bot_token=payload.telegram_bot_token or None,
         telegram_chat_id=payload.telegram_chat_id or None,
+        telegram_notify_mode=payload.telegram_notify_mode,
+        telegram_attach_video=payload.telegram_attach_video,
+        telegram_attach_fields_json=json.dumps(payload.telegram_attach_fields),
         sync_from_date=payload.sync_from_date,
     )
     session.add(row)
@@ -237,8 +258,6 @@ def update_pipeline(
         row.upload_options_json = json.dumps(payload.upload_options.model_dump())
         changed = True
     if payload.account_ids is not None:
-        if not payload.account_ids:
-            raise HTTPException(status_code=400, detail="account_ids must not be empty")
         found_ids = {
             a.id for a in session.exec(
                 select(Account).where(Account.id.in_(payload.account_ids))
@@ -269,6 +288,15 @@ def update_pipeline(
         changed = True
     if "window_delay_minutes" in payload.model_fields_set:
         row.window_delay_minutes = payload.window_delay_minutes
+        changed = True
+    if payload.telegram_notify_mode is not None:
+        row.telegram_notify_mode = payload.telegram_notify_mode
+        changed = True
+    if payload.telegram_attach_video is not None:
+        row.telegram_attach_video = payload.telegram_attach_video
+        changed = True
+    if payload.telegram_attach_fields is not None:
+        row.telegram_attach_fields_json = json.dumps(payload.telegram_attach_fields)
         changed = True
 
     # Post-merge window invariant checks (payload may omit either field, so we
@@ -376,6 +404,9 @@ def delete_pipeline(pipeline_id: int, session: Session = Depends(get_session)):
     # purge children explicitly before deleting the parent.
     session.execute(delete(VideoUpload).where(VideoUpload.pipeline_id == pipeline_id))
     session.execute(delete(PipelineRun).where(PipelineRun.pipeline_id == pipeline_id))
+    session.execute(
+        delete(PipelineSeenVideo).where(PipelineSeenVideo.pipeline_id == pipeline_id)
+    )
     session.delete(row)
     session.commit()
 

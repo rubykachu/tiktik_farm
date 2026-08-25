@@ -25,7 +25,8 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 |---|---|
 | Hiểu hệ thống làm gì | [01-overview](01-overview.md) |
 | Deploy lên VPS | [03-setup-docker](03-setup-docker.md) |
-| Cập nhật code / tránh image cũ | `make deploy` — [03-setup-docker](03-setup-docker.md) |
+| Vận hành hằng ngày (bàn giao) | [RUNBOOK.md](../RUNBOOK.md) |
+| Cập nhật code / tránh image cũ | `make start` — [03-setup-docker](03-setup-docker.md) |
 | Thêm account mới | [05-accounts](05-accounts.md) |
 | Pipeline kênh YouTube → TikTok lặp lại | [07-schedules](07-schedules.md) |
 | Pipeline kênh Douyin → TikTok | [13-douyin-pipeline](13-douyin-pipeline.md) |
