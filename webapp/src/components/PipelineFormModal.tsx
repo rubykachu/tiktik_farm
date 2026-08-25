@@ -721,10 +721,6 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
 
               {intervalUnit === "days" && (
                 <div className="space-y-3">
-                  <p className="text-xs text-slate-400">
-                    Nếu giờ này đã qua hôm nay, lần chạy đầu tiên sẽ vào ngày mai.
-                  </p>
-
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"

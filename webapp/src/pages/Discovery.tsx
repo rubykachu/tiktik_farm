@@ -49,6 +49,10 @@ function formatCadence(days: number | null, tab: string | null): string {
   return `${days.toFixed(1)} ngày/video (${tabLabel})`;
 }
 
+function marketLabel(gl: string): string {
+  return MARKETS.find((m) => m.gl === gl)?.label ?? gl;
+}
+
 function localHHMM(iso: string): string {
   const d = asUtcDate(iso);
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
@@ -243,17 +247,22 @@ export default function DiscoveryPage() {
         <div className="lg:col-span-2 space-y-3 border rounded p-4">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm">Tìm & quét</h3>
-            <select
-              className="input w-40 text-sm"
-              value={market.gl}
-              onChange={(e) => setMarket(MARKETS.find((m) => m.gl === e.target.value) ?? market)}
-            >
-              {MARKETS.map((m) => (
-                <option key={m.gl} value={m.gl}>
-                  Thị trường: {m.label}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <select
+                className="input w-40 text-sm"
+                value={market.gl}
+                onChange={(e) => setMarket(MARKETS.find((m) => m.gl === e.target.value) ?? market)}
+              >
+                {MARKETS.map((m) => (
+                  <option key={m.gl} value={m.gl}>
+                    Thị trường: {m.label}
+                  </option>
+                ))}
+              </select>
+              <span title="Đã kiểm chứng thực tế: chỉ ảnh hưởng chắc chắn tới gợi ý từ khóa. Bước tìm kênh chính (ytsearch) không có cách đảm bảo lọc đúng theo thị trường/ngôn ngữ này.">
+                <HelpCircle size={14} className="text-slate-400" />
+              </span>
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -382,7 +391,7 @@ export default function DiscoveryPage() {
                 <div className="space-y-1">
                   <div>
                     Đang quét: {viewingRun.channels_done}/{viewingRun.channels_total} kênh — từ khóa:{" "}
-                    {viewingRun.keywords.join(", ")}
+                    {viewingRun.keywords.join(", ")} — thị trường: {marketLabel(viewingRun.market_gl)}
                   </div>
                   {viewingRun.channels_total > 0 && (
                     <div className="h-1.5 bg-blue-100 rounded overflow-hidden">
@@ -395,7 +404,10 @@ export default function DiscoveryPage() {
                 </div>
               )}
               {viewingRun.status === "done" && (
-                <>Tìm được {viewingRun.candidates_found} ứng viên — từ khóa: {viewingRun.keywords.join(", ")}</>
+                <>
+                  Tìm được {viewingRun.candidates_found} ứng viên — từ khóa: {viewingRun.keywords.join(", ")} —
+                  thị trường: {marketLabel(viewingRun.market_gl)}
+                </>
               )}
               {viewingRun.status === "error" && <>Lỗi: {viewingRun.error_text}</>}
             </div>
@@ -496,7 +508,9 @@ export default function DiscoveryPage() {
               >
                 <div className="font-medium truncate">{run.keywords.join(", ")}</div>
                 <div className="text-slate-500 flex items-center justify-between mt-0.5">
-                  <span>{formatRelative(run.started_at)}</span>
+                  <span>
+                    {formatRelative(run.started_at)} · {marketLabel(run.market_gl)}
+                  </span>
                   <span>
                     {run.status === "running"
                       ? "đang quét…"
