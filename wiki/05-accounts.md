@@ -26,7 +26,7 @@ Modal **Import JSON**: paste nội dung JSON export từ Cookie-Editor (hoặc u
 - Username đã có mà `replace != true` → **409** `ACCOUNT_EXISTS`.
 - Lưu pickle vào `CookiesDir` (quyền file **0600**, thư mục **0700**) + upsert `Account`.
 
-Request cần **`Origin: http://127.0.0.1:3000`** (hoặc `localhost:3000`).
+Request cần **`Origin: http://127.0.0.1:2705`** (hoặc `localhost:2705`).
 
 ### Cách B — Migrate JSON từ Cookie-Editor / v1
 
@@ -81,8 +81,8 @@ UI `/accounts` row → "Delete":
 
 API equivalent:
 ```bash
-curl -X DELETE http://127.0.0.1:8000/api/accounts/<id> \
-  -H "Origin: http://127.0.0.1:3000"
+curl -X DELETE http://127.0.0.1:2706/api/accounts/<id> \
+  -H "Origin: http://127.0.0.1:2705"
 ```
 
 ## DB schema (bảng `accounts`)

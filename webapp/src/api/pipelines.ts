@@ -2,8 +2,19 @@ import { api } from "./client";
 
 export type TelegramNotifyMode = "changes_only" | "cycle" | "every_tick";
 
+export type LastRunStatus = "ok" | "partial" | "failed" | "error" | "running";
+
+export interface PipelineLastRun {
+  at: string | null;
+  status: LastRunStatus;
+  uploaded_count: number;
+  failed_count: number;
+  error_text: string | null;
+}
+
 export interface Pipeline {
   id: number;
+  last_run: PipelineLastRun | null;
   name: string;
   channel_url: string;
   source_type: "youtube" | "douyin";
@@ -95,6 +106,37 @@ export interface PipelineUpdate {
   sync_from_date?: string | null;
 }
 
+/** One calendar day of runs, as the operator's timezone sees it. */
+export interface RunDay {
+  date: string;
+  items: PipelineRunItem[];
+  /** Rows this day actually has — `items` is capped at `per_day_limit`. */
+  total: number;
+  /** Videos uploaded across the whole day, not just the loaded rows. */
+  uploaded_total: number;
+}
+
+export interface RunDays {
+  days: RunDay[];
+  day_limit: number;
+  per_day_limit: number;
+}
+
+/** Response to a `date=` request: more rows inside one already-shown day. */
+export interface RunDayPage {
+  date: string;
+  items: PipelineRunItem[];
+  total: number;
+  offset: number;
+}
+
+export interface PipelinePage {
+  items: Pipeline[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface PipelineRunItem {
   id: number;
   pipeline_id: number;
@@ -130,7 +172,24 @@ export interface VideoUploadItem {
 }
 
 export const Pipelines = {
-  list: () => api.get<Pipeline[]>("/pipelines").then((r) => r.data),
+  list: (page = 1) =>
+    api.get<PipelinePage>("/pipelines", { params: { page } }).then((r) => r.data),
+
+  /** Every pipeline, for pickers that need the whole set rather than a page. */
+  listAll: async () => {
+    const first = await api
+      .get<PipelinePage>("/pipelines")
+      .then((r) => r.data);
+    const items = [...first.items];
+    const pages = Math.ceil(first.total / first.size);
+    for (let page = 2; page <= pages; page++) {
+      const next = await api
+        .get<PipelinePage>("/pipelines", { params: { page } })
+        .then((r) => r.data);
+      items.push(...next.items);
+    }
+    return items;
+  },
   get: (id: number) => api.get<Pipeline>(`/pipelines/${id}`).then((r) => r.data),
   create: (p: PipelineCreate) =>
     api.post<Pipeline>("/pipelines", p).then((r) => r.data),
@@ -139,8 +198,13 @@ export const Pipelines = {
   remove: (id: number) => api.delete(`/pipelines/${id}`),
   runNow: (id: number) =>
     api.post<{ ok: boolean; message: string }>(`/pipelines/${id}/run-now`).then((r) => r.data),
-  listRuns: (pipelineId: number, page = 1) =>
-    api.get<PipelineRunItem[]>(`/pipelines/${pipelineId}/runs`, { params: { page } }).then((r) => r.data),
+  listRuns: (pipelineId: number) =>
+    api.get<RunDays>(`/pipelines/${pipelineId}/runs`).then((r) => r.data),
+
+  listRunsForDay: (pipelineId: number, date: string, offset: number) =>
+    api
+      .get<RunDayPage>(`/pipelines/${pipelineId}/runs`, { params: { date, offset } })
+      .then((r) => r.data),
   listRunVideos: (pipelineId: number, runId: number) =>
     api.get<VideoUploadItem[]>(`/pipelines/${pipelineId}/runs/${runId}/videos`).then((r) => r.data),
   clearRuns: (pipelineId: number, runIds: number[]) => {

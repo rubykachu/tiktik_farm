@@ -5,9 +5,9 @@
 #                 image that api and scheduler derive from.
 #                 `docker compose build` builds it once; dependent services
 #                 pull it by name.
-#   api         — FastAPI REST API + OpenAPI docs at /docs (port 8000)
+#   api         — FastAPI REST API + OpenAPI docs at /docs (host 127.0.0.1:2706)
 #   scheduler   — polling worker for pipeline uploads
-#   webapp      — React UI served by nginx, proxies /api (port 3000)
+#   webapp      — React UI served by nginx, proxies /api (host 127.0.0.1:2705)
 #
 # Ports are bound to 127.0.0.1 so nothing is exposed outside the host.
 
@@ -30,6 +30,7 @@ services:
       - TIKTOK_API_DB_PATH=/data/tiktok.db
       - TIKTOK_CONFIG_PATH=/app/config.txt
       - MANUAL_DOWNLOAD_DIR=/data/manual_downloads
+      - WEBAPP_PORT=${WEBAPP_PORT:-2705}
       - YTDLP_PLAYER_CLIENTS=${YTDLP_PLAYER_CLIENTS:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-}
@@ -42,7 +43,7 @@ services:
       - "host.docker.internal:host-gateway"
     working_dir: /data  # so Config() resolves CookiesDir/VideosDirPath on the volume
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:2706:8000"
     restart: unless-stopped
 
   scheduler:
@@ -85,7 +86,7 @@ services:
     depends_on:
       - api
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:2705:80"
     volumes:
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
     restart: unless-stopped

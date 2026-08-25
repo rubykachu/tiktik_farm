@@ -45,7 +45,7 @@ DELETE /api/videos/{id}
 - **`from_date` / `to_date`**: ISO 8601 (so khớp `created_at`).
 - **`size`**: 1…**200**, mặc định 50.
 
-Mọi `DELETE` cần header **`Origin: http://127.0.0.1:3000`** (hoặc `localhost:3000`). Xóa chỉ xóa **bản ghi DB** — **không** xóa video trên TikTok.
+Mọi `DELETE` cần header **`Origin: http://127.0.0.1:2705`** (hoặc `localhost:2705`). Xóa chỉ xóa **bản ghi DB** — **không** xóa video trên TikTok.
 
 ### `rendered_caption` có thể chứa output LLM
 

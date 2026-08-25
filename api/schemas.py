@@ -348,9 +348,19 @@ class PipelineUpdate(BaseModel):
         return self
 
 
+class PipelineLastRun(BaseModel):
+    at: Optional[datetime] = None
+    # ok | partial | failed | error | running
+    status: str
+    uploaded_count: int = 0
+    failed_count: int = 0
+    error_text: Optional[str] = None
+
+
 class PipelineRead(BaseModel):
     """Bot token is NEVER exposed — only the boolean flag indicating presence."""
     id: int
+    last_run: Optional[PipelineLastRun] = None
     name: str
     channel_url: str
     source_type: str = "youtube"
@@ -462,6 +472,13 @@ class ManualDownloadRead(BaseModel):
 class ManualDownloadCaptionRequest(BaseModel):
     # Absent → the server's sample prompt is used.
     prompt: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PipelinePage(BaseModel):
+    items: List[PipelineRead]
+    total: int
+    page: int
+    size: int
 
 
 class TelegramAttachField(BaseModel):

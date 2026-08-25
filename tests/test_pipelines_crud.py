@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
+from api.middleware.origin import LOCAL_ORIGIN
 
-HEADERS_OK = {"Origin": "http://127.0.0.1:3000"}
+HEADERS_OK = {"Origin": LOCAL_ORIGIN}
 
 
 def _now() -> datetime:
@@ -224,8 +226,10 @@ class TestRead:
         assert r.status_code == 201
         r2 = client.get("/api/pipelines")
         assert r2.status_code == 200
-        rows = r2.json()
+        body = r2.json()
+        rows = body["items"]
         assert len(rows) == 1
+        assert body["total"] == 1
         assert "telegram_bot_token" not in rows[0]
         assert rows[0]["telegram_bot_token_set"] is True
 
@@ -406,6 +410,141 @@ class TestPatch:
 
 
 # ----------------- DELETE ---------------------------------------------------
+
+class TestListPagination:
+    def _make(self, client, n: int) -> None:
+        for i in range(n):
+            aid = _make_account(client, username=f"pg{i}")
+            client.post("/api/pipelines",
+                        json=_valid_payload(aid, name=f"pipe {i:03d}"),
+                        headers=HEADERS_OK)
+
+    def test_defaults_to_the_configured_page_size(self, client):
+        from api.pagination import PIPELINES_PER_PAGE
+
+        body = client.get("/api/pipelines").json()
+        assert body["size"] == PIPELINES_PER_PAGE
+        assert body["page"] == 1
+
+    def test_total_counts_every_pipeline_not_just_the_page(self, client):
+        self._make(client, 3)
+
+        body = client.get("/api/pipelines", params={"size": 2}).json()
+
+        assert len(body["items"]) == 2
+        assert body["total"] == 3
+
+    def test_second_page_returns_the_remainder(self, client):
+        self._make(client, 3)
+
+        first = client.get("/api/pipelines", params={"size": 2, "page": 1}).json()
+        second = client.get("/api/pipelines", params={"size": 2, "page": 2}).json()
+
+        assert len(second["items"]) == 1
+        ids = {p["id"] for p in first["items"]} & {p["id"] for p in second["items"]}
+        assert ids == set()
+
+    def test_total_respects_the_state_filter(self, client):
+        self._make(client, 2)
+        rows = client.get("/api/pipelines").json()["items"]
+        client.patch(f"/api/pipelines/{rows[0]['id']}",
+                     json={"state": "paused"}, headers=HEADERS_OK)
+
+        body = client.get("/api/pipelines", params={"state": "paused"}).json()
+
+        assert body["total"] == 1
+
+    def test_page_past_the_end_is_empty_not_an_error(self, client):
+        self._make(client, 1)
+
+        body = client.get("/api/pipelines", params={"page": 99}).json()
+
+        assert body["items"] == []
+        assert body["total"] == 1
+
+    def test_rejects_out_of_range_paging(self, client):
+        assert client.get("/api/pipelines", params={"page": 0}).status_code == 422
+        assert client.get("/api/pipelines", params={"size": 999}).status_code == 422
+
+
+class TestLastRunSummary:
+    """`state` says whether the operator switched a pipeline on; it says
+    nothing about whether the thing works. The list needs both."""
+
+    _seq = 0
+
+    def _pipeline_with_run(self, client, **run_kw):
+        from api import db as _db
+        from api.models import PipelineRun
+
+        TestLastRunSummary._seq += 1
+        n = TestLastRunSummary._seq
+        aid = _make_account(client, username=f"acct_lr{n}")
+        pid = client.post("/api/pipelines", json=_valid_payload(aid, name=f"pipe {n}"),
+                          headers=HEADERS_OK).json()["id"]
+        with Session(_db.engine) as s:
+            s.add(PipelineRun(pipeline_id=pid, started_at=_now(),
+                              trigger_reason="scheduled", **run_kw))
+            s.commit()
+        return pid
+
+    def _last_run(self, client, pid):
+        rows = client.get("/api/pipelines").json()["items"]
+        return next(r for r in rows if r["id"] == pid)["last_run"]
+
+    def test_never_run_is_null(self, client):
+        aid = _make_account(client)
+        pid = client.post("/api/pipelines", json=_valid_payload(aid),
+                          headers=HEADERS_OK).json()["id"]
+        assert self._last_run(client, pid) is None
+
+    def test_clean_run_is_ok(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(), uploaded_count=2)
+        assert self._last_run(client, pid)["status"] == "ok"
+
+    def test_all_uploads_failed_is_failed(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(), failed_count=2)
+        assert self._last_run(client, pid)["status"] == "failed"
+
+    def test_some_uploads_failed_is_partial(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(),
+                                      uploaded_count=1, failed_count=1)
+        assert self._last_run(client, pid)["status"] == "partial"
+
+    def test_system_error_outranks_counts(self, client):
+        pid = self._pipeline_with_run(client, finished_at=_now(),
+                                      uploaded_count=1, error_text="low_disk")
+        summary = self._last_run(client, pid)
+        assert summary["status"] == "error"
+        assert summary["error_text"] == "low_disk"
+
+    def test_unfinished_run_is_running(self, client):
+        pid = self._pipeline_with_run(client)
+        assert self._last_run(client, pid)["status"] == "running"
+
+    def test_reports_the_newest_run_only(self, client):
+        from datetime import timedelta
+
+        from api import db as _db
+        from api.models import PipelineRun
+
+        pid = self._pipeline_with_run(client, finished_at=_now(), failed_count=3)
+        with Session(_db.engine) as s:
+            s.add(PipelineRun(pipeline_id=pid, started_at=_now() + timedelta(hours=1),
+                              finished_at=_now() + timedelta(hours=1),
+                              trigger_reason="scheduled", uploaded_count=1))
+            s.commit()
+
+        assert self._last_run(client, pid)["status"] == "ok"
+
+    def test_each_pipeline_gets_its_own_run(self, client):
+        """One query serves every row; a join bug would smear them together."""
+        good = self._pipeline_with_run(client, finished_at=_now(), uploaded_count=1)
+        bad = self._pipeline_with_run(client, finished_at=_now(), failed_count=1)
+
+        assert self._last_run(client, good)["status"] == "ok"
+        assert self._last_run(client, bad)["status"] == "failed"
+
 
 class TestDelete:
     def test_delete_204_when_not_locked(self, client):

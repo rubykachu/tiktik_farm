@@ -46,7 +46,7 @@ mkdir -p CookiesDir VideosDirPath data
 # 1. API
 TIKTOK_CONFIG_PATH=./config.txt \
     ./.venv/bin/uvicorn api.main:app \
-    --host 127.0.0.1 --port 8000 \
+    --host 127.0.0.1 --port 2706 \
     > /tmp/v2_api.log 2>&1 &
 
 # 2. Scheduler
@@ -55,17 +55,17 @@ TIKTOK_CONFIG_PATH=./config.txt LOG_LEVEL=INFO \
     > /tmp/v2_scheduler.log 2>&1 &
 
 # 3. Webapp (Vite — hot reload tự động khi sửa src/)
-(cd webapp && ./node_modules/.bin/vite --port 3000 --host 127.0.0.1 \
+(cd webapp && ./node_modules/.bin/vite --port 2705 --host 127.0.0.1 \
     > /tmp/v2_webapp.log 2>&1 &)
 ```
 
-Mở: http://127.0.0.1:3000.
+Mở: http://127.0.0.1:2705.
 
 ## Stop
 
 ```bash
-lsof -nP -iTCP:8000 -sTCP:LISTEN -t | xargs -r kill
-lsof -nP -iTCP:3000 -sTCP:LISTEN -t | xargs -r kill
+lsof -nP -iTCP:2706 -sTCP:LISTEN -t | xargs -r kill
+lsof -nP -iTCP:2705 -sTCP:LISTEN -t | xargs -r kill
 pkill -f "scheduler.main"
 ```
 
@@ -83,15 +83,15 @@ pkill -f "scheduler.main"
 uvicorn KHÔNG có `--reload` flag → code thay đổi không tự áp dụng. Phải kill + start lại API:
 
 ```bash
-lsof -nP -iTCP:8000 -sTCP:LISTEN -t | xargs -r kill
+lsof -nP -iTCP:2706 -sTCP:LISTEN -t | xargs -r kill
 sleep 1
 TIKTOK_CONFIG_PATH=./config.txt ./.venv/bin/uvicorn api.main:app \
-    --host 127.0.0.1 --port 8000 > /tmp/v2_api.log 2>&1 &
+    --host 127.0.0.1 --port 2706 > /tmp/v2_api.log 2>&1 &
 ```
 
 Hoặc thêm `--reload` (chỉ dev):
 ```bash
-./.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+./.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 2706 --reload
 ```
 
 Scheduler tương tự — `pkill -f "scheduler.main"` rồi start lại.

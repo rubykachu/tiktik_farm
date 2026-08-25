@@ -20,6 +20,7 @@ from api.routers import (
     douyin_cookies,
     downloads,
     llm_models,
+    overview,
     pipelines,
     settings,
     telegram,
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(llm_models.router)
     app.include_router(douyin_cookies.router)
     app.include_router(downloads.router)
+    app.include_router(overview.router)
     app.include_router(downloads.public_router)
     return app
 

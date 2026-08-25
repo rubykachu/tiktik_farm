@@ -34,7 +34,7 @@ Dùng qua `make dev`:
 | Lệnh | Ý nghĩa |
 |---|---|
 | `make start` | Bản thật: nginx phục vụ bundle tĩnh, không reload |
-| `make dev` | Vite HMR (host `3000` → container `5173`), API `uvicorn --reload`, mount `webapp/` + `api/` |
+| `make dev` | Vite HMR (host `2705` → container `5173`), API `uvicorn --reload`, mount `webapp/` + `api/` |
 
 Lần đầu chạy `make dev`: container chạy `npm ci` / `npm install` vào volume ẩn
 `node_modules` (tránh ghi đè deps macOS).
@@ -46,9 +46,9 @@ bắt buộc `make start`.
 
 ## Bảo mật vận hành (Phase 1)
 
-- **Origin middleware**: `POST` / `PUT` / `PATCH` / `DELETE` phải có `Origin` hoặc `Referer` khớp `http://127.0.0.1:3000` hoặc `http://localhost:3000`. `curl` hoặc script automation phải gửi header tương ứng. GET/HEAD/OPTIONS không kiểm tra Origin (CORS vẫn giới hạn ở app).
+- **Origin middleware**: `POST` / `PUT` / `PATCH` / `DELETE` phải có `Origin` hoặc `Referer` khớp `http://127.0.0.1:2705` hoặc `http://localhost:2705` (đổi qua `WEBAPP_PORT`). `curl` hoặc script automation phải gửi header tương ứng. GET/HEAD/OPTIONS không kiểm tra Origin (CORS vẫn giới hạn ở app).
 - **Không có auth đăng nhập**: coi API là **localhost / tin cậy**. Ra Internet → **reverse proxy + HTTPS + basic auth** (hoặc tương đương) trước webapp.
-- **Bind**: ưu tiên chỉ lắng nghe `127.0.0.1` trên host; trong Docker giữ API internal, chỉ webapp map `127.0.0.1:3000`.
+- **Bind**: chỉ lắng nghe `127.0.0.1` trên host — webapp `127.0.0.1:2705`, api `127.0.0.1:2706`.
 - **Cookie / path**: username & path cookie file có guard chống path traversal; import JSON có giới hạn kích thước/cấu trúc (xem [05-accounts](05-accounts.md)).
 - **Telegram**: URL cố định `api.telegram.org`, httpx `follow_redirects=False`, timeout 10s; token trong log bị redact (`api/logging.py`).
 
@@ -99,7 +99,7 @@ docker compose stop scheduler && docker compose start scheduler
 
 ```bash
 docker compose ps              # tất cả containers Up?
-curl http://127.0.0.1:8000/health    # API trả 200?
+curl http://127.0.0.1:2706/health    # API trả 200?
 docker compose logs --tail=30 webapp # nginx log có 502/upstream error?
 ```
 

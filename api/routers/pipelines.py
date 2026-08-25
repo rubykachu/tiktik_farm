@@ -11,14 +11,22 @@ yanked mid-tick. The user must Stop + wait.
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete
+from sqlalchemy import delete, func
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from api.db import get_session, now_utc
+from api.pagination import (
+    DAYS_PER_RESPONSE,
+    MAX_PAGE_SIZE,
+    PIPELINES_PER_PAGE,
+    RUNS_PER_DAY,
+)
 from api.models import (
     Account,
     ChannelPipeline,
@@ -26,9 +34,17 @@ from api.models import (
     PipelineSeenVideo,
     VideoUpload,
 )
-from api.schemas import PipelineCreate, PipelineRead, PipelineUpdate, _validate_window_fields, is_douyin_url
+from api.schemas import (
+    PipelineCreate,
+    PipelinePage,
+    PipelineRead,
+    PipelineUpdate,
+    _validate_window_fields,
+    is_douyin_url,
+)
 from api.services.caption import template_uses_ai_title, template_uses_ai_title_hashtag
 from api.services.llm_config import get_default_llm_model, get_llm_mode, is_llm_enabled
+from api.services.local_time import local_day, sqlite_day_offset
 from api.services.youtube_validate import is_youtube_url
 
 
@@ -50,8 +66,61 @@ def _load_attach_fields(raw: Optional[str]) -> List[str]:
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
-def _to_read(row: ChannelPipeline) -> dict:
+def _summarise_run(run: Optional[PipelineRun]) -> Optional[dict]:
+    """Condense a run into the one thing the list needs: did it go well?
+
+    `state` on a pipeline says whether the operator switched it on, not whether
+    it works. Without this the only way to spot a broken pipeline is to expand
+    every row.
+    """
+    if run is None:
+        return None
+    if run.finished_at is None:
+        status = "running"
+    elif run.error_text:
+        status = "error"
+    elif run.failed_count and not run.uploaded_count:
+        status = "failed"
+    elif run.failed_count:
+        status = "partial"
+    else:
+        status = "ok"
     return {
+        "at": run.started_at.isoformat() if run.started_at else None,
+        "status": status,
+        "uploaded_count": run.uploaded_count,
+        "failed_count": run.failed_count,
+        "error_text": run.error_text,
+    }
+
+
+def _latest_runs(session: Session, pipeline_ids: list[int]) -> dict[int, PipelineRun]:
+    """Newest run per pipeline, in two queries rather than one per row."""
+    if not pipeline_ids:
+        return {}
+    newest = (
+        select(
+            PipelineRun.pipeline_id.label("pid"),  # type: ignore[attr-defined]
+            func.max(PipelineRun.started_at).label("started"),
+        )
+        .where(PipelineRun.pipeline_id.in_(pipeline_ids))  # type: ignore[union-attr]
+        .group_by(PipelineRun.pipeline_id)
+        .subquery()
+    )
+    rows = session.exec(
+        select(PipelineRun).join(
+            newest,
+            (PipelineRun.pipeline_id == newest.c.pid)
+            & (PipelineRun.started_at == newest.c.started),
+        )
+    ).all()
+    # Two runs can share a started_at; last one wins, either is representative.
+    return {r.pipeline_id: r for r in rows}
+
+
+def _to_read(row: ChannelPipeline, last_run: Optional[PipelineRun] = None) -> dict:
+    return {
+        "last_run": _summarise_run(last_run),
         "id": row.id,
         "name": row.name,
         "channel_url": row.channel_url,
@@ -114,16 +183,26 @@ def _validate_ai_title_preconditions(template: str, prompt: Optional[str]) -> No
         )
 
 
-@router.get("", response_model=List[PipelineRead])
+@router.get("", response_model=PipelinePage)
 def list_pipelines(
     state: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(PIPELINES_PER_PAGE, ge=1, le=MAX_PAGE_SIZE),
     session: Session = Depends(get_session),
 ):
     stmt = select(ChannelPipeline).order_by(ChannelPipeline.created_at.desc())
     if state:
         stmt = stmt.where(ChannelPipeline.state == state)
-    rows = session.exec(stmt).all()
-    return [_to_read(r) for r in rows]
+
+    total = session.exec(select(func.count()).select_from(stmt.subquery())).one()
+    rows = session.exec(stmt.offset((page - 1) * size).limit(size)).all()
+    latest = _latest_runs(session, [r.id for r in rows if r.id is not None])
+    return {
+        "items": [_to_read(r, latest.get(r.id)) for r in rows],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
 
 
 @router.get("/{pipeline_id}", response_model=PipelineRead)
@@ -131,7 +210,7 @@ def get_pipeline(pipeline_id: int, session: Session = Depends(get_session)):
     row = session.get(ChannelPipeline, pipeline_id)
     if not row:
         raise HTTPException(status_code=404, detail="pipeline not found")
-    return _to_read(row)
+    return _to_read(row, _latest_runs(session, [pipeline_id]).get(pipeline_id))
 
 
 @router.post("", response_model=PipelineRead, status_code=status.HTTP_201_CREATED)
@@ -455,48 +534,139 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
 # ─── Drill-down: runs + videos ──────────────────────────────────────────────
 
 
-MAX_PAGE_SIZE = 200
+
+
+
+
+def _run_row(r: PipelineRun) -> dict:
+    return {
+        "id": r.id,
+        "pipeline_id": r.pipeline_id,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+        "trigger_reason": r.trigger_reason,
+        "pulled_count": r.pulled_count,
+        "uploaded_count": r.uploaded_count,
+        "skipped_dup_count": r.skipped_dup_count,
+        "skipped_exhausted_count": r.skipped_exhausted_count,
+        "failed_count": r.failed_count,
+        "summary_text": r.summary_text,
+        "error_text": r.error_text,
+        "status_text": r.status_text,
+        "pushed_notify_at": r.pushed_notify_at.isoformat() if r.pushed_notify_at else None,
+    }
 
 
 @router.get("/{pipeline_id}/runs")
 def list_runs(
     pipeline_id: int,
-    page: int = Query(1, ge=1),
-    size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+    date: Optional[str] = Query(
+        default=None,
+        description="YYYY-MM-DD in the operator's timezone. Returns more rows "
+                    "for that one day instead of the grouped view.",
+    ),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(RUNS_PER_DAY, ge=1, le=MAX_PAGE_SIZE),
     session: Session = Depends(get_session),
 ):
+    """Runs grouped by the day the operator saw them happen.
+
+    Paginating a flat list splits a day across the page boundary, which makes
+    the day headings disagree with the rows under them. Grouping server-side
+    keeps each day whole. The response is bounded by DAYS_PER_RESPONSE, which
+    matches RUN_RETENTION_DAYS — anything older has already been purged.
+
+    Bucketing happens in SQL: a pipeline may run every two minutes, so reading
+    every row into Python to group it would mean 20k objects to render 900.
+    """
     pipeline = session.get(ChannelPipeline, pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="pipeline not found")
 
-    offset = (page - 1) * size
-    rows = session.exec(
-        select(PipelineRun)
+    # SQLite stores naive UTC and has no timezone support, so the local day is
+    # computed by shifting the timestamp. See local_time.sqlite_day_offset.
+    day_expr = func.date(PipelineRun.started_at, sqlite_day_offset())
+
+    if date:
+        return _one_day_page(session, pipeline_id, day_expr, date, offset, limit)
+
+    # Aggregates cover the whole day, not the capped slice of rows below, so
+    # the day heading can state the real count rather than what happens to be
+    # loaded.
+    day_counts = session.exec(
+        select(
+            day_expr.label("day"),
+            func.count().label("n"),
+            func.coalesce(func.sum(PipelineRun.uploaded_count), 0).label("uploaded"),
+        )
         .where(PipelineRun.pipeline_id == pipeline_id)
-        .order_by(PipelineRun.started_at.desc())  # type: ignore[union-attr]
-        .offset(offset)
-        .limit(size)
+        .group_by(day_expr)
+        .order_by(day_expr.desc())
+        .limit(DAYS_PER_RESPONSE)
+    ).all()
+    if not day_counts:
+        return {"days": [], "day_limit": DAYS_PER_RESPONSE, "per_day_limit": RUNS_PER_DAY}
+
+    days = [row[0] for row in day_counts]
+    totals = {row[0]: (row[1], row[2]) for row in day_counts}
+
+    # One row per (day, rank) so a busy day contributes at most RUNS_PER_DAY.
+    ranked = (
+        select(
+            PipelineRun,
+            func.row_number()
+            .over(partition_by=day_expr, order_by=PipelineRun.started_at.desc())
+            .label("rank"),
+        )
+        .where(PipelineRun.pipeline_id == pipeline_id, day_expr.in_(days))
+        .subquery()
+    )
+    ranked_run = aliased(PipelineRun, ranked)
+    rows = session.exec(
+        select(ranked_run)
+        .where(ranked.c.rank <= RUNS_PER_DAY)
+        .order_by(ranked.c.started_at.desc())
     ).all()
 
-    return [
-        {
-            "id": r.id,
-            "pipeline_id": r.pipeline_id,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
-            "trigger_reason": r.trigger_reason,
-            "pulled_count": r.pulled_count,
-            "uploaded_count": r.uploaded_count,
-            "skipped_dup_count": r.skipped_dup_count,
-            "skipped_exhausted_count": r.skipped_exhausted_count,
-            "failed_count": r.failed_count,
-            "summary_text": r.summary_text,
-            "error_text": r.error_text,
-            "status_text": r.status_text,
-            "pushed_notify_at": r.pushed_notify_at.isoformat() if r.pushed_notify_at else None,
-        }
-        for r in rows
-    ]
+    by_day: "OrderedDict[str, list[dict]]" = OrderedDict((d, []) for d in days)
+    for r in rows:
+        if r.started_at:
+            by_day[local_day(r.started_at)].append(_run_row(r))
+
+    return {
+        "days": [
+            {
+                "date": day,
+                "items": items,
+                "total": totals[day][0],
+                "uploaded_total": totals[day][1],
+            }
+            for day, items in by_day.items()
+        ],
+        "day_limit": DAYS_PER_RESPONSE,
+        "per_day_limit": RUNS_PER_DAY,
+    }
+
+
+def _one_day_page(session, pipeline_id, day_expr, date, offset, limit) -> dict:
+    """The "load more" path: further rows inside one already-visible day."""
+    scoped = (PipelineRun.pipeline_id == pipeline_id, day_expr == date)
+    total = session.exec(
+        select(func.count()).select_from(PipelineRun).where(*scoped)
+    ).one()
+    rows = session.exec(
+        select(PipelineRun)
+        .where(*scoped)
+        .order_by(PipelineRun.started_at.desc())  # type: ignore[union-attr]
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return {
+        "date": date,
+        "items": [_run_row(r) for r in rows],
+        "total": total,
+        "offset": offset,
+    }
 
 
 @router.delete("/{pipeline_id}/runs", status_code=status.HTTP_204_NO_CONTENT)

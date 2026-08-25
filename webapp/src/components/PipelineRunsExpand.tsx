@@ -2,9 +2,9 @@ import { Fragment, useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { Accounts } from "../api/client";
-import { Pipelines, PipelineRunItem } from "../api/pipelines";
+import { Pipelines, PipelineRunItem, RunDay } from "../api/pipelines";
 import { statusBadge } from "../utils/statusBadge";
-import { asUtcDate as asUtc } from "../utils/datetime";
+import { formatDateTime, formatTime } from "../utils/datetime";
 import { toast } from "sonner";
 
 function statusLabel(s: string): string {
@@ -46,32 +46,32 @@ function ErrorDetailModal({ text, onClose }: { text: string; onClose: () => void
 }
 
 interface DayGroup {
-  date: string; // "YYYY-MM-DD"
+  date: string; // "YYYY-MM-DD" in the operator's timezone
   runs: PipelineRunItem[];
+  /** Rows this day has in total — `runs` is capped by the API. */
+  totalRuns: number;
   totalUploaded: number;
   latestRun: PipelineRunItem;
 }
 
-function groupByDay(runs: PipelineRunItem[]): DayGroup[] {
-  const map = new Map<string, PipelineRunItem[]>();
-  for (const r of runs) {
-    const date = r.started_at ? r.started_at.slice(0, 10) : "unknown";
-    if (!map.has(date)) map.set(date, []);
-    map.get(date)!.push(r);
-  }
-  return Array.from(map.entries()).map(([date, dayRuns]) => {
-    const sorted = [...dayRuns].sort((a, b) => {
-      const ta = a.started_at ?? "";
-      const tb = b.started_at ?? "";
-      return tb.localeCompare(ta);
-    });
-    return {
-      date,
-      runs: dayRuns,
-      totalUploaded: dayRuns.reduce((s, r) => s + r.uploaded_count, 0),
-      latestRun: sorted[0],
-    };
-  });
+/** Server-side grouping keeps a day whole across the page boundary and uses
+ *  the operator's timezone; the client only decorates it. */
+function toDayGroups(days: RunDay[], extra: Record<string, PipelineRunItem[]>): DayGroup[] {
+  return days
+    .map((d) => {
+      const runs = [...d.items, ...(extra[d.date] ?? [])];
+      const sorted = [...runs].sort((a, b) =>
+        (b.started_at ?? "").localeCompare(a.started_at ?? ""),
+      );
+      return {
+        date: d.date,
+        runs,
+        totalRuns: d.total,
+        totalUploaded: d.uploaded_total,
+        latestRun: sorted[0],
+      };
+    })
+    .filter((g) => g.latestRun !== undefined);
 }
 
 function groupStatusLabel(g: DayGroup): { text: string; cls: string } {
@@ -226,7 +226,7 @@ function RunRow({
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </td>
         <td className="py-1.5 px-2 text-slate-600 tabular-nums">
-          {run.started_at ? asUtc(run.started_at).toLocaleTimeString() : "—"}
+          {formatTime(run.started_at)}
         </td>
         <td className="py-1.5 px-2 tabular-nums">{run.pulled_count}</td>
         <td className="py-1.5 px-2 tabular-nums">{run.uploaded_count}</td>
@@ -249,7 +249,7 @@ function RunRow({
         </td>
         <td className="py-1.5 px-1 w-5 text-center">
           {run.pushed_notify_at ? (
-            <span title={asUtc(run.pushed_notify_at).toLocaleString()}>
+            <span title={formatDateTime(run.pushed_notify_at)}>
               <Bell size={10} className="text-orange-500 inline" />
             </span>
           ) : null}
@@ -274,10 +274,14 @@ function RunRow({
 function DayGroupRow({
   group,
   pipelineId,
+  loading,
+  onLoadMore,
   onClearDay,
 }: {
   group: DayGroup;
   pipelineId: number;
+  loading: boolean;
+  onLoadMore: () => void;
   onClearDay: ClearRunsFn;
 }) {
   const [open, setOpen] = useState(!group.latestRun.finished_at); // auto-open if latest run still live
@@ -300,7 +304,9 @@ function DayGroupRow({
           {group.date}
         </td>
         <td className="py-2 px-2 text-xs text-slate-500" colSpan={3}>
-          <span>{group.runs.length} lần chạy</span>
+          {/* The API caps how many rows a day ships with, so the heading has
+              to report the day's real count, not how many are loaded. */}
+          <span>{group.totalRuns} lần chạy</span>
           {group.totalUploaded > 0 && (
             <span className="ml-2 font-medium text-emerald-600">{group.totalUploaded} đã đăng</span>
           )}
@@ -343,6 +349,24 @@ function DayGroupRow({
               onToggle={() => setExpandedRun(expandedRun === r.id ? null : r.id)}
             />
           ))}
+          {group.runs.length < group.totalRuns && (
+            <tr className="border-l-4 border-slate-200">
+              <td colSpan={9} className="px-3 py-1.5 bg-slate-50 text-center">
+                <button
+                  className="text-brand-600 hover:underline disabled:opacity-50"
+                  disabled={loading}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onLoadMore();
+                  }}
+                >
+                  {loading
+                    ? "Đang tải…"
+                    : `Tải thêm (đang xem ${group.runs.length}/${group.totalRuns})`}
+                </button>
+              </td>
+            </tr>
+          )}
           {/* Bottom border to close the day group */}
           <tr className="border-l-4 border-slate-200">
             <td colSpan={9} className="h-1 bg-slate-50" />
@@ -353,16 +377,21 @@ function DayGroupRow({
   );
 }
 
-const hasRunning = (runs: PipelineRunItem[]) => runs.some((r) => !r.finished_at);
+const hasRunning = (days: RunDay[]) =>
+  days.some((d) => d.items.some((r) => !r.finished_at));
 
 export default function PipelineRunsExpand({ pipelineId }: Props) {
   const qc = useQueryClient();
+  // Rows fetched by "load more", keyed by day and appended to that day's group.
+  const [extraByDay, setExtraByDay] = useState<Record<string, PipelineRunItem[]>>({});
+  const [loadingDay, setLoadingDay] = useState<string | null>(null);
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ["pipeline-runs", pipelineId],
     queryFn: () => Pipelines.listRuns(pipelineId),
     refetchInterval: (query) => {
-      const runs = query.state.data;
-      return runs && hasRunning(runs) ? 5000 : false;
+      const days = query.state.data?.days;
+      return days && hasRunning(days) ? 5000 : false;
     },
   });
 
@@ -370,16 +399,33 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
     mutationFn: (runIds: number[]) => Pipelines.clearRuns(pipelineId, runIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipeline-runs", pipelineId] });
+      // Rows fetched by "load more" may have just been deleted.
+      setExtraByDay({});
       toast.success("Đã xóa log");
     },
     onError: (e: any) => toast.error("Xóa log thất bại", { description: e.message }),
   });
 
+  async function loadMore(date: string, alreadyShown: number) {
+    setLoadingDay(date);
+    try {
+      const page = await Pipelines.listRunsForDay(pipelineId, date, alreadyShown);
+      setExtraByDay((prev) => ({
+        ...prev,
+        [date]: [...(prev[date] ?? []), ...page.items],
+      }));
+    } catch (e: any) {
+      toast.error("Không tải thêm được", { description: e.message });
+    } finally {
+      setLoadingDay(null);
+    }
+  }
+
   if (isLoading) return <div className="p-3 text-xs text-slate-400">Đang tải…</div>;
   if (isError) return <div className="p-3 text-xs text-red-400">Không thể tải. Kiểm tra kết nối.</div>;
-  if (!data?.length) return <div className="p-3 text-xs text-slate-400">Chưa có lần chạy nào.</div>;
+  if (!data?.days.length) return <div className="p-3 text-xs text-slate-400">Chưa có lần chạy nào.</div>;
 
-  const groups = groupByDay(data);
+  const groups = toDayGroups(data.days, extraByDay);
 
   return (
     <div className="bg-slate-50 border-t py-2">
@@ -400,11 +446,14 @@ export default function PipelineRunsExpand({ pipelineId }: Props) {
               key={g.date}
               group={g}
               pipelineId={pipelineId}
+              loading={loadingDay === g.date}
+              onLoadMore={() => loadMore(g.date, g.runs.length)}
               onClearDay={(runIds) => clearMut.mutate(runIds)}
             />
           ))}
         </tbody>
       </table>
+
     </div>
   );
 }

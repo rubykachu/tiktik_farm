@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from sqlmodel import Session
+from api.middleware.origin import LOCAL_ORIGIN
 
 
 @pytest.fixture
@@ -46,7 +47,7 @@ def client(tmp_path, monkeypatch):
     _secrets._reset_for_tests()
 
 
-HEADERS_OK = {"Origin": "http://127.0.0.1:3000"}
+HEADERS_OK = {"Origin": LOCAL_ORIGIN}
 
 
 class TestScrubBroader:

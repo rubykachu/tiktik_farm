@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from api.middleware.origin import LOCAL_ORIGIN
 
-HEADERS_OK = {"Origin": "http://127.0.0.1:3000"}
+HEADERS_OK = {"Origin": LOCAL_ORIGIN}
 
 VALID_TOKEN = "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678"
 VALID_CHAT = "-1001234567890"

@@ -11,6 +11,7 @@ import api.db as _api_db
 from api.db import make_engine, override_engine
 from api.main import app  # noqa: F401 — registers all models in SQLModel.metadata
 from api.models import DouyinCookie  # noqa: F401
+from api.middleware.origin import LOCAL_ORIGIN
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,7 @@ def fresh_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(app, headers={"Origin": "http://127.0.0.1:3000"})
+    return TestClient(app, headers={"Origin": LOCAL_ORIGIN})
 
 
 VALID_COOKIE_LIST = [
