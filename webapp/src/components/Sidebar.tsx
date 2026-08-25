@@ -5,6 +5,7 @@ import {
   Download,
   History,
   LayoutDashboard,
+  Search,
   Settings as SettingsIcon,
 } from "lucide-react";
 import clsx from "clsx";
@@ -13,6 +14,7 @@ const items = [
   { to: "/", label: "Tổng quan", icon: LayoutDashboard },
   { to: "/accounts", label: "Tài khoản", icon: Users },
   { to: "/schedules", label: "Lịch đăng", icon: Calendar },
+  { to: "/discovery", label: "Tìm kênh", icon: Search },
   { to: "/downloads", label: "Tải video", icon: Download },
   { to: "/histories", label: "Lịch sử", icon: History },
   { to: "/settings", label: "Cài đặt", icon: SettingsIcon },

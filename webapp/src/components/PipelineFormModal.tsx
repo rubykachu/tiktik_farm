@@ -150,6 +150,11 @@ type Props = {
   open: boolean;
   pipeline?: Pipeline | null;
   onClose: () => void;
+  // Prefills channel_url when creating (ignored when editing). Used by the
+  // "Thêm vào lịch đăng" action on a discovery candidate.
+  prefillChannelUrl?: string;
+  // Fired after a successful create (not edit) with the new pipeline.
+  onCreated?: (pipeline: Pipeline) => void;
 };
 
 function formatHttpDetail(detail: unknown, fallback: string): string {
@@ -237,7 +242,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   sync_from_date: TODAY_DATE,
 };
 
-export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
+export default function PipelineFormModal({ open, pipeline, onClose, prefillChannelUrl, onCreated }: Props) {
   const qc = useQueryClient();
   const isEdit = !!pipeline;
 
@@ -342,14 +347,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
       });
     } else {
       setMultipleRuns(false);
-      reset(NEW_PIPELINE_DEFAULTS);
+      reset({ ...NEW_PIPELINE_DEFAULTS, channel_url: prefillChannelUrl ?? "" });
     }
-  }, [open, pipeline, reset]);
+  }, [open, pipeline, prefillChannelUrl, reset]);
 
   const createMut = useMutation({
     mutationFn: (p: PipelineCreate) => Pipelines.create(p),
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
+      onCreated?.(created);
       onClose();
     },
     onError: handleServerError,

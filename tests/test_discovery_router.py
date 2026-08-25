@@ -8,10 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from api.middleware.origin import LOCAL_ORIGIN
 from api.models import ChannelPipeline, DiscoveryCandidate, DiscoveryScanRun
 from api.services import channel_discovery as cd
 
-HEADERS_OK = {"Origin": "http://127.0.0.1:3000"}
+HEADERS_OK = {"Origin": LOCAL_ORIGIN}
 
 
 @pytest.fixture
