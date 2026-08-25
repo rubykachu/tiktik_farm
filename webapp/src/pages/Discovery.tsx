@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult } from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
 import PipelineFormModal, { type PipelinePrefill } from "../components/PipelineFormModal";
+import Tooltip from "../components/Tooltip";
 import { asUtcDate, formatRelative } from "../utils/datetime";
 
 const SCAN_POLL_MS = 3000;
@@ -43,10 +44,17 @@ function formatDaysAgo(days: number): string {
   return `${Math.round(days)} ngày trước`;
 }
 
-function formatCadence(days: number | null, tab: string | null): string {
+function formatCadence(days: number | null): string {
   if (days == null) return "—";
-  const tabLabel = tab === "shorts" ? "Shorts" : "kênh chính";
-  return `${days.toFixed(1)} ngày/video (${tabLabel})`;
+  return `${days.toFixed(1)} ngày/video`;
+}
+
+// The "Shorts" column already says whether the channel has a Shorts tab —
+// this only explains which tab that cadence number was measured from, so it
+// doesn't need to repeat "Shorts" as visible column text too.
+function cadenceTabHint(tab: string | null): string {
+  const tabLabel = tab === "shorts" ? "Shorts" : "video dài";
+  return `Tính theo tab ${tabLabel} — tab kênh đăng đều hơn giữa video dài và Shorts.`;
 }
 
 function marketLabel(gl: string): string {
@@ -249,7 +257,7 @@ export default function DiscoveryPage() {
             <h3 className="font-medium text-sm">Tìm & quét</h3>
             <div className="flex items-center gap-1.5">
               <select
-                className="input w-40 text-sm"
+                className="input w-56 text-sm"
                 value={market.gl}
                 onChange={(e) => setMarket(MARKETS.find((m) => m.gl === e.target.value) ?? market)}
               >
@@ -259,9 +267,9 @@ export default function DiscoveryPage() {
                   </option>
                 ))}
               </select>
-              <span title="Đã kiểm chứng thực tế: chỉ ảnh hưởng chắc chắn tới gợi ý từ khóa. Bước tìm kênh chính (ytsearch) không có cách đảm bảo lọc đúng theo thị trường/ngôn ngữ này.">
-                <HelpCircle size={14} className="text-slate-400" />
-              </span>
+              <Tooltip content="Chỉ chắc chắn đúng cho phần gợi ý từ khóa. Kết quả tìm kênh có thể không đúng thị trường này.">
+                <HelpCircle size={14} className="text-slate-400 cursor-help" />
+              </Tooltip>
             </div>
           </div>
 
@@ -428,9 +436,9 @@ export default function DiscoveryPage() {
                     <th className="text-left p-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1">
                         <SortHeader label="Điểm" k="score" />
-                        <span title={SCORE_HELP}>
-                          <HelpCircle size={12} className="text-slate-400" />
-                        </span>
+                        <Tooltip content={SCORE_HELP} side="bottom">
+                          <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                        </Tooltip>
                       </span>
                     </th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Sub" k="subscriber_count" /></th>
@@ -446,8 +454,10 @@ export default function DiscoveryPage() {
                 <tbody>
                   {sortedResults.map((r) => (
                     <tr key={r.id} className="border-t align-top">
-                      <td className="p-2 font-medium max-w-[220px] truncate" title={r.channel_description ?? r.channel_title}>
-                        {r.channel_title}
+                      <td className="p-2 font-medium max-w-[220px]">
+                        <Tooltip content={r.channel_description || r.channel_title} className="block truncate">
+                          {r.channel_title}
+                        </Tooltip>
                       </td>
                       <td className="p-2 font-semibold">{r.score.toFixed(0)}</td>
                       <td className="p-2 text-slate-600 whitespace-nowrap">{formatCount(r.subscriber_count)}</td>
@@ -456,12 +466,24 @@ export default function DiscoveryPage() {
                       <td className="p-2 text-slate-600 whitespace-nowrap">
                         {r.latest_video_posted_at ? localHHMM(r.latest_video_posted_at) : "—"}
                       </td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">{formatCadence(r.cadence_days_per_video, r.cadence_tab)}</td>
+                      <td className="p-2 text-slate-600 whitespace-nowrap">
+                        {r.cadence_days_per_video == null ? (
+                          "—"
+                        ) : (
+                          <Tooltip content={cadenceTabHint(r.cadence_tab)}>
+                            <span className="cursor-help border-b border-dotted border-slate-400">
+                              {formatCadence(r.cadence_days_per_video)}
+                            </span>
+                          </Tooltip>
+                        )}
+                      </td>
                       <td className="p-2 text-slate-600 whitespace-nowrap">
                         {r.has_shorts_tab ? `Có (${r.recent_shorts_count})` : "Không"}
                       </td>
-                      <td className="p-2 text-slate-500 max-w-[120px] truncate" title={r.found_via_keyword}>
-                        {r.found_via_keyword}
+                      <td className="p-2 text-slate-500 max-w-[120px]">
+                        <Tooltip content={r.found_via_keyword} className="block truncate">
+                          {r.found_via_keyword}
+                        </Tooltip>
                       </td>
                       <td className="p-2">
                         <div className="flex items-center justify-end gap-2">
