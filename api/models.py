@@ -246,3 +246,68 @@ class AppSetting(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=64)
     value: str
     updated_at: datetime = Field(default_factory=now_utc)
+
+
+# ---------- channel discovery (Phase 5) -------------------------------------
+
+
+class DiscoveryKeyword(SQLModel, table=True):
+    """A YouTube search keyword the user approved for periodic scanning.
+
+    The scheduler round-robins these (oldest `last_scanned_at` first) so a
+    long keyword list doesn't blow the per-scan channel budget.
+    """
+    __tablename__ = "discovery_keywords"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    keyword: str = Field(unique=True, max_length=200)
+    created_at: datetime = Field(default_factory=now_utc)
+    last_scanned_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class DiscoveryCandidate(SQLModel, table=True):
+    """One YouTube channel surfaced by a keyword scan, ranked for the user
+    to review by hand. Re-scanning updates the metrics/score of an existing
+    row in place; it never resurrects a 'skipped' or 'added' row (see
+    api.services.channel_discovery)."""
+    __tablename__ = "discovery_candidates"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    channel_id: str = Field(unique=True, index=True, max_length=64)
+    channel_url: str
+    channel_title: str = Field(max_length=256)
+    found_via_keyword: str = Field(max_length=200)
+
+    subscriber_count: int = Field(default=0)
+    median_view_count: int = Field(default=0)
+    days_since_last_video: float = Field(default=0)
+    cadence_days_per_video: Optional[float] = Field(default=None)
+    cadence_tab: Optional[str] = Field(default=None, max_length=16)  # 'videos' | 'shorts'
+    has_shorts_tab: bool = Field(default=False)
+    recent_shorts_count: int = Field(default=0)
+
+    score: float = Field(default=0, index=True)
+    # 'new' | 'added' | 'skipped'
+    status: str = Field(default="new", index=True, max_length=16)
+    added_pipeline_id: Optional[int] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=now_utc)
+    last_scanned_at: datetime = Field(default_factory=now_utc)
+
+
+class DiscoveryScanRun(SQLModel, table=True):
+    """Progress record for one scheduler-driven discovery scan tick, so the
+    webapp can show 'scanning X/Y channels' while a scan (a few minutes) is
+    in flight instead of a frozen screen."""
+    __tablename__ = "discovery_scan_runs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=now_utc, index=True)
+    finished_at: Optional[datetime] = Field(default=None)
+    keywords_json: str = Field(default="[]")
+    channels_total: int = Field(default=0)
+    channels_done: int = Field(default=0)
+    candidates_found: int = Field(default=0)
+    # 'running' | 'done' | 'error'
+    status: str = Field(default="running", max_length=16)
+    error_text: Optional[str] = Field(default=None)

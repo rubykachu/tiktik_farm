@@ -241,6 +241,15 @@ def seed_app_settings(engine: Engine) -> None:
     defaults = (
         ("llm.enabled", "true"),
         ("llm.mode", "cloud"),
+        # Channel discovery (Phase 5) — see api.services.channel_discovery.
+        ("discovery.min_subscribers", "100"),
+        ("discovery.silent_months", "6"),
+        ("discovery.target_days_per_video", "1"),
+        ("discovery.scans_per_day", "3"),
+        ("discovery.keywords_per_scan", "3"),
+        ("discovery.market_gl", "US"),
+        ("discovery.market_hl", "en"),
+        ("discovery.view_score_reference", "1000000"),
     )
     with engine.begin() as conn:
         # Table may not exist yet on truly fresh installs that skip init_db()
