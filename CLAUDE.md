@@ -133,6 +133,15 @@ To sync only the signing JS (safe): `bash scripts/update-tiktok-signature.sh`.
 - `/api/public/downloads/{id}/{token}` is the ONLY route nginx exempts from Basic Auth
   (`webapp/nginx.conf`), because the link has to open on a phone. The HMAC (`secrets.sign`) is the
   authentication there. Never put another endpoint under `/api/public/`.
+- Pagination limits live in `api/pagination.py`: 50 channels per page, 30 days of run
+  history per channel, 30 runs per day with load-more inside the day. Runs are bounded by
+  **day**, not by row — paginating a flat list splits a day across the boundary and the day
+  headings then disagree with the rows under them.
+- Run days are bucketed in SQL via `local_time.sqlite_day_offset()`, not by slicing the UTC
+  ISO string. At UTC+7 a 17:00 UTC run is already tomorrow locally; bucketing on the raw date
+  files it under the wrong heading. That helper asserts the zone has no DST.
+- A day's `total` / `uploaded_total` come from a GROUP BY over the whole day, never from
+  summing the returned rows — those are capped.
 - `pipeline_seen_videos` rows have no age cutoff — they are the only dedupe key for account-less
   pipelines and are deleted only with their pipeline.
 - `fake-useragent` must stay pinned in `requirements.txt` to prevent bug #2 regression.

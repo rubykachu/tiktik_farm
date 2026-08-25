@@ -9,11 +9,11 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.db import get_session
+from api.pagination import MAX_PAGE_SIZE, VIDEOS_PER_PAGE
 from api.models import VideoUpload
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
-MAX_PAGE_SIZE = 200
 
 _VALID_STATUSES = {"succeeded", "failed"}
 
@@ -38,7 +38,7 @@ def list_videos(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     page: int = Query(1, ge=1),
-    size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+    size: int = Query(VIDEOS_PER_PAGE, ge=1, le=MAX_PAGE_SIZE),
     session: Session = Depends(get_session),
 ):
     q = select(VideoUpload)

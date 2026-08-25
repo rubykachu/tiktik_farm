@@ -55,8 +55,8 @@ export default function HistoriesPage() {
     queryFn: Accounts.list,
   });
   const { data: pipelines } = useQuery({
-    queryKey: ["pipelines"],
-    queryFn: Pipelines.list,
+    queryKey: ["pipelines", "all"],
+    queryFn: Pipelines.listAll,
   });
 
   const { data, isLoading, isError } = useQuery({

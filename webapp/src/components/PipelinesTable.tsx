@@ -1,6 +1,17 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Pause, Play, Play as RunNow, Pencil, Search, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  Play as RunNow,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Pipelines, Pipeline, LastRunStatus } from "../api/pipelines";
 import { Accounts } from "../api/client";
 import { toast } from "sonner";
@@ -14,6 +25,9 @@ type Props = {
 
 type ViewFilter = "all" | "active" | "paused" | "attention";
 type SortKey = "name" | "next_fire" | "last_run";
+
+/** Only used before the first response tells us the server's real page size. */
+const PAGE_FALLBACK_SIZE = 50;
 
 const stateClass = (s: string) =>
   s === "active"
@@ -106,9 +120,11 @@ export default function PipelinesTable({ onEdit }: Props) {
   const [view, setView] = useState<ViewFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("next_fire");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["pipelines"],
-    queryFn: Pipelines.list,
+    queryKey: ["pipelines", page],
+    queryFn: () => Pipelines.list(page),
+    placeholderData: (prev) => prev,
     refetchInterval: 5000,
   });
 
@@ -188,11 +204,15 @@ export default function PipelinesTable({ onEdit }: Props) {
     return p.run_now_requested_at != null;
   }
 
-  const activeCount = data?.filter((p) => p.state === "active").length ?? 0;
-  const attentionCount = data?.filter(needsAttention).length ?? 0;
+  const pageRows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const pageSize = data?.size ?? PAGE_FALLBACK_SIZE;
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
+  const activeCount = pageRows.filter((p) => p.state === "active").length;
+  const attentionCount = pageRows.filter(needsAttention).length;
 
   const visible = useMemo(() => {
-    let rows = data ?? [];
+    let rows = pageRows;
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter(
@@ -224,7 +244,7 @@ export default function PipelinesTable({ onEdit }: Props) {
       if (bv === null) return -1;
       return dir * (av - bv);
     });
-  }, [data, search, view, sortKey, sortDir]);
+  }, [pageRows, search, view, sortKey, sortDir]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -273,7 +293,7 @@ export default function PipelinesTable({ onEdit }: Props) {
         </div>
         <div className="flex rounded border overflow-hidden text-sm">
           {([
-            ["all", `Tất cả (${data?.length ?? 0})`],
+            ["all", `Tất cả (${pageRows.length})`],
             ["attention", `Cần xem (${attentionCount})`],
             ["active", `Đang chạy (${activeCount})`],
             ["paused", "Tạm dừng"],
@@ -304,7 +324,7 @@ export default function PipelinesTable({ onEdit }: Props) {
           </button>
         )}
         <span className="ml-auto text-sm text-slate-500 tabular-nums">
-          {visible.length}/{data?.length ?? 0} lịch
+          {visible.length}/{pageRows.length} lịch trên trang này
         </span>
       </div>
 
@@ -356,7 +376,7 @@ export default function PipelinesTable({ onEdit }: Props) {
             {!isLoading && !isError && visible.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={8}>
-                  {(data?.length ?? 0) === 0
+                  {pageRows.length === 0
                     ? 'Chưa có lịch đăng nào. Bấm "Tạo lịch mới" để hệ thống bắt đầu tự động lấy video và đăng lên TikTok.'
                     : "Không có lịch nào khớp bộ lọc."}
                 </td>
@@ -512,6 +532,36 @@ export default function PipelinesTable({ onEdit }: Props) {
           </tbody>
         </table>
       </div>
+
+      {total > pageSize && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-500 tabular-nums">
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} trên{" "}
+            {total.toLocaleString("vi-VN")} lịch đăng
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary px-2 py-1 disabled:opacity-40"
+              disabled={page <= 1}
+              onClick={() => setPage((n) => Math.max(1, n - 1))}
+              aria-label="Trang trước"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-slate-600 tabular-nums">
+              Trang {page}/{lastPage}
+            </span>
+            <button
+              className="btn-secondary px-2 py-1 disabled:opacity-40"
+              disabled={page >= lastPage}
+              onClick={() => setPage((n) => n + 1)}
+              aria-label="Trang sau"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

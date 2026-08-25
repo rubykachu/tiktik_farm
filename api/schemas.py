@@ -474,6 +474,13 @@ class ManualDownloadCaptionRequest(BaseModel):
     prompt: Optional[str] = Field(default=None, max_length=2000)
 
 
+class PipelinePage(BaseModel):
+    items: List[PipelineRead]
+    total: int
+    page: int
+    size: int
+
+
 class TelegramAttachField(BaseModel):
     key: str
     label: str
