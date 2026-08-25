@@ -189,6 +189,12 @@ function formatHttpDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
+function formatSecondsAsMinutes(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder > 0 ? `${minutes} phút ${remainder} giây` : `${minutes} phút`;
+}
+
 function toMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -518,6 +524,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
   const fetchCount = watch("fetch_count");
   const clearBotToken = watch("clear_bot_token");
   const intervalValue = watch("interval_value");
+  const maxDurationSeconds = watch("max_duration_seconds");
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
@@ -868,7 +875,14 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
               </div>
             )}
             <div>
-              <label className="label">Độ dài tối đa (giây)</label>
+              <div className="flex items-center gap-2">
+                <label className="label">Độ dài tối đa (giây)</label>
+                {Number(maxDurationSeconds) > 60 && (
+                  <span className="text-xs font-medium text-brand-600">
+                    ≈ {formatSecondsAsMinutes(Number(maxDurationSeconds))}
+                  </span>
+                )}
+              </div>
               <input
                 type="number"
                 className="input"
