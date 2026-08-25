@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { X, ChevronDown, ChevronRight } from "lucide-react";
+import { X, ChevronDown, ChevronRight, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
@@ -12,6 +12,7 @@ import { DouyinCookies } from "../api/douyin_cookies";
 import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram";
 import { TelegramConfigs } from "../api/telegram_configs";
 import { Settings } from "../api/settings";
+import Tooltip from "./Tooltip";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Required").max(128),
@@ -867,6 +868,9 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
               <div>
                 <div className="flex items-center gap-1.5">
                   <label className="label">Độ dài tối đa (giây)</label>
+                  <Tooltip content='Video dài hơn 3× giá trị này sẽ bị bỏ qua hoàn toàn; ngắn hơn mức đó thì được tải về và cắt ngắn về đúng N giây đầu.'>
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
                   {Number(maxDurationSeconds) > 60 && (
                     <span className="text-xs font-medium text-brand-600 whitespace-nowrap">
                       ≈ {formatSecondsAsMinutes(Number(maxDurationSeconds))}
@@ -882,7 +886,12 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 />
               </div>
               <div>
-                <label className="label">Lấy video từ ngày</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Lấy video từ ngày</label>
+                  <Tooltip content="Chỉ xử lý video đăng từ ngày này trở đi. Để trống nếu muốn lấy tất cả.">
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                </div>
                 <input
                   type="date"
                   className="input"
@@ -890,11 +899,6 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-400">
-              Video dài hơn 3× "độ dài tối đa" sẽ bị bỏ qua hoàn toàn; ngắn hơn mức đó thì được
-              tải về và cắt ngắn về đúng N giây đầu. "Lấy video từ ngày" chỉ xử lý video đăng từ
-              ngày đó trở đi, để trống nếu muốn lấy tất cả.
-            </p>
             {Number(fetchCount) > 1 && (
               <div>
                 <label className="label">Thời gian chờ giữa các video (phút)</label>
@@ -1160,7 +1164,12 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                   )}
               </div>
               <div>
-                <label className="label">Chat ID</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Chat ID</label>
+                  <Tooltip content={<>Chỉ nhập số (kênh private thường bắt đầu bằng <code>-100…</code>).</>}>
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                </div>
                 <div className="flex gap-2 items-stretch">
                   <input
                     className="input flex-1 min-w-0"
@@ -1184,10 +1193,6 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                     {telegramTestSending ? "Đang gửi…" : "Gửi thử"}
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Chỉ nhập số (kênh private thường bắt đầu bằng{" "}
-                  <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot làm admin kênh.
-                </p>
                 {errors.telegram_chat_id && (
                   <p className="field-error">{errors.telegram_chat_id.message}</p>
                 )}
@@ -1227,25 +1232,28 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
             <div className="space-y-2 border-t pt-3">
-              <label className="label">Khi không có video mới</label>
+              <div className="flex items-center gap-1.5">
+                <label className="label">Khi không có video mới</label>
+                <Tooltip
+                  content='Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục cho tới khi bắt được video — chọn "một lần cuối mỗi chu kỳ" để không bị mỗi lần quét một tin nhắn.'
+                >
+                  <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                </Tooltip>
+              </div>
               <select className="input" {...register("telegram_notify_mode")}>
                 <option value="cycle">Báo một lần cuối mỗi chu kỳ</option>
                 <option value="changes_only">Không báo</option>
                 <option value="every_tick">Báo mọi lần chạy</option>
               </select>
-              <p className="text-xs text-slate-500">
-                Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục
-                cho tới khi bắt được video — chọn “một lần cuối mỗi chu kỳ” để
-                không bị mỗi lần quét một tin nhắn.
-              </p>
-              <p className="text-xs text-slate-500 pt-2 border-t">
-                Thông báo luôn kèm link tải video, dùng được cả với video lớn.
-                Video giữ trên máy chủ 24 giờ.
-              </p>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" {...register("telegram_attach_video")} />
-                Đính kèm luôn file video vào tin nhắn
-              </label>
+              <div className="flex items-center gap-1.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...register("telegram_attach_video")} />
+                  Đính kèm luôn file video vào tin nhắn
+                </label>
+                <Tooltip content="Thông báo luôn kèm link tải video, dùng được cả với video lớn — video giữ trên máy chủ 24 giờ. Bật ô này để đính kèm thêm file trực tiếp vào tin nhắn.">
+                  <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                </Tooltip>
+              </div>
               <p className="text-xs text-slate-500">
                 Telegram chỉ nhận file tối đa 50 MB — vượt quá thì chỉ còn link.
               </p>
