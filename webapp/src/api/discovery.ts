@@ -67,6 +67,7 @@ export const Discovery = {
 
   listScanRuns: () => api.get<DiscoveryScanRun[]>("/discovery/scan-runs").then((r) => r.data),
   getScanRun: (id: number) => api.get<DiscoveryScanRun>(`/discovery/scan-runs/${id}`).then((r) => r.data),
+  deleteScanRun: (id: number) => api.delete(`/discovery/scan-runs/${id}`),
   listScanResults: (scanRunId: number) =>
     api.get<DiscoveryScanResult[]>(`/discovery/scan-runs/${scanRunId}/results`).then((r) => r.data),
 

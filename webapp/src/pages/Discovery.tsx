@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpDown, ExternalLink, HelpCircle, Plus, X } from "lucide-react";
+import { ArrowUpDown, ExternalLink, HelpCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult } from "../api/discovery";
+import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult, type DiscoveryScanRun } from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
+import ConfirmDialog from "../components/ConfirmDialog";
 import PipelineFormModal, { type PipelinePrefill } from "../components/PipelineFormModal";
 import Tooltip from "../components/Tooltip";
 import { asUtcDate, formatRelative } from "../utils/datetime";
@@ -117,6 +118,7 @@ export default function DiscoveryPage() {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [addTarget, setAddTarget] = useState<DiscoveryScanResult | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DiscoveryScanRun | null>(null);
   const [viewingRunId, setViewingRunId] = useState<number | null>(null);
 
   const { data: settings } = useQuery({ queryKey: ["discovery-settings"], queryFn: Discovery.getSettings });
@@ -202,6 +204,20 @@ export default function DiscoveryPage() {
     mutationFn: ({ r, pipelineId }: { r: DiscoveryScanResult; pipelineId: number }) =>
       Discovery.markChannelAdded(r.channel_id, r.channel_url, r.channel_title, pipelineId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["discovery-scan-results", viewingRunId] }),
+  });
+
+  const deleteScanRunMut = useMutation({
+    mutationFn: (id: number) => Discovery.deleteScanRun(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["discovery-scan-runs"] });
+      if (viewingRunId === id) setViewingRunId(null);
+      toast.success("Đã xoá lượt quét");
+      setDeleteTarget(null);
+    },
+    onError: (e: any) => {
+      toast.error("Không xoá được", { description: e?.response?.data?.detail ?? e.message });
+      setDeleteTarget(null);
+    },
   });
 
   function toggleSort(key: SortKey) {
@@ -519,27 +535,36 @@ export default function DiscoveryPage() {
           {(scanRuns?.length ?? 0) === 0 && <p className="text-sm text-slate-400">Chưa quét lần nào.</p>}
           <div className="space-y-1 max-h-[500px] overflow-y-auto">
             {scanRuns?.map((run) => (
-              <button
+              <div
                 key={run.id}
-                onClick={() => setViewingRunId(run.id)}
-                className={`w-full text-left text-xs p-2 rounded border ${
+                className={`group flex items-start gap-1 w-full text-left text-xs p-2 rounded border ${
                   viewingRunId === run.id ? "border-brand-400 bg-brand-50" : "border-slate-200 hover:bg-slate-50"
                 }`}
               >
-                <div className="font-medium truncate">{run.keywords.join(", ")}</div>
-                <div className="text-slate-500 flex items-center justify-between mt-0.5">
-                  <span>
-                    {formatRelative(run.started_at)} · {marketLabel(run.market_gl)}
-                  </span>
-                  <span>
-                    {run.status === "running"
-                      ? "đang quét…"
-                      : run.status === "error"
-                        ? "lỗi"
-                        : `${run.candidates_found} kênh`}
-                  </span>
-                </div>
-              </button>
+                <button className="flex-1 min-w-0 text-left" onClick={() => setViewingRunId(run.id)}>
+                  <div className="font-medium truncate">{run.keywords.join(", ")}</div>
+                  <div className="text-slate-500 flex items-center justify-between mt-0.5">
+                    <span>
+                      {formatRelative(run.started_at)} · {marketLabel(run.market_gl)}
+                    </span>
+                    <span>
+                      {run.status === "running"
+                        ? "đang quét…"
+                        : run.status === "error"
+                          ? "lỗi"
+                          : `${run.candidates_found} kênh`}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  className="text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100 shrink-0"
+                  title="Xoá lượt quét này"
+                  disabled={run.status === "running"}
+                  onClick={() => setDeleteTarget(run)}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -553,6 +578,16 @@ export default function DiscoveryPage() {
         onCreated={(created: Pipeline) => {
           if (addTarget) markAddedMut.mutate({ r: addTarget, pipelineId: created.id });
         }}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Xoá lượt quét này?"
+        body={<p>Xoá "{deleteTarget?.keywords.join(", ")}" khỏi lịch sử. Kênh đã thêm/bỏ qua trước đó không bị ảnh hưởng.</p>}
+        confirmLabel="Xoá"
+        cancelLabel="Hủy"
+        onConfirm={() => deleteTarget && deleteScanRunMut.mutate(deleteTarget.id)}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );
