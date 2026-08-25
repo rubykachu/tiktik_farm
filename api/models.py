@@ -303,6 +303,10 @@ class DiscoveryScanRun(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     started_at: datetime = Field(default_factory=now_utc, index=True)
+    # Bumped on every progress update — a stale updated_at (not started_at,
+    # since a scan legitimately runs for minutes) is what marks a run as
+    # orphaned by a crashed worker. See scheduler.discovery_worker.reap_orphan_scan_runs.
+    updated_at: datetime = Field(default_factory=now_utc)
     finished_at: Optional[datetime] = Field(default=None)
     keywords_json: str = Field(default="[]")
     channels_total: int = Field(default=0)
