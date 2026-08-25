@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.db import get_session
@@ -61,6 +62,12 @@ def list_videos(
     if dt_to:
         q = q.where(VideoUpload.created_at <= dt_to)
 
+    # Counted before the window is applied: the UI cannot render page controls
+    # without knowing how many rows the filters actually match.
+    total = session.exec(
+        select(func.count()).select_from(q.subquery())
+    ).one()
+
     offset = (page - 1) * size
     rows = session.exec(
         q.order_by(VideoUpload.created_at.desc())  # type: ignore[union-attr]
@@ -68,7 +75,7 @@ def list_videos(
         .limit(size)
     ).all()
 
-    return [
+    items = [
         {
             "id": v.id,
             "pipeline_id": v.pipeline_id,
@@ -87,6 +94,7 @@ def list_videos(
         }
         for v in rows
     ]
+    return {"items": items, "total": total, "page": page, "size": size}
 
 
 @router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)

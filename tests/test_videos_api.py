@@ -100,30 +100,32 @@ class TestListVideos:
     def test_empty(self, client):
         resp = client.get("/api/videos")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
+        assert resp.json()["total"] == 0
 
     def test_returns_all(self, client):
         _seed_data()
         resp = client.get("/api/videos")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 2
+        assert len(data["items"]) == 2
+        assert data["total"] == 2
 
     def test_filter_by_status_succeeded(self, client):
         _seed_data()
         resp = client.get("/api/videos", params={"status": "succeeded"})
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["status"] == "succeeded"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["status"] == "succeeded"
 
     def test_filter_by_status_failed(self, client):
         _seed_data()
         resp = client.get("/api/videos", params={"status": "failed"})
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["status"] == "failed"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["status"] == "failed"
 
     def test_invalid_status_422(self, client):
         _seed_data()
@@ -134,11 +136,11 @@ class TestListVideos:
         _seed_data()
         resp = client.get("/api/videos", params={"account_id": "1"})
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
 
         resp = client.get("/api/videos", params={"account_id": "999"})
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json()["items"] == []
 
     def test_invalid_from_date_422(self, client):
         _seed_data()
@@ -153,6 +155,26 @@ class TestListVideos:
         resp = client.get("/api/videos", params={"page": "0"})
         assert resp.status_code == 422
 
+    def test_total_counts_all_matches_not_just_the_page(self, client):
+        """Without this the UI cannot tell "50 rows" from "50 of 4000"."""
+        _seed_data()
+        resp = client.get("/api/videos", params={"size": "1"})
+        body = resp.json()
+        assert len(body["items"]) == 1
+        assert body["total"] == 2
+
+    def test_total_respects_filters(self, client):
+        _seed_data()
+        body = client.get("/api/videos", params={"status": "failed"}).json()
+        assert body["total"] == 1
+
+    def test_second_page_returns_the_other_row(self, client):
+        _seed_data()
+        first = client.get("/api/videos", params={"size": "1", "page": "1"}).json()
+        second = client.get("/api/videos", params={"size": "1", "page": "2"}).json()
+        assert first["items"][0]["id"] != second["items"][0]["id"]
+        assert second["page"] == 2
+
 
 class TestDeleteVideo:
     def test_delete_success(self, client):
@@ -162,7 +184,7 @@ class TestDeleteVideo:
         assert resp.status_code == 204
 
         resp = client.get("/api/videos")
-        assert len(resp.json()) == 1
+        assert len(resp.json()["items"]) == 1
 
     def test_delete_not_found(self, client):
         resp = client.delete("/api/videos/999")

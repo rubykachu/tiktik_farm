@@ -1,8 +1,16 @@
 import { NavLink } from "react-router-dom";
-import { Users, Calendar, Download, History, Settings as SettingsIcon } from "lucide-react";
+import {
+  Users,
+  Calendar,
+  Download,
+  History,
+  LayoutDashboard,
+  Settings as SettingsIcon,
+} from "lucide-react";
 import clsx from "clsx";
 
 const items = [
+  { to: "/", label: "Tổng quan", icon: LayoutDashboard },
   { to: "/accounts", label: "Tài khoản", icon: Users },
   { to: "/schedules", label: "Lịch đăng", icon: Calendar },
   { to: "/downloads", label: "Tải video", icon: Download },
@@ -22,6 +30,7 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
+            end={to === "/"}
             className={({ isActive }) =>
               clsx(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import Sidebar from "./components/Sidebar";
 import AccountsPage from "./pages/Accounts";
+import OverviewPage from "./pages/Overview";
 import DownloadsPage from "./pages/Downloads";
 import SchedulesPage from "./pages/Schedules";
 import HistoriesPage from "./pages/Histories";
@@ -14,7 +15,7 @@ export default function App() {
       <Sidebar />
       <main className="flex-1 p-8 max-w-7xl">
         <Routes>
-          <Route path="/" element={<Navigate to="/accounts" replace />} />
+          <Route path="/" element={<OverviewPage />} />
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/downloads" element={<DownloadsPage />} />

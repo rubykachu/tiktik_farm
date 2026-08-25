@@ -1,18 +1,33 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, Accounts } from "../api/client";
 import { Pipelines, VideoUploadItem } from "../api/pipelines";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { statusBadge } from "../utils/statusBadge";
+import { formatDateTime } from "../utils/datetime";
+
+const PAGE_SIZE = 50;
+
+const STATUS_LABEL: Record<string, string> = {
+  succeeded: "thành công",
+  failed: "thất bại",
+};
+
+interface VideoPage {
+  items: VideoUploadItem[];
+  total: number;
+  page: number;
+  size: number;
+}
 
 function fetchVideos(params: Record<string, string | undefined>) {
   const cleaned: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
     if (v) cleaned[k] = v;
   }
-  return api.get<VideoUploadItem[]>("/videos", { params: cleaned }).then((r) => r.data);
+  return api.get<VideoPage>("/videos", { params: cleaned }).then((r) => r.data);
 }
 
 export default function HistoriesPage() {
@@ -21,7 +36,19 @@ export default function HistoriesPage() {
   const [accountFilter, setAccountFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [pipelineFilter, setPipelineFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<VideoUploadItem | null>(null);
+
+  /** Any filter change invalidates the current page number: page 7 of the old
+   *  result set is usually past the end of the new one. */
+  function applyFilter(set: (v: string) => void) {
+    return (value: string) => {
+      set(value);
+      setPage(1);
+    };
+  }
 
   const { data: accounts } = useQuery({
     queryKey: ["accounts"],
@@ -33,15 +60,32 @@ export default function HistoriesPage() {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["videos", accountFilter, statusFilter, pipelineFilter],
+    queryKey: [
+      "videos", accountFilter, statusFilter, pipelineFilter, fromDate, toDate, page,
+    ],
     queryFn: () =>
       fetchVideos({
         account_id: accountFilter || undefined,
         status: statusFilter || undefined,
         pipeline_id: pipelineFilter || undefined,
+        // The API compares against a timestamp, so an inclusive end-of-day
+        // needs the time appended — a bare date would drop that day's rows.
+        from_date: fromDate ? `${fromDate}T00:00:00` : undefined,
+        to_date: toDate ? `${toDate}T23:59:59` : undefined,
+        page: String(page),
+        size: String(PAGE_SIZE),
       }),
     refetchInterval: 10000,
+    placeholderData: (prev) => prev,
   });
+
+  const rows = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const accountName = (id: number) => {
+    const a = accounts?.find((x) => x.id === id);
+    return a ? a.display_name || a.username : `#${id}`;
+  };
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`/videos/${id}`),
@@ -70,7 +114,7 @@ export default function HistoriesPage() {
         <select
           className="input w-auto"
           value={accountFilter}
-          onChange={(e) => setAccountFilter(e.target.value)}
+          onChange={(e) => applyFilter(setAccountFilter)(e.target.value)}
         >
           <option value="">Tất cả tài khoản</option>
           {accounts?.map((a) => (
@@ -82,7 +126,7 @@ export default function HistoriesPage() {
         <select
           className="input w-auto"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => applyFilter(setStatusFilter)(e.target.value)}
         >
           <option value="">Tất cả trạng thái</option>
           <option value="succeeded">Thành công</option>
@@ -91,7 +135,7 @@ export default function HistoriesPage() {
         <select
           className="input w-auto"
           value={pipelineFilter}
-          onChange={(e) => setPipelineFilter(e.target.value)}
+          onChange={(e) => applyFilter(setPipelineFilter)(e.target.value)}
         >
           <option value="">Tất cả lịch đăng</option>
           {pipelines?.map((p) => (
@@ -100,6 +144,40 @@ export default function HistoriesPage() {
             </option>
           ))}
         </select>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            className="input w-auto"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => applyFilter(setFromDate)(e.target.value)}
+            aria-label="Từ ngày"
+          />
+          <span className="text-slate-400 text-sm">đến</span>
+          <input
+            type="date"
+            className="input w-auto"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => applyFilter(setToDate)(e.target.value)}
+            aria-label="Đến ngày"
+          />
+        </div>
+        {(accountFilter || statusFilter || pipelineFilter || fromDate || toDate) && (
+          <button
+            className="btn-secondary text-sm"
+            onClick={() => {
+              setAccountFilter("");
+              setStatusFilter("");
+              setPipelineFilter("");
+              setFromDate("");
+              setToDate("");
+              setPage(1);
+            }}
+          >
+            Xóa bộ lọc
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -128,19 +206,22 @@ export default function HistoriesPage() {
                 <td className="p-4 text-center text-red-400" colSpan={8}>Không thể tải. Kiểm tra kết nối.</td>
               </tr>
             )}
-            {!isLoading && !isError && data && data.length === 0 && (
+            {!isLoading && !isError && rows.length === 0 && (
               <tr>
                 <td className="p-6 text-center text-slate-500" colSpan={8}>
-                  Chưa có lịch sử đăng tải nào.
+                  {total === 0 && !accountFilter && !statusFilter && !pipelineFilter
+                    && !fromDate && !toDate
+                    ? "Chưa có lịch sử đăng tải nào. Lịch sử xuất hiện sau lần đăng đầu tiên."
+                    : "Không có bản ghi nào khớp bộ lọc."}
                 </td>
               </tr>
             )}
-            {data?.map((v) => (
+            {rows.map((v) => (
               <tr key={v.id}>
-                <td className="p-3 text-xs text-slate-600">
-                  {v.created_at ? new Date(v.created_at).toLocaleString() : "—"}
+                <td className="p-3 text-xs text-slate-600 whitespace-nowrap">
+                  {formatDateTime(v.created_at)}
                 </td>
-                <td className="p-3 text-slate-600">{v.account_id}</td>
+                <td className="p-3 text-slate-600">{accountName(v.account_id)}</td>
                 <td className="p-3 max-w-[140px] truncate">
                   <a
                     href={v.youtube_url}
@@ -165,7 +246,9 @@ export default function HistoriesPage() {
                   {v.rendered_caption || "—"}
                 </td>
                 <td className="p-3">
-                  <span className={"chip " + statusBadge(v.status)}>{v.status}</span>
+                  <span className={"chip " + statusBadge(v.status)}>
+                    {STATUS_LABEL[v.status] ?? v.status}
+                  </span>
                   {v.error_text && (
                     <div className="text-xs text-slate-400 mt-0.5 max-w-[120px] truncate" title={v.error_text}>
                       {v.error_text}
@@ -186,6 +269,36 @@ export default function HistoriesPage() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-500 tabular-nums">
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} trên{" "}
+            {total.toLocaleString("vi-VN")} bản ghi
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary px-2 py-1 disabled:opacity-40"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              aria-label="Trang trước"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-slate-600 tabular-nums">
+              Trang {page}/{lastPage}
+            </span>
+            <button
+              className="btn-secondary px-2 py-1 disabled:opacity-40"
+              disabled={page >= lastPage}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Trang sau"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}
