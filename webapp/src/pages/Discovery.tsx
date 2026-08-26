@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpDown, HelpCircle, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpDown, CalendarPlus, HelpCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult, type DiscoveryScanRun } from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
@@ -462,7 +462,7 @@ export default function DiscoveryPage() {
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Sub" k="subscriber_count" /></th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="View" k="median_view_count" /></th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Last" k="days_since_last_video" /></th>
-                    <th className="text-left p-2 whitespace-nowrap">Time</th>
+                    <th className="text-left p-2 whitespace-nowrap">Giờ đăng</th>
                     <th className="text-left p-2 whitespace-nowrap">
                       <SortHeader label="Shorts" k="cadence_shorts_days_per_video" />
                     </th>
@@ -505,9 +505,11 @@ export default function DiscoveryPage() {
                       </td>
                       <td className="p-2">
                         <div className="flex items-center justify-end gap-2">
-                          <button className="btn-primary px-2 py-1 text-xs whitespace-nowrap" onClick={() => setAddTarget(r)}>
-                            Thêm vào lịch
-                          </button>
+                          <Tooltip content="Thêm vào lịch">
+                            <button className="btn-primary p-1.5" onClick={() => setAddTarget(r)}>
+                              <CalendarPlus size={14} />
+                            </button>
+                          </Tooltip>
                           <button
                             className="btn-secondary px-2 py-1 text-xs whitespace-nowrap"
                             disabled={skipMut.isPending}
