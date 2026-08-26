@@ -92,19 +92,14 @@ function dayAfterLocalDate(iso: string): string {
 const WINDOW_MINUTES = 15;
 const WINDOW_DELAY_MINUTES = 3;
 
-// Shorts is the primary signal this tool ranks by (see score_candidate) — so
-// whenever a channel has a Shorts cadence at all, the pipeline should pull
-// from /shorts, not the bare channel URL (which yt-dlp resolves to /videos,
-// i.e. long-form — much more CPU/RAM per download than a pipeline aimed at
-// this channel was meant to cost).
-function pipelineSourceTab(r: DiscoveryScanResult): "shorts" | "videos" {
-  return r.cadence_shorts_days_per_video != null ? "shorts" : "videos";
-}
-
-function buildPrefill(r: DiscoveryScanResult): PipelinePrefill {
+// Which tab to pull from is the user's explicit choice now (add button lives
+// in the Shorts/Video cadence column they clicked) — sourceTab null only
+// happens from the Thao tác fallback button, when neither tab had enough
+// data to show a cadence-column add button at all.
+function buildPrefill(r: DiscoveryScanResult, sourceTab: "shorts" | "videos" | null): PipelinePrefill {
   const baseUrl = r.channel_url.replace(/\/+$/, "");
   const prefill: PipelinePrefill = {
-    channel_url: `${baseUrl}/${pipelineSourceTab(r)}`,
+    channel_url: sourceTab ? `${baseUrl}/${sourceTab}` : baseUrl,
     name: r.channel_title,
     channel_description: r.channel_description ?? undefined,
     fetch_count: 1,
@@ -131,7 +126,9 @@ export default function DiscoveryPage() {
   const [market, setMarket] = useState(MARKETS.find((m) => m.gl === "US")!);
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [addTarget, setAddTarget] = useState<DiscoveryScanResult | null>(null);
+  const [addTarget, setAddTarget] = useState<{ result: DiscoveryScanResult; sourceTab: "shorts" | "videos" | null } | null>(
+    null
+  );
   const [deleteTarget, setDeleteTarget] = useState<DiscoveryScanRun | null>(null);
   const [viewingRunId, setViewingRunId] = useState<number | null>(null);
 
@@ -527,8 +524,36 @@ export default function DiscoveryPage() {
                       <td className="p-2 text-slate-600 whitespace-nowrap">
                         {r.latest_video_posted_at ? localHHMM(r.latest_video_posted_at) : "—"}
                       </td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">{formatCadence(r.cadence_shorts_days_per_video)}</td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">{formatCadence(r.cadence_videos_days_per_video)}</td>
+                      <td className="p-2 text-slate-600 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{formatCadence(r.cadence_shorts_days_per_video)}</span>
+                          {r.status !== "added" && r.cadence_shorts_days_per_video != null && (
+                            <Tooltip content="Thêm vào lịch — nguồn: Shorts">
+                              <button
+                                className="text-brand-500 hover:text-brand-700"
+                                onClick={() => setAddTarget({ result: r, sourceTab: "shorts" })}
+                              >
+                                <CalendarPlus size={13} />
+                              </button>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2 text-slate-600 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{formatCadence(r.cadence_videos_days_per_video)}</span>
+                          {r.status !== "added" && r.cadence_videos_days_per_video != null && (
+                            <Tooltip content="Thêm vào lịch — nguồn: video dài">
+                              <button
+                                className="text-brand-500 hover:text-brand-700"
+                                onClick={() => setAddTarget({ result: r, sourceTab: "videos" })}
+                              >
+                                <CalendarPlus size={13} />
+                              </button>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2 text-slate-500 max-w-[120px]">
                         <Tooltip content={r.found_via_keyword} className="block truncate">
                           {r.found_via_keyword}
@@ -543,13 +568,16 @@ export default function DiscoveryPage() {
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-2">
-                            <Tooltip
-                              content={`Thêm vào lịch — nguồn: ${pipelineSourceTab(r) === "shorts" ? "Shorts" : "video dài"}`}
-                            >
-                              <button className="btn-primary p-1.5" onClick={() => setAddTarget(r)}>
-                                <CalendarPlus size={14} />
-                              </button>
-                            </Tooltip>
+                            {r.cadence_shorts_days_per_video == null && r.cadence_videos_days_per_video == null && (
+                              <Tooltip content="Chưa rõ nhịp đăng ở tab nào — nhớ kiểm tra lại URL kênh trong form">
+                                <button
+                                  className="btn-primary p-1.5"
+                                  onClick={() => setAddTarget({ result: r, sourceTab: null })}
+                                >
+                                  <CalendarPlus size={14} />
+                                </button>
+                              </Tooltip>
+                            )}
                             <button
                               className="btn-secondary px-2 py-1 text-xs whitespace-nowrap"
                               disabled={skipMut.isPending}
@@ -611,10 +639,10 @@ export default function DiscoveryPage() {
       <PipelineFormModal
         open={!!addTarget}
         pipeline={null}
-        prefill={addTarget ? buildPrefill(addTarget) : undefined}
+        prefill={addTarget ? buildPrefill(addTarget.result, addTarget.sourceTab) : undefined}
         onClose={() => setAddTarget(null)}
         onCreated={(created: Pipeline) => {
-          if (addTarget) markAddedMut.mutate({ r: addTarget, pipelineId: created.id });
+          if (addTarget) markAddedMut.mutate({ r: addTarget.result, pipelineId: created.id });
         }}
       />
 
