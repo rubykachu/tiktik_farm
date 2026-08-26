@@ -243,7 +243,12 @@ export default function DiscoveryPage() {
     }
   }
 
-  const visibleResults = useMemo(() => (results ?? []).filter((r) => r.status === "new"), [results]);
+  // Skipped channels stay hidden — the user explicitly rejected them, so the
+  // list should stay a clean working set. "added" channels stay visible
+  // (badge instead of action buttons) so revisiting an old scan run doesn't
+  // quietly lose the record that this channel was ever found and added,
+  // e.g. after its pipeline gets deleted later.
+  const visibleResults = useMemo(() => (results ?? []).filter((r) => r.status !== "skipped"), [results]);
   const sortedResults = useMemo(() => {
     const rows = [...visibleResults];
     rows.sort((a, b) => {
@@ -530,22 +535,30 @@ export default function DiscoveryPage() {
                         </Tooltip>
                       </td>
                       <td className="p-2">
-                        <div className="flex items-center justify-end gap-2">
-                          <Tooltip
-                            content={`Thêm vào lịch — nguồn: ${pipelineSourceTab(r) === "shorts" ? "Shorts" : "video dài"}`}
-                          >
-                            <button className="btn-primary p-1.5" onClick={() => setAddTarget(r)}>
-                              <CalendarPlus size={14} />
+                        {r.status === "added" ? (
+                          <div className="flex items-center justify-end">
+                            <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700 whitespace-nowrap">
+                              Đã thêm vào lịch
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            <Tooltip
+                              content={`Thêm vào lịch — nguồn: ${pipelineSourceTab(r) === "shorts" ? "Shorts" : "video dài"}`}
+                            >
+                              <button className="btn-primary p-1.5" onClick={() => setAddTarget(r)}>
+                                <CalendarPlus size={14} />
+                              </button>
+                            </Tooltip>
+                            <button
+                              className="btn-secondary px-2 py-1 text-xs whitespace-nowrap"
+                              disabled={skipMut.isPending}
+                              onClick={() => skipMut.mutate(r)}
+                            >
+                              Bỏ qua
                             </button>
-                          </Tooltip>
-                          <button
-                            className="btn-secondary px-2 py-1 text-xs whitespace-nowrap"
-                            disabled={skipMut.isPending}
-                            onClick={() => skipMut.mutate(r)}
-                          >
-                            Bỏ qua
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
