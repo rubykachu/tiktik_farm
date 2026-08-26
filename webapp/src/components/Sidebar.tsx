@@ -3,11 +3,11 @@ import { NavLink } from "react-router-dom";
 import {
   Users,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   Download,
   History,
   LayoutDashboard,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -43,11 +43,13 @@ export default function Sidebar() {
     >
       <div
         className={clsx(
-          "flex items-center border-b border-slate-200 p-5",
-          collapsed ? "justify-center px-2" : "justify-between",
+          "relative flex items-center border-b border-slate-200 p-5",
+          collapsed && "justify-center px-2",
         )}
       >
-        {!collapsed && (
+        {collapsed ? (
+          <span className="text-lg font-semibold tracking-tight">TU</span>
+        ) : (
           <div>
             <h1 className="text-lg font-semibold tracking-tight">TikTok Uploader</h1>
             <p className="text-xs text-slate-500 mt-1">by Minh Tang</p>
@@ -57,9 +59,9 @@ export default function Sidebar() {
           type="button"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
-          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          className="absolute top-1/2 -right-3 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900"
         >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
       <nav className="p-3 space-y-1">
