@@ -670,23 +670,7 @@ function TelegramConfigsSection() {
               </tr>
             )}
             {configs?.map((c) => (
-              <tr key={c.id}>
-                <td className="p-3 font-medium">{c.name}</td>
-                <td className="p-3 text-slate-600">
-                  <code className="text-xs bg-slate-100 px-1 rounded">{c.chat_id}</code>
-                </td>
-                <td className="p-3 text-slate-500">
-                  <code className="text-xs">{maskBotToken(c.bot_token)}</code>
-                </td>
-                <td className="p-3 text-right">
-                  <button
-                    className="text-xs text-red-600"
-                    onClick={() => setDeleteTarget(c)}
-                  >
-                    <Trash2 size={14} className="inline" /> Xóa
-                  </button>
-                </td>
-              </tr>
+              <TelegramConfigRow key={c.id} config={c} onDelete={() => setDeleteTarget(c)} />
             ))}
           </tbody>
         </table>
@@ -702,6 +686,30 @@ function TelegramConfigsSection() {
         onConfirm={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
       />
     </section>
+  );
+}
+
+function TelegramConfigRow({ config, onDelete }: { config: TelegramConfig; onDelete: () => void }) {
+  const resolvedChatName = useTelegramChatName(config.bot_token, config.chat_id);
+
+  return (
+    <tr>
+      <td className="p-3 font-medium">{config.name}</td>
+      <td className="p-3 text-slate-600">
+        <code className="text-xs bg-slate-100 px-1 rounded">{config.chat_id}</code>
+        {resolvedChatName && (
+          <div className="text-xs text-brand-600 mt-0.5">{resolvedChatName}</div>
+        )}
+      </td>
+      <td className="p-3 text-slate-500">
+        <code className="text-xs">{maskBotToken(config.bot_token)}</code>
+      </td>
+      <td className="p-3 text-right">
+        <button className="text-xs text-red-600" onClick={onDelete}>
+          <Trash2 size={14} className="inline" /> Xóa
+        </button>
+      </td>
+    </tr>
   );
 }
 
