@@ -92,9 +92,19 @@ function dayAfterLocalDate(iso: string): string {
 const WINDOW_MINUTES = 15;
 const WINDOW_DELAY_MINUTES = 3;
 
+// Shorts is the primary signal this tool ranks by (see score_candidate) — so
+// whenever a channel has a Shorts cadence at all, the pipeline should pull
+// from /shorts, not the bare channel URL (which yt-dlp resolves to /videos,
+// i.e. long-form — much more CPU/RAM per download than a pipeline aimed at
+// this channel was meant to cost).
+function pipelineSourceTab(r: DiscoveryScanResult): "shorts" | "videos" {
+  return r.cadence_shorts_days_per_video != null ? "shorts" : "videos";
+}
+
 function buildPrefill(r: DiscoveryScanResult): PipelinePrefill {
+  const baseUrl = r.channel_url.replace(/\/+$/, "");
   const prefill: PipelinePrefill = {
-    channel_url: r.channel_url,
+    channel_url: `${baseUrl}/${pipelineSourceTab(r)}`,
     name: r.channel_title,
     channel_description: r.channel_description ?? undefined,
     fetch_count: 1,
@@ -521,7 +531,9 @@ export default function DiscoveryPage() {
                       </td>
                       <td className="p-2">
                         <div className="flex items-center justify-end gap-2">
-                          <Tooltip content="Thêm vào lịch">
+                          <Tooltip
+                            content={`Thêm vào lịch — nguồn: ${pipelineSourceTab(r) === "shorts" ? "Shorts" : "video dài"}`}
+                          >
                             <button className="btn-primary p-1.5" onClick={() => setAddTarget(r)}>
                               <CalendarPlus size={14} />
                             </button>
