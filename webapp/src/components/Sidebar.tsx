@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Users,
@@ -5,6 +6,8 @@ import {
   Download,
   History,
   LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
   Search,
   Settings as SettingsIcon,
 } from "lucide-react";
@@ -20,12 +23,44 @@ const items = [
   { to: "/settings", label: "Cài đặt", icon: SettingsIcon },
 ];
 
+const STORAGE_KEY = "sidebar-collapsed";
+
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === "1",
+  );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
+
   return (
-    <aside className="w-60 shrink-0 border-r border-slate-200 bg-white">
-      <div className="p-5 border-b border-slate-200">
-        <h1 className="text-lg font-semibold tracking-tight">TikTok Uploader</h1>
-        <p className="text-xs text-slate-500 mt-1">by Minh Tang</p>
+    <aside
+      className={clsx(
+        "shrink-0 border-r border-slate-200 bg-white transition-[width] duration-150",
+        collapsed ? "w-16" : "w-60",
+      )}
+    >
+      <div
+        className={clsx(
+          "flex items-center border-b border-slate-200 p-5",
+          collapsed ? "justify-center px-2" : "justify-between",
+        )}
+      >
+        {!collapsed && (
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">TikTok Uploader</h1>
+            <p className="text-xs text-slate-500 mt-1">by Minh Tang</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+        </button>
       </div>
       <nav className="p-3 space-y-1">
         {items.map(({ to, label, icon: Icon }) => (
@@ -33,9 +68,11 @@ export default function Sidebar() {
             key={to}
             to={to}
             end={to === "/"}
+            title={collapsed ? label : undefined}
             className={({ isActive }) =>
               clsx(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                collapsed && "justify-center px-0",
                 isActive
                   ? "bg-brand-50 text-brand-700"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -43,7 +80,7 @@ export default function Sidebar() {
             }
           >
             <Icon size={18} />
-            {label}
+            {!collapsed && label}
           </NavLink>
         ))}
       </nav>
