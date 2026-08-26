@@ -538,7 +538,7 @@ export default function DiscoveryPage() {
                         {r.status === "added" ? (
                           <div className="flex items-center justify-end">
                             <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700 whitespace-nowrap">
-                              Đã thêm vào lịch
+                              Đã thêm vào lịch — {pipelineSourceTab(r) === "shorts" ? "Shorts" : "video dài"}
                             </span>
                           </div>
                         ) : (
