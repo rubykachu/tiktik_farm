@@ -153,7 +153,7 @@ class TestOverview:
             path = os.path.join(output_dir, "clip.mp4")
             with open(path, "wb") as fh:
                 fh.write(b"x")
-            return DownloadedVideo(file_path=path, title="t", description="",
+            return DownloadedVideo(file_path=path, title="t", description="", transcript="",
                                    duration_seconds=1, file_size=1)
 
         with patch("api.services.manual_download.download", side_effect=_stub):

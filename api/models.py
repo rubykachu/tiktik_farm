@@ -224,6 +224,7 @@ class ManualDownload(SQLModel, table=True):
     status: str = Field(default="queued", index=True, max_length=16)
     title: Optional[str] = Field(default=None, max_length=500)
     description: Optional[str] = Field(default=None)
+    transcript: Optional[str] = Field(default=None)
     file_path: Optional[str] = Field(default=None)
     file_size: Optional[int] = Field(default=None)
     duration_seconds: Optional[int] = Field(default=None)

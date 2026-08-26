@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 import yt_dlp
 
+from api.services.transcript import fetch_transcript
 from api.services.ytdlp_opts import extractor_args
 
 log = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class DownloadedVideo:
     file_path: str
     title: str
     description: str
+    transcript: str
     duration_seconds: Optional[int]
     file_size: int
 
@@ -135,6 +137,7 @@ def download(url: str, output_dir: str) -> DownloadedVideo:
         file_path=file_path,
         title=str(info.get("title") or ""),
         description=str(info.get("description") or ""),
+        transcript=fetch_transcript(info),
         duration_seconds=int(duration) if isinstance(duration, (int, float)) else None,
         file_size=os.path.getsize(file_path),
     )

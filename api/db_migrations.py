@@ -154,6 +154,13 @@ def apply_schema_patches(engine: Engine) -> None:
                     )
                 except Exception:
                     pass
+            if "transcript" not in md_cols:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE manual_downloads ADD COLUMN transcript TEXT"
+                    )
+                except Exception:
+                    pass
 
         has_pipeline_runs = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='pipeline_runs'"
