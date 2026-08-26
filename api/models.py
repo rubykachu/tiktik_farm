@@ -338,10 +338,8 @@ class DiscoveryScanResult(SQLModel, table=True):
     # what the webapp shows, converted to the browser's local time, as "when
     # this channel tends to post" for picking a pipeline schedule time.
     latest_video_posted_at: Optional[datetime] = Field(default=None)
-    cadence_days_per_video: Optional[float] = Field(default=None)
-    cadence_tab: Optional[str] = Field(default=None, max_length=16)  # 'videos' | 'shorts'
-    has_shorts_tab: bool = Field(default=False)
-    recent_shorts_count: int = Field(default=0)
+    cadence_videos_days_per_video: Optional[float] = Field(default=None)
+    cadence_shorts_days_per_video: Optional[float] = Field(default=None)
     score: float = Field(default=0, index=True)
     # Both free from the same phase-1 request — used to prefill the
     # create-pipeline form's channel description / max duration fields.

@@ -24,10 +24,8 @@ export interface DiscoveryScanResult {
   median_view_count: number;
   days_since_last_video: number;
   latest_video_posted_at: string | null;
-  cadence_days_per_video: number | null;
-  cadence_tab: "videos" | "shorts" | null;
-  has_shorts_tab: boolean;
-  recent_shorts_count: number;
+  cadence_videos_days_per_video: number | null;
+  cadence_shorts_days_per_video: number | null;
   score: number;
   channel_description: string | null;
   median_duration_seconds: number | null;

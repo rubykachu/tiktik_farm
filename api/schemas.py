@@ -782,10 +782,8 @@ class DiscoveryScanResultRead(BaseModel):
     median_view_count: int
     days_since_last_video: float
     latest_video_posted_at: Optional[datetime] = None
-    cadence_days_per_video: Optional[float] = None
-    cadence_tab: Optional[str] = None
-    has_shorts_tab: bool
-    recent_shorts_count: int
+    cadence_videos_days_per_video: Optional[float] = None
+    cadence_shorts_days_per_video: Optional[float] = None
     score: float
     channel_description: Optional[str] = None
     median_duration_seconds: Optional[int] = None

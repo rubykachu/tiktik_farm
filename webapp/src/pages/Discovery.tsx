@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpDown, ExternalLink, HelpCircle, Plus, Trash2, X } from "lucide-react";
+import { ArrowUpDown, HelpCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult, type DiscoveryScanRun } from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
@@ -11,7 +11,13 @@ import { asUtcDate, formatRelative } from "../utils/datetime";
 
 const SCAN_POLL_MS = 3000;
 
-type SortKey = "score" | "subscriber_count" | "median_view_count" | "days_since_last_video" | "cadence_days_per_video";
+type SortKey =
+  | "score"
+  | "subscriber_count"
+  | "median_view_count"
+  | "days_since_last_video"
+  | "cadence_videos_days_per_video"
+  | "cadence_shorts_days_per_video";
 
 const MARKETS = [
   { label: "Anh", gl: "GB", hl: "en" },
@@ -28,10 +34,10 @@ const MARKETS = [
 ];
 
 const SCORE_HELP =
-  "Điểm 0-100, ưu tiên độ đều đặn hơn quy mô kênh: độ mới video gần nhất (30đ) " +
-  "+ nhịp đăng so với mục tiêu \"đều đặn\" trong Cài đặt (35đ) " +
-  "+ view trung vị theo thang log (15đ) " +
-  "+ có tab Shorts và số Shorts gần đây (20đ).";
+  "Điểm 0-100, ưu tiên nhịp đăng Shorts hơn cả: nhịp đăng Shorts so với mục tiêu " +
+  "\"đều đặn\" trong Cài đặt (45đ) + nhịp đăng video dài (20đ) + độ mới video gần nhất (20đ) " +
+  "+ view trung vị theo thang log, chỉ cộng thêm không trừ (15đ). Không có Shorts thì mất " +
+  "45đ đó, không có video dài thì mất 20đ đó — không cộng bù qua nhau.";
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}tr`;
@@ -47,15 +53,7 @@ function formatDaysAgo(days: number): string {
 
 function formatCadence(days: number | null): string {
   if (days == null) return "—";
-  return `${days.toFixed(1)} ngày/video`;
-}
-
-// The "Shorts" column already says whether the channel has a Shorts tab —
-// this only explains which tab that cadence number was measured from, so it
-// doesn't need to repeat "Shorts" as visible column text too.
-function cadenceTabHint(tab: string | null): string {
-  const tabLabel = tab === "shorts" ? "Shorts" : "video dài";
-  return `Tính theo tab ${tabLabel}`;
+  return `${days.toFixed(1)}d/video`;
 }
 
 function marketLabel(gl: string): string {
@@ -350,6 +348,11 @@ export default function DiscoveryPage() {
 
         <div className="space-y-3 border rounded p-4">
           <h3 className="font-medium text-sm">Ngưỡng chấm điểm</h3>
+          <p className="text-xs text-slate-500">
+            Điểm 0-100 = nhịp đăng Shorts so với "đều đặn" dưới đây (45đ) + nhịp đăng video dài (20đ)
+            + độ mới video gần nhất (20đ) + view trung vị (15đ, chỉ cộng thêm không trừ). Thiếu Shorts
+            mất 45đ, thiếu video dài mất 20đ — không cộng bù qua nhau.
+          </p>
           {settings && (
             <div className="grid grid-cols-1 gap-3 text-sm">
               <label className="space-y-1">
@@ -446,6 +449,7 @@ export default function DiscoveryPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
+                    <th className="text-left p-2 whitespace-nowrap">#</th>
                     <th className="text-left p-2 whitespace-nowrap">Kênh</th>
                     <th className="text-left p-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1">
@@ -457,20 +461,32 @@ export default function DiscoveryPage() {
                     </th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Sub" k="subscriber_count" /></th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="View" k="median_view_count" /></th>
-                    <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Mới nhất" k="days_since_last_video" /></th>
-                    <th className="text-left p-2 whitespace-nowrap">Giờ đăng</th>
-                    <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Nhịp đăng" k="cadence_days_per_video" /></th>
-                    <th className="text-left p-2 whitespace-nowrap">Shorts</th>
+                    <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Last" k="days_since_last_video" /></th>
+                    <th className="text-left p-2 whitespace-nowrap">Time</th>
+                    <th className="text-left p-2 whitespace-nowrap">
+                      <SortHeader label="Shorts" k="cadence_shorts_days_per_video" />
+                    </th>
+                    <th className="text-left p-2 whitespace-nowrap">
+                      <SortHeader label="Video" k="cadence_videos_days_per_video" />
+                    </th>
                     <th className="text-left p-2 whitespace-nowrap">Từ khóa</th>
                     <th className="text-right p-2 whitespace-nowrap">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedResults.map((r) => (
+                  {sortedResults.map((r, idx) => (
                     <tr key={r.id} className="border-t align-top">
+                      <td className="p-2 text-slate-400">{idx + 1}</td>
                       <td className="p-2 font-medium max-w-[220px]">
-                        <Tooltip content={r.channel_description || r.channel_title} className="block truncate">
-                          {r.channel_title}
+                        <Tooltip content={r.channel_description || r.channel_title} className="block">
+                          <a
+                            href={r.channel_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate hover:underline hover:text-brand-700"
+                          >
+                            {r.channel_title}
+                          </a>
                         </Tooltip>
                       </td>
                       <td className="p-2 font-semibold">{r.score.toFixed(0)}</td>
@@ -480,20 +496,8 @@ export default function DiscoveryPage() {
                       <td className="p-2 text-slate-600 whitespace-nowrap">
                         {r.latest_video_posted_at ? localHHMM(r.latest_video_posted_at) : "—"}
                       </td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">
-                        {r.cadence_days_per_video == null ? (
-                          "—"
-                        ) : (
-                          <Tooltip content={cadenceTabHint(r.cadence_tab)}>
-                            <span className="cursor-help border-b border-dotted border-slate-400">
-                              {formatCadence(r.cadence_days_per_video)}
-                            </span>
-                          </Tooltip>
-                        )}
-                      </td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">
-                        {r.has_shorts_tab ? `Có (${r.recent_shorts_count})` : "Không"}
-                      </td>
+                      <td className="p-2 text-slate-600 whitespace-nowrap">{formatCadence(r.cadence_shorts_days_per_video)}</td>
+                      <td className="p-2 text-slate-600 whitespace-nowrap">{formatCadence(r.cadence_videos_days_per_video)}</td>
                       <td className="p-2 text-slate-500 max-w-[120px]">
                         <Tooltip content={r.found_via_keyword} className="block truncate">
                           {r.found_via_keyword}
@@ -511,15 +515,6 @@ export default function DiscoveryPage() {
                           >
                             Bỏ qua
                           </button>
-                          <a
-                            className="text-slate-400 hover:text-slate-600"
-                            href={r.channel_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Xem trên YouTube"
-                          >
-                            <ExternalLink size={16} />
-                          </a>
                         </div>
                       </td>
                     </tr>

@@ -72,13 +72,13 @@ class TestNormalizeChannelKey:
 
 class TestScoreCandidate:
     def test_fresh_frequent_popular_with_shorts_scores_near_max(self, engine):
+        settings.set_setting("discovery.target_days_per_video", "1")
         m = cd.ChannelMetrics(
             subscriber_count=5000,
             median_view_count=1_000_000,
-            has_shorts_tab=True,
-            recent_shorts_count=12,
             days_since_last_video=0.5,
-            cadence_days_per_video=0.5,
+            cadence_videos_days_per_video=1.0,
+            cadence_shorts_days_per_video=0.5,
         )
         assert cd.score_candidate(m) >= 95
 
@@ -87,10 +87,9 @@ class TestScoreCandidate:
         m = cd.ChannelMetrics(
             subscriber_count=5000,
             median_view_count=1000,
-            has_shorts_tab=False,
-            recent_shorts_count=0,
             days_since_last_video=179,  # just under the 180-day cutoff
-            cadence_days_per_video=None,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=None,
         )
         score = cd.score_candidate(m)
         assert score < 10
@@ -99,36 +98,72 @@ class TestScoreCandidate:
         m = cd.ChannelMetrics(
             subscriber_count=100,
             median_view_count=0,
-            has_shorts_tab=False,
-            recent_shorts_count=0,
             days_since_last_video=0,
-            cadence_days_per_video=None,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=None,
         )
-        assert cd.score_candidate(m) == 30.0
+        assert cd.score_candidate(m) == 20.0
 
-    def test_cadence_at_target_gets_full_35(self, engine):
+    def test_shorts_cadence_at_target_gets_full_45(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
         m = cd.ChannelMetrics(
             subscriber_count=100,
             median_view_count=0,
-            has_shorts_tab=False,
-            recent_shorts_count=0,
             days_since_last_video=999999,
-            cadence_days_per_video=1.0,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=1.0,
         )
-        assert cd.score_candidate(m) == 35.0
+        assert cd.score_candidate(m) == 45.0
 
-    def test_cadence_twice_target_gets_half(self, engine):
+    def test_shorts_cadence_twice_target_gets_half(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
         m = cd.ChannelMetrics(
             subscriber_count=100,
             median_view_count=0,
-            has_shorts_tab=False,
-            recent_shorts_count=0,
             days_since_last_video=999999,
-            cadence_days_per_video=2.0,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=2.0,
         )
-        assert cd.score_candidate(m) == 17.5
+        assert cd.score_candidate(m) == 22.5
+
+    def test_video_cadence_at_target_gets_full_20(self, engine):
+        settings.set_setting("discovery.target_days_per_video", "1")
+        m = cd.ChannelMetrics(
+            subscriber_count=100,
+            median_view_count=0,
+            days_since_last_video=999999,
+            cadence_videos_days_per_video=1.0,
+            cadence_shorts_days_per_video=None,
+        )
+        assert cd.score_candidate(m) == 20.0
+
+    def test_no_shorts_cadence_loses_the_45_bucket_no_fallback(self, engine):
+        """A channel with only long-form videos does not get the video
+        cadence substituted into the Shorts bucket — Shorts is the primary
+        signal this tool is meant to prioritize, so a pure long-form
+        channel is capped well below one with an active Shorts cadence."""
+        settings.set_setting("discovery.target_days_per_video", "1")
+        m = cd.ChannelMetrics(
+            subscriber_count=100,
+            median_view_count=0,
+            days_since_last_video=0,
+            cadence_videos_days_per_video=1.0,
+            cadence_shorts_days_per_video=None,
+        )
+        assert cd.score_candidate(m) == 40.0  # 20 recency + 20 video cadence, 0 shorts
+
+    def test_view_count_only_adds_never_subtracts(self, engine):
+        """Low view/sub must not be penalized — a viral channel carries
+        more copyright-strike risk and should not be favored for it."""
+        settings.set_setting("discovery.target_days_per_video", "1")
+        low_view = cd.ChannelMetrics(
+            subscriber_count=100,
+            median_view_count=0,
+            days_since_last_video=0,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=1.0,
+        )
+        assert cd.score_candidate(low_view) == 65.0  # 20 recency + 45 shorts cadence, 0 view
 
 
 # ---------- fetch_phase1 -------------------------------------------------------
@@ -166,8 +201,7 @@ class TestFetchPhase1:
         assert result is not None
         assert result.subscriber_count == 5000
         assert result.median_view_count == 30
-        assert result.has_shorts_tab is True
-        assert result.recent_shorts_count == 2
+        assert len(result.shorts_entries) == 2
 
     def test_falls_back_to_shorts_when_no_videos_tab(self, engine):
         settings.set_setting("discovery.min_subscribers", "100")
@@ -209,8 +243,8 @@ class TestFetchPhase2:
         with patch.object(cd, "_full_extract", side_effect=fake_full):
             result = cd.fetch_phase2(entries, [])
 
-        assert result.cadence_tab == "videos"
-        assert result.cadence_days_per_video == pytest.approx(236 / 9, abs=1)
+        assert result.cadence_videos_days_per_video == pytest.approx(236 / 9, abs=1)
+        assert result.cadence_shorts_days_per_video is None
         assert result.days_since_last_video >= 0
         assert result.latest_video_posted_at == datetime(2026, 8, 25, tzinfo=timezone.utc)
 
@@ -228,7 +262,7 @@ class TestFetchPhase2:
 
         with patch.object(cd, "_full_extract", side_effect=fake_full):
             result = cd.fetch_phase2(entries, [])
-        assert result.cadence_days_per_video is not None
+        assert result.cadence_videos_days_per_video is not None
 
     def test_falls_back_to_upload_date_without_timestamp(self, engine):
         entries = [{"id": f"v{i}"} for i in range(3)]
@@ -244,7 +278,7 @@ class TestFetchPhase2:
             result = cd.fetch_phase2(entries, [])
         assert result.latest_video_posted_at == datetime(2026, 8, 25, tzinfo=timezone.utc)
 
-    def test_picks_tab_with_smaller_cadence(self, engine):
+    def test_both_tabs_get_independent_cadence(self, engine):
         video_entries = [{"id": f"v{i}"} for i in range(3)]
         shorts_entries = [{"id": f"s{i}"} for i in range(3)]
 
@@ -261,7 +295,8 @@ class TestFetchPhase2:
 
         with patch.object(cd, "_full_extract", side_effect=fake_full):
             result = cd.fetch_phase2(video_entries, shorts_entries)
-        assert result.cadence_tab == "shorts"
+        assert result.cadence_videos_days_per_video == pytest.approx(236 / 2, abs=1)
+        assert result.cadence_shorts_days_per_video == pytest.approx(4 / 2, abs=1)
         # Recency still comes from whichever tab has the more recent video (videos, here).
         assert result.latest_video_posted_at == datetime(2026, 8, 25, tzinfo=timezone.utc)
 
@@ -269,14 +304,14 @@ class TestFetchPhase2:
         with patch.object(cd, "_full_extract", return_value=None):
             result = cd.fetch_phase2([{"id": "a"}, {"id": "b"}], [])
         assert result.days_since_last_video == float("inf")
-        assert result.cadence_days_per_video is None
-        assert result.cadence_tab is None
+        assert result.cadence_videos_days_per_video is None
+        assert result.cadence_shorts_days_per_video is None
         assert result.latest_video_posted_at is None
 
     def test_fewer_than_two_entries_is_not_usable(self, engine):
         with patch.object(cd, "_full_extract", return_value={"timestamp": 1}):
             result = cd.fetch_phase2([{"id": "only-one"}], [])
-        assert result.cadence_days_per_video is None
+        assert result.cadence_videos_days_per_video is None
 
 
 # ---------- search_channel_candidates -----------------------------------------
@@ -329,8 +364,6 @@ class TestRunScan:
         return cd.Phase1Result(
             subscriber_count=5000,
             median_view_count=10000,
-            has_shorts_tab=True,
-            recent_shorts_count=5,
             video_entries=[{"id": "v0"}, {"id": "v1"}],
             shorts_entries=[{"id": "s0"}, {"id": "s1"}],
             channel_description="A channel about things",
@@ -340,8 +373,8 @@ class TestRunScan:
     def _fake_phase2(self):
         return cd.Phase2Result(
             days_since_last_video=1.0,
-            cadence_days_per_video=1.0,
-            cadence_tab="videos",
+            cadence_videos_days_per_video=1.0,
+            cadence_shorts_days_per_video=0.5,
             latest_video_posted_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
         )
 
@@ -438,7 +471,8 @@ class TestRunScan:
             run_row = s.get(DiscoveryScanRun, run_id)
         assert result_row is not None
         assert result_row.score > 0
-        assert result_row.cadence_tab == "videos"
+        assert result_row.cadence_videos_days_per_video == 1.0
+        assert result_row.cadence_shorts_days_per_video == 0.5
         # SQLite drops tzinfo on round-trip — compare naive.
         assert result_row.latest_video_posted_at == datetime(2026, 8, 25)
         assert run_row.status == "done"
@@ -482,7 +516,10 @@ class TestRunScan:
             {"channel_id": "UC-silent", "channel_url": "https://www.youtube.com/@silentchannel", "channel_title": "Silent"},
         ]
         silent_phase2 = cd.Phase2Result(
-            days_since_last_video=400.0, cadence_days_per_video=None, cadence_tab=None, latest_video_posted_at=None
+            days_since_last_video=400.0,
+            cadence_videos_days_per_video=None,
+            cadence_shorts_days_per_video=None,
+            latest_video_posted_at=None,
         )
         with patch.object(cd, "search_channel_candidates", return_value=search_result), \
              patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \

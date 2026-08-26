@@ -20,7 +20,8 @@ actual post time-of-day require opening a few individual videos with a full
 (non-flat) extraction. Both the /videos and /shorts tabs are probed —
 YouTube channels are not consistently more active on one tab than the other
 (measured: one channel posts far more often to /shorts, another almost
-entirely to /videos) — and the tab with the tighter cadence wins.
+entirely to /videos) — and cadence is kept as two separate numbers, one per
+tab (see score_candidate: Shorts cadence is the dominant scoring signal).
 
 Every scoring threshold used below (min subscribers, silence cutoff,
 cadence target, score weights' reference scale) is read from
@@ -172,8 +173,6 @@ def suggest_keywords(seed: str, gl: str, hl: str) -> list[str]:
 class Phase1Result:
     subscriber_count: int
     median_view_count: int
-    has_shorts_tab: bool
-    recent_shorts_count: int
     video_entries: list[dict]
     shorts_entries: list[dict]
     channel_description: str
@@ -240,8 +239,6 @@ def fetch_phase1(channel_base_url: str) -> Optional[Phase1Result]:
     return Phase1Result(
         subscriber_count=subscriber_count,
         median_view_count=median_view,
-        has_shorts_tab=bool(shorts_entries),
-        recent_shorts_count=len(shorts_entries),
         video_entries=video_entries,
         shorts_entries=shorts_entries,
         channel_description=channel_description,
@@ -301,17 +298,18 @@ def _cadence_from_tab(entries: list[dict]) -> Optional[tuple[float, float, datet
 @dataclass
 class Phase2Result:
     days_since_last_video: float
-    cadence_days_per_video: Optional[float]
-    cadence_tab: Optional[str]
+    cadence_videos_days_per_video: Optional[float]
+    cadence_shorts_days_per_video: Optional[float]
     latest_video_posted_at: Optional[datetime]
 
 
 def fetch_phase2(video_entries: list[dict], shorts_entries: list[dict]) -> Phase2Result:
-    """cadence_tab is whichever tab produced the smaller (more frequent)
-    cadence; days_since_last_video/latest_video_posted_at come from
-    whichever tab has the more recent video, independent of which tab won
-    on cadence. If neither tab yields usable dates, days_since_last_video
-    is +inf so the silence reject in run_scan drops the candidate."""
+    """Cadence is tracked as two independent numbers, one per tab — see
+    score_candidate for why (Shorts cadence is weighted far above video
+    cadence there). days_since_last_video/latest_video_posted_at come from
+    whichever tab has the more recent video. If neither tab yields usable
+    dates, days_since_last_video is +inf so the silence reject in run_scan
+    drops the candidate."""
     results: dict[str, tuple[float, float, datetime]] = {}
     videos_result = _cadence_from_tab(video_entries)
     if videos_result:
@@ -326,8 +324,12 @@ def fetch_phase2(video_entries: list[dict], shorts_entries: list[dict]) -> Phase
     most_recent_tab = min(results, key=lambda k: results[k][0])
     days_since_last = results[most_recent_tab][0]
     latest_posted_at = results[most_recent_tab][2]
-    cadence_tab = min(results, key=lambda k: results[k][1])
-    return Phase2Result(days_since_last, results[cadence_tab][1], cadence_tab, latest_posted_at)
+    return Phase2Result(
+        days_since_last,
+        results["videos"][1] if "videos" in results else None,
+        results["shorts"][1] if "shorts" in results else None,
+        latest_posted_at,
+    )
 
 
 # ---------- scoring ------------------------------------------------------------
@@ -337,25 +339,33 @@ def fetch_phase2(video_entries: list[dict], shorts_entries: list[dict]) -> Phase
 class ChannelMetrics:
     subscriber_count: int
     median_view_count: int
-    has_shorts_tab: bool
-    recent_shorts_count: int
     days_since_last_video: float
-    cadence_days_per_video: Optional[float]
+    cadence_videos_days_per_video: Optional[float]
+    cadence_shorts_days_per_video: Optional[float]
 
 
 def score_candidate(metrics: ChannelMetrics) -> float:
-    """0-100. Weighted toward posting regularity, not channel size:
-    recency 30, cadence 35, absolute median view 15, has-Shorts +
-    recent-Shorts-count 20.
+    """0-100. Weighted toward Shorts posting regularity above everything
+    else: recency 20, Shorts cadence 45, video-dài cadence 20, median view
+    15. A channel with no Shorts cadence loses the 45pt bucket outright (no
+    fallback to video cadence) — same for a channel with no video-dài
+    cadence losing its 20pt bucket. View only ever adds, never subtracts,
+    so a low-view-but-regular channel still scores well; a highly-viral
+    channel is not favored for it (more views also means more copyright-
+    strike exposure, which this tool should not chase).
     """
     silent_days = settings.get_silent_months() * 30
-    recency = 30 * _clamp(1 - metrics.days_since_last_video / silent_days, 0, 1) if silent_days > 0 else 0.0
+    recency = 20 * _clamp(1 - metrics.days_since_last_video / silent_days, 0, 1) if silent_days > 0 else 0.0
 
     target = settings.get_target_days_per_video()
-    if metrics.cadence_days_per_video and metrics.cadence_days_per_video > 0 and target > 0:
-        cadence = 35 * _clamp(target / metrics.cadence_days_per_video, 0, 1)
-    else:
-        cadence = 0.0
+
+    def cadence_score(days: Optional[float], weight: float) -> float:
+        if days and days > 0 and target > 0:
+            return weight * _clamp(target / days, 0, 1)
+        return 0.0
+
+    shorts_cadence = cadence_score(metrics.cadence_shorts_days_per_video, 45)
+    video_cadence = cadence_score(metrics.cadence_videos_days_per_video, 20)
 
     ref = settings.get_view_score_reference()
     if ref > 0:
@@ -363,9 +373,7 @@ def score_candidate(metrics: ChannelMetrics) -> float:
     else:
         view = 0.0
 
-    shorts = (10.0 if metrics.has_shorts_tab else 0.0) + 10 * _clamp(metrics.recent_shorts_count / 10, 0, 1)
-
-    return round(recency + cadence + view + shorts, 1)
+    return round(recency + shorts_cadence + video_cadence + view, 1)
 
 
 # ---------- orchestration --------------------------------------------------
@@ -423,10 +431,8 @@ def _save_result(
                 median_view_count=metrics.median_view_count,
                 days_since_last_video=metrics.days_since_last_video,
                 latest_video_posted_at=phase2.latest_video_posted_at,
-                cadence_days_per_video=metrics.cadence_days_per_video,
-                cadence_tab=phase2.cadence_tab,
-                has_shorts_tab=metrics.has_shorts_tab,
-                recent_shorts_count=metrics.recent_shorts_count,
+                cadence_videos_days_per_video=metrics.cadence_videos_days_per_video,
+                cadence_shorts_days_per_video=metrics.cadence_shorts_days_per_video,
                 score=score,
                 channel_description=p1.channel_description,
                 median_duration_seconds=p1.median_duration_seconds,
@@ -539,10 +545,9 @@ def _run_scan_body(
         metrics = ChannelMetrics(
             subscriber_count=p1.subscriber_count,
             median_view_count=p1.median_view_count,
-            has_shorts_tab=p1.has_shorts_tab,
-            recent_shorts_count=p1.recent_shorts_count,
             days_since_last_video=phase2.days_since_last_video,
-            cadence_days_per_video=phase2.cadence_days_per_video,
+            cadence_videos_days_per_video=phase2.cadence_videos_days_per_video,
+            cadence_shorts_days_per_video=phase2.cadence_shorts_days_per_video,
         )
         score = score_candidate(metrics)
         _save_result(scan_run_id, ch, found_via[ch["channel_id"]], metrics, score, phase2, p1)
