@@ -51,7 +51,7 @@ from api.services.ytdlp_opts import extractor_args
 
 log = logging.getLogger("api.services.channel_discovery")
 
-_SEARCH_RESULTS = 20  # ytsearch20 -> ~15 unique channels, measured.
+_SEARCH_RESULTS = 40  # ytsearch40; ytsearch20 measured at ~15 unique channels.
 _FLAT_PAGE_SIZE = 12
 _PROBE_RETRIES = 3  # consecutive videos tried per probe point before giving up
 _AUTOCOMPLETE_URL = "https://suggestqueries-clients6.youtube.com/complete/search"

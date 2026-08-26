@@ -39,6 +39,12 @@ const SCORE_HELP =
   "+ view trung vị theo thang log, chỉ cộng thêm không trừ (15đ). Không có Shorts thì mất " +
   "45đ đó, không có video dài thì mất 20đ đó — không cộng bù qua nhau.";
 
+const CADENCE_HELP =
+  "Trung bình ngày/video, tính từ tối đa 12 video mới nhất của tab này (video dài và Shorts tính " +
+  "riêng). Lấy ngày đăng thật của video mới nhất và video cũ nhất trong 12 video đó, chia khoảng " +
+  "thời gian giữa hai video cho số khoảng cách giữa chúng, ví dụ đủ 12 video thì có 11 khoảng. " +
+  "Chỉ phản ánh nhịp đăng gần đây, không tính toàn bộ lịch sử kênh.";
+
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}tr`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -464,10 +470,20 @@ export default function DiscoveryPage() {
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Last" k="days_since_last_video" /></th>
                     <th className="text-left p-2 whitespace-nowrap">Giờ đăng</th>
                     <th className="text-left p-2 whitespace-nowrap">
-                      <SortHeader label="Shorts" k="cadence_shorts_days_per_video" />
+                      <span className="inline-flex items-center gap-1">
+                        <SortHeader label="Shorts" k="cadence_shorts_days_per_video" />
+                        <Tooltip content={CADENCE_HELP} side="bottom">
+                          <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                        </Tooltip>
+                      </span>
                     </th>
                     <th className="text-left p-2 whitespace-nowrap">
-                      <SortHeader label="Video" k="cadence_videos_days_per_video" />
+                      <span className="inline-flex items-center gap-1">
+                        <SortHeader label="Video" k="cadence_videos_days_per_video" />
+                        <Tooltip content={CADENCE_HELP} side="bottom">
+                          <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                        </Tooltip>
+                      </span>
                     </th>
                     <th className="text-left p-2 whitespace-nowrap">Từ khóa</th>
                     <th className="text-right p-2 whitespace-nowrap">Thao tác</th>
