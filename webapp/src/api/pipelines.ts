@@ -40,6 +40,7 @@ export interface Pipeline {
   telegram_attach_video: boolean;
   telegram_attach_fields: string[];
   run_now_requested_at: string | null;
+  cancel_requested_at: string | null;
   lock_until: string | null;
   created_at: string;
   updated_at: string;
@@ -198,6 +199,10 @@ export const Pipelines = {
   remove: (id: number) => api.delete(`/pipelines/${id}`),
   runNow: (id: number) =>
     api.post<{ ok: boolean; message: string }>(`/pipelines/${id}/run-now`).then((r) => r.data),
+  cancelDownload: (id: number) =>
+    api
+      .post<{ ok: boolean; message: string }>(`/pipelines/${id}/cancel-download`)
+      .then((r) => r.data),
   listRuns: (pipelineId: number) =>
     api.get<RunDays>(`/pipelines/${pipelineId}/runs`).then((r) => r.data),
 

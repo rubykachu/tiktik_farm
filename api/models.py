@@ -125,6 +125,11 @@ class ChannelPipeline(SQLModel, table=True):
 
     run_now_requested_at: Optional[datetime] = Field(default=None)
     lock_until: Optional[datetime] = Field(default=None)
+    # Set by POST /cancel-download (YouTube pipelines only — see
+    # scheduler/pipeline_worker.py's active-download registry). The
+    # scheduler's poll loop clears it after acting, whether or not a
+    # matching ffmpeg process was still around to kill.
+    cancel_requested_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)

@@ -14,6 +14,7 @@ yt-dlp>=2026.8.19
 undetected-chromedriver @ git+https://github.com/dustinfarris/undetected-chromedriver.git@b6b58a1eecdadf37e1b159cf2b8138047a0ecc3f
 
 # --- API + scheduler (used by web service, optional for CLI-only users) ---
+psutil>=5.9  # find/kill a stuck ffmpeg subprocess when an admin cancels a download
 fastapi>=0.110
 uvicorn[standard]>=0.27
 sqlmodel>=0.0.16

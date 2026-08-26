@@ -147,6 +147,7 @@ def _to_read(row: ChannelPipeline, last_run: Optional[PipelineRun] = None) -> di
         "telegram_attach_video": bool(row.telegram_attach_video),
         "telegram_attach_fields": _load_attach_fields(row.telegram_attach_fields_json),
         "run_now_requested_at": row.run_now_requested_at,
+        "cancel_requested_at": row.cancel_requested_at,
         "lock_until": row.lock_until,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -529,6 +530,41 @@ def run_now(pipeline_id: int, session: Session = Depends(get_session)):
     session.add(row)
     session.commit()
     return {"ok": True, "message": "Queued: pipeline will run on the next tick."}
+
+
+@router.post("/{pipeline_id}/cancel-download", status_code=status.HTTP_202_ACCEPTED)
+def cancel_download(pipeline_id: int, session: Session = Depends(get_session)):
+    """Ask the scheduler to kill whatever YouTube video this pipeline is
+    currently downloading. Douyin is out of scope — see check_cancel_requests
+    in scheduler/pipeline_worker.py. Takes effect within one poll cycle
+    (~30s), not instantly."""
+    row = session.get(ChannelPipeline, pipeline_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="pipeline not found")
+
+    if row.source_type != "youtube":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "NOT_SUPPORTED",
+                "message": "Cancel is only supported for YouTube pipelines.",
+            },
+        )
+
+    lock = _as_utc(row.lock_until)
+    if lock is None or lock <= now_utc():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "NOT_RUNNING",
+                "message": "Pipeline is not currently running.",
+            },
+        )
+
+    row.cancel_requested_at = now_utc()
+    session.add(row)
+    session.commit()
+    return {"ok": True, "message": "Cancel requested — takes effect within the next poll cycle."}
 
 
 # ─── Drill-down: runs + videos ──────────────────────────────────────────────

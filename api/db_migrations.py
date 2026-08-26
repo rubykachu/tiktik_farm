@@ -132,6 +132,13 @@ def apply_schema_patches(engine: Engine) -> None:
                     )
                 except Exception:
                     pass
+            if "cancel_requested_at" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN cancel_requested_at TEXT"
+                    )
+                except Exception:
+                    pass
 
         has_manual_downloads = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='manual_downloads'"

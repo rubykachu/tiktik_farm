@@ -386,6 +386,7 @@ class PipelineRead(BaseModel):
     telegram_attach_video: bool = False
     telegram_attach_fields: List[str] = []
     run_now_requested_at: Optional[datetime]
+    cancel_requested_at: Optional[datetime] = None
     lock_until: Optional[datetime]
     created_at: datetime
     updated_at: datetime
