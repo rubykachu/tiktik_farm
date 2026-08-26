@@ -51,7 +51,11 @@ export default function Tooltip({ content, children, side = "top", className }: 
       {open && (
         <span
           role="tooltip"
-          className={`absolute z-50 ${positionClass} w-max max-w-xs px-2 py-1.5 rounded bg-slate-800 text-white text-xs leading-snug shadow-lg pointer-events-none`}
+          // whitespace-normal overrides `white-space` inherited from any
+          // ancestor (e.g. a table header's whitespace-nowrap) — without it
+          // the bubble can't wrap and the text overflows past its own
+          // background instead of respecting max-w-xs.
+          className={`absolute z-50 ${positionClass} w-max max-w-xs whitespace-normal px-2 py-1.5 rounded bg-slate-800 text-white text-xs leading-snug shadow-lg pointer-events-none`}
         >
           {content}
           <span className={`absolute ${arrowClass} border-4 border-transparent`} />
