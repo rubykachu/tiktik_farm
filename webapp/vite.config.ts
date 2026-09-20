@@ -5,6 +5,9 @@ import react from "@vitejs/plugin-react";
 const apiProxy = process.env.VITE_DEV_API_PROXY ?? "http://localhost:2706";
 const basicAuthUser = process.env.BASIC_AUTH_USER;
 const basicAuthPass = process.env.BASIC_AUTH_PASS;
+// Named cloudflared tunnels use a custom domain, not *.trycloudflare.com —
+// allow it in dev too when HOST is set (same var the API's CSRF check uses).
+const publicHost = process.env.HOST?.replace(/^https?:\/\//, "");
 
 const basicAuthPlugin =
   basicAuthUser && basicAuthPass
@@ -36,7 +39,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: apiProxy, changeOrigin: true },
     },
-    allowedHosts: [".trycloudflare.com"],
+    allowedHosts: publicHost ? [".trycloudflare.com", publicHost] : [".trycloudflare.com"],
   },
   build: {
     outDir: "dist",
