@@ -48,6 +48,22 @@ class DouyinCookie(SQLModel, table=True):
     login_password_encrypted: Optional[str] = Field(default=None)
 
 
+class TelegramConfig(SQLModel, table=True):
+    """A saved bot_token/chat_id pair the pipeline form can pick from.
+
+    No FK from ChannelPipeline — selecting a config only copies bot_token/
+    chat_id into the pipeline's own fields at selection time, so deleting a
+    config never breaks a pipeline.
+    """
+    __tablename__ = "telegram_configs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=128)
+    bot_token: str
+    chat_id: str
+    created_at: datetime = Field(default_factory=now_utc)
+
+
 class ChannelPipeline(SQLModel, table=True):
     """Recurring channel → TikTok auto-upload pipeline.
 
@@ -109,6 +125,11 @@ class ChannelPipeline(SQLModel, table=True):
 
     run_now_requested_at: Optional[datetime] = Field(default=None)
     lock_until: Optional[datetime] = Field(default=None)
+    # Set by POST /cancel-download (YouTube pipelines only — see
+    # scheduler/pipeline_worker.py's active-download registry). The
+    # scheduler's poll loop clears it after acting, whether or not a
+    # matching ffmpeg process was still around to kill.
+    cancel_requested_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
@@ -208,6 +229,7 @@ class ManualDownload(SQLModel, table=True):
     status: str = Field(default="queued", index=True, max_length=16)
     title: Optional[str] = Field(default=None, max_length=500)
     description: Optional[str] = Field(default=None)
+    transcript: Optional[str] = Field(default=None)
     file_path: Optional[str] = Field(default=None)
     file_size: Optional[int] = Field(default=None)
     duration_seconds: Optional[int] = Field(default=None)
@@ -246,3 +268,85 @@ class AppSetting(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=64)
     value: str
     updated_at: datetime = Field(default_factory=now_utc)
+
+
+# ---------- channel discovery (Phase 5) -------------------------------------
+
+
+class DiscoveryCandidate(SQLModel, table=True):
+    """Global, channel_id-keyed action state — shared across every scan,
+    regardless of which keyword search found the channel. A channel already
+    'skipped' or 'added' here is excluded from all future scans (skipped
+    entirely, not just hidden) so re-running a similar keyword never spends
+    a request re-evaluating a channel the user already decided on.
+
+    Per-scan metrics (score, subscriber count, etc.) live in
+    DiscoveryScanResult instead — this table only tracks the decision.
+    """
+    __tablename__ = "discovery_candidates"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    channel_id: str = Field(unique=True, index=True, max_length=64)
+    channel_url: str
+    channel_title: str = Field(max_length=256)
+    # 'added' | 'skipped' — a row only exists once the user acts; 'new'
+    # candidates have no row here at all (see DiscoveryScanResult instead).
+    status: str = Field(index=True, max_length=16)
+    added_pipeline_id: Optional[int] = Field(default=None)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class DiscoveryScanRun(SQLModel, table=True):
+    """One search: a set of keywords + market, scanned together. Keyed by
+    `keywords_key` (the keyword set, order/case-insensitive) so re-running
+    the same set overwrites this same row and its DiscoveryScanResult
+    children instead of piling up duplicate history entries — see
+    api.services.channel_discovery.run_scan. This row IS the history entry;
+    the webapp's history list is just these rows ordered by recency.
+    """
+    __tablename__ = "discovery_scan_runs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    keywords_key: str = Field(unique=True, index=True, max_length=1200)
+    keywords_json: str = Field(default="[]")
+    market_gl: str = Field(max_length=8)
+    market_hl: str = Field(max_length=8)
+
+    started_at: datetime = Field(default_factory=now_utc, index=True)
+    finished_at: Optional[datetime] = Field(default=None)
+    channels_total: int = Field(default=0)
+    channels_done: int = Field(default=0)
+    candidates_found: int = Field(default=0)
+    # 'running' | 'done' | 'error'
+    status: str = Field(default="running", max_length=16)
+    error_text: Optional[str] = Field(default=None)
+
+
+class DiscoveryScanResult(SQLModel, table=True):
+    """One channel's metrics as found by one DiscoveryScanRun. Deleted and
+    reinserted whenever that run's keyword set is scanned again — this is a
+    snapshot of the latest run for that set, not an ever-growing log."""
+    __tablename__ = "discovery_scan_results"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    scan_run_id: int = Field(foreign_key="discovery_scan_runs.id", index=True)
+    channel_id: str = Field(index=True, max_length=64)
+    channel_url: str
+    channel_title: str = Field(max_length=256)
+    found_via_keyword: str = Field(max_length=200)
+
+    subscriber_count: int = Field(default=0)
+    median_view_count: int = Field(default=0)
+    days_since_last_video: float = Field(default=0)
+    # The newest sampled video's real post time (yt-dlp `timestamp`, UTC) —
+    # what the webapp shows, converted to the browser's local time, as "when
+    # this channel tends to post" for picking a pipeline schedule time.
+    latest_video_posted_at: Optional[datetime] = Field(default=None)
+    cadence_videos_days_per_video: Optional[float] = Field(default=None)
+    cadence_shorts_days_per_video: Optional[float] = Field(default=None)
+    score: float = Field(default=0, index=True)
+    # Both free from the same phase-1 request — used to prefill the
+    # create-pipeline form's channel description / max duration fields.
+    channel_description: Optional[str] = Field(default=None)
+    median_duration_seconds: Optional[int] = Field(default=None)

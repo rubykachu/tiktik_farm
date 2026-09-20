@@ -7,6 +7,8 @@ from api.schemas import (
     TelegramAttachFieldsResponse,
     TelegramDetectChatsRequest,
     TelegramDetectChatsResponse,
+    TelegramResolveChatRequest,
+    TelegramResolveChatResponse,
     TelegramTestRequest,
     TelegramTestResponse,
 )
@@ -15,6 +17,7 @@ from api.services.telegram import (
     TELEGRAM_TEST_MESSAGE,
     TelegramApiError,
     detect_chats,
+    get_chat,
     send_message,
 )
 
@@ -52,6 +55,14 @@ def telegram_test(body: TelegramTestRequest):
         ok=True,
         message="Test message sent successfully",
     )
+
+
+@router.post("/resolve-chat", response_model=TelegramResolveChatResponse)
+def telegram_resolve_chat(body: TelegramResolveChatRequest):
+    chat = get_chat(body.bot_token, body.chat_id)
+    if chat is None:
+        return TelegramResolveChatResponse(name=None, type=None)
+    return TelegramResolveChatResponse(name=chat["name"], type=chat["type"])
 
 
 @router.get("/attach-fields", response_model=TelegramAttachFieldsResponse)

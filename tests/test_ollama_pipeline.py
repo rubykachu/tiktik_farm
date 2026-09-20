@@ -92,7 +92,7 @@ class TestOfflineMode:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "desc")
+        mock_download.return_value = ("/tmp/x.mp4", "desc", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_offline.return_value = "AI-offline"
 
@@ -118,7 +118,7 @@ class TestOfflineMode:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "desc")
+        mock_download.return_value = ("/tmp/x.mp4", "desc", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_offline.return_value = "AI"
 
@@ -145,7 +145,7 @@ class TestOfflineMode:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw-title", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_offline.side_effect = LLMCallFailed("conn refused")
 
@@ -172,7 +172,7 @@ class TestOfflineMode:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "desc")
+        mock_download.return_value = ("/tmp/x.mp4", "desc", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_cloud.return_value = "AI-cloud"
 
@@ -196,7 +196,7 @@ class TestOfflineMode:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
 
         set_llm_mode("offline")
@@ -221,7 +221,7 @@ class TestOfflineModeEdgeCases:
         from scheduler.pipeline_worker import run_pipeline
 
         mock_list.return_value = [{"id": "v1", "title": "raw-title", "url": "u"}]
-        mock_download.return_value = ("/tmp/x.mp4", "")
+        mock_download.return_value = ("/tmp/x.mp4", "", "")
         mock_upload.return_value = (True, "tk", "https://tiktok.com/v/tk")
         mock_offline.return_value = ""  # empty string from Ollama
 

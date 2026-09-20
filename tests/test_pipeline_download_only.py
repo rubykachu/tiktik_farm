@@ -18,6 +18,7 @@ from api.services import secrets
 from scheduler.pipeline_worker import (
     RunArtifacts,
     RunVideo,
+    _active_downloads,
     _notify_pipeline_alert,
     _pipeline_run_context,
     reap_orphans,
@@ -90,7 +91,7 @@ def _fake_download(tmp_path, size_bytes=1024):
         path = os.path.join(temp_dir, f"video{counter['n']}.mp4")
         with open(path, "wb") as fh:
             fh.write(b"\0" * size_bytes)
-        return path, ""
+        return path, "", ""
 
     return _download
 
@@ -121,6 +122,37 @@ class TestDownloadOnlyRun:
         assert [v.title for v in artifacts.videos] == ["T1", "T2"]
         # The caption is the deliverable on this path — it gets pasted by hand.
         assert [v.caption for v in artifacts.videos] == ["T1", "T2"]
+
+    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
+    def test_registers_and_clears_active_download(
+        self, mock_upload, mock_download, mock_list, tmp_path
+    ):
+        """The cancel-download watchdog (scheduler/worker.py's poll loop)
+        finds the in-flight temp_dir through this registry — prove it's set
+        while youtube_channel.download() is running and cleared right after,
+        so a cancel request for a pipeline that just finished is a no-op
+        instead of killing the next video's ffmpeg by mistake."""
+        mock_list.return_value = [
+            {"id": "v1", "title": "T1", "url": "https://www.youtube.com/watch?v=v1"},
+        ]
+        pipeline = _make_pipeline()
+        seen_during_call = {}
+
+        def _download(url, temp_dir, max_duration_seconds):
+            seen_during_call["temp_dir"] = _active_downloads.get(pipeline.id)
+            path = os.path.join(temp_dir, "video.mp4")
+            with open(path, "wb") as fh:
+                fh.write(b"\0")
+            return path, "", ""
+
+        mock_download.side_effect = _download
+
+        run_pipeline(pipeline, "scheduled", RunArtifacts())
+
+        assert seen_during_call["temp_dir"] is not None
+        assert pipeline.id not in _active_downloads
 
     @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
     @patch("scheduler.pipeline_worker.youtube_channel.download")

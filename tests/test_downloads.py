@@ -34,25 +34,26 @@ def client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
-def _fake_video(file_path, title="A title", description="A description"):
+def _fake_video(file_path, title="A title", description="A description", transcript=""):
     from api.services.manual_download import DownloadedVideo
 
     return DownloadedVideo(
         file_path=file_path,
         title=title,
         description=description,
+        transcript=transcript,
         duration_seconds=12,
         file_size=os.path.getsize(file_path),
     )
 
 
-def _download_stub(content=b"video-bytes"):
+def _download_stub(content=b"video-bytes", transcript=""):
     def _download(url, output_dir):
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, "clip.mp4")
         with open(path, "wb") as fh:
             fh.write(content)
-        return _fake_video(path)
+        return _fake_video(path, transcript=transcript)
 
     return _download
 
@@ -201,6 +202,21 @@ class TestCaption:
             r = client.post(f"/api/downloads/{row_id}/caption", json={}, headers=HEADERS_OK)
 
         assert r.status_code == 422
+
+    def test_forwards_transcript_to_llm(self, client):
+        with patch(
+            "api.services.manual_download.download",
+            side_effect=_download_stub(transcript="video transcript text"),
+        ):
+            client.post("/api/downloads",
+                        json={"urls": ["https://www.youtube.com/watch?v=a"]},
+                        headers=HEADERS_OK)
+        row_id = client.get("/api/downloads").json()[0]["id"]
+
+        with patch("api.routers.downloads.rewrite_with_llm", return_value="X") as mock_rw:
+            client.post(f"/api/downloads/{row_id}/caption", json={}, headers=HEADERS_OK)
+
+        assert mock_rw.call_args.kwargs.get("transcript") == "video transcript text"
 
 
 class TestRetention:

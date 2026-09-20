@@ -2,6 +2,10 @@
 
 tick() and loop() are called by scheduler/main.py.
 All upload execution is delegated to pipeline_worker.
+
+Channel discovery scans are NOT scheduled — they run as an API background
+task triggered by the "Quét ngay" button (api.routers.discovery.scan_now),
+not by this loop.
 """
 from __future__ import annotations
 
@@ -11,7 +15,12 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from api.services.manual_download import purge_expired as purge_expired_downloads
-from scheduler.pipeline_worker import pipeline_tick, purge_old_runs, reap_orphans
+from scheduler.pipeline_worker import (
+    check_cancel_requests,
+    pipeline_tick,
+    purge_old_runs,
+    reap_orphans,
+)
 
 log = logging.getLogger("scheduler.worker")
 
@@ -60,6 +69,11 @@ def loop(poll_interval: float = 30.0) -> None:  # pragma: no cover - driven by t
             if time.monotonic() - last_purge >= _PURGE_INTERVAL:
                 _run_purges()
                 last_purge = time.monotonic()
+
+            try:
+                check_cancel_requests()
+            except Exception:
+                log.exception("check_cancel_requests failed, skipping this cycle")
 
             slots = concurrency - len(pending)
             for _ in range(slots):

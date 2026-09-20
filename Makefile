@@ -107,6 +107,74 @@ endif
 	$(COMPOSE) restart api scheduler
 	@printf "$(GREEN)Đã tạo lại cơ sở dữ liệu rỗng.$(RESET)\n"
 
+# ─── Networking ────────────────────────────────────────────────────────────
+# cloudflared chạy trên host, ngoài Docker. tunnel-create làm 1 lần đầu (login
+# → create → route → ghi config.yml); tunnel-start/-stop chạy tunnel nền hằng
+# ngày dựa trên config.yml đó. Xem RUNBOOK.md, Bước 5.
+
+.PHONY: tunnel-create
+tunnel-create:  ## Tạo tunnel mới + trỏ domain lần đầu (NAME=farm1 DOMAIN=farm1.tenmien.com make tunnel-create)
+	@test -n "$(NAME)" || { \
+		printf "$(RED)Thiếu NAME$(RESET)\n"; \
+		printf "Chạy: NAME=farm1 DOMAIN=farm1.tenmien.com make tunnel-create\n"; \
+		exit 1; }
+	@test -n "$(DOMAIN)" || { \
+		printf "$(RED)Thiếu DOMAIN$(RESET)\n"; \
+		printf "Chạy: NAME=farm1 DOMAIN=farm1.tenmien.com make tunnel-create\n"; \
+		exit 1; }
+	@command -v cloudflared >/dev/null || { \
+		printf "$(RED)Chưa cài cloudflared$(RESET)\n"; \
+		printf "Chạy: brew install cloudflared — xem RUNBOOK.md, bước Cài cloudflared\n"; \
+		exit 1; }
+	cloudflared tunnel login
+	@out=$$(cloudflared tunnel create $(NAME) 2>&1); \
+	echo "$$out"; \
+	cred=$$(echo "$$out" | grep -oE '/[^ ]*\.cloudflared/[a-f0-9-]+\.json' | head -1); \
+	test -n "$$cred" || { \
+		printf "$(RED)Không đọc được đường dẫn credentials từ output của 'cloudflared tunnel create'$(RESET)\n"; \
+		exit 1; }; \
+	uuid=$$(basename $$cred .json); \
+	cloudflared tunnel route dns $(NAME) $(DOMAIN); \
+	printf "tunnel: %s\ncredentials-file: %s\n\ningress:\n  - hostname: %s\n    service: http://127.0.0.1:2705\n  - service: http_status:404\n" \
+		"$$uuid" "$$cred" "$(DOMAIN)" > $$HOME/.cloudflared/config.yml; \
+	printf "$(GREEN)Đã tạo tunnel $(NAME), trỏ $(DOMAIN), ghi ~/.cloudflared/config.yml$(RESET)\n"; \
+	printf "Chạy tiếp: make tunnel-start\n"
+
+.PHONY: tunnel-start
+tunnel-start:  ## Chạy cloudflared tunnel nền (đưa web ra domain public, cần make tunnel-create trước)
+	@command -v cloudflared >/dev/null || { \
+		printf "$(RED)Chưa cài cloudflared$(RESET)\n"; \
+		printf "Chạy: brew install cloudflared — xem RUNBOOK.md, bước Cài cloudflared\n"; \
+		exit 1; }
+	@test -f $$HOME/.cloudflared/config.yml || { \
+		printf "$(RED)Chưa có ~/.cloudflared/config.yml$(RESET)\n"; \
+		printf "Chạy: make tunnel-create NAME=... DOMAIN=... để tạo tunnel + trỏ domain trước.\n"; \
+		exit 1; }
+	@if test -f tunnel.pid && kill -0 $$(cat tunnel.pid) 2>/dev/null; then \
+		printf "$(RED)Tunnel đang chạy (PID $$(cat tunnel.pid))$(RESET)\n"; \
+		printf "Chạy: make tunnel-stop trước\n"; \
+		exit 1; \
+	fi
+	@nohup cloudflared tunnel run > tunnel.log 2>&1 & echo $$! > tunnel.pid
+	@printf "$(GREEN)Tunnel đang chạy nền (PID $$(cat tunnel.pid)), log: tunnel.log$(RESET)\n"
+
+.PHONY: tunnel-stop
+tunnel-stop:  ## Dừng tunnel đang chạy nền
+	@if test -f tunnel.pid; then \
+		kill $$(cat tunnel.pid) 2>/dev/null || true; \
+		rm -f tunnel.pid; \
+		printf "$(GREEN)Đã dừng tunnel$(RESET)\n"; \
+	else \
+		printf "$(YELLOW)Không thấy tunnel đang chạy (thiếu tunnel.pid)$(RESET)\n"; \
+	fi
+
+.PHONY: tunnel-list
+tunnel-list:  ## Xem các tunnel đã tạo trên tài khoản Cloudflare này
+	@command -v cloudflared >/dev/null || { \
+		printf "$(RED)Chưa cài cloudflared$(RESET)\n"; \
+		exit 1; }
+	cloudflared tunnel list
+
 # ─── Development ───────────────────────────────────────────────────────────
 
 .PHONY: dev

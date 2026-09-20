@@ -26,4 +26,9 @@ export const Telegram = {
     api
       .post<{ ok: boolean; message: string }>("/telegram/test", { bot_token, chat_id })
       .then((r) => r.data),
+
+  resolveChat: (bot_token: string, chat_id: string) =>
+    api
+      .post<{ name: string | null; type: string | null }>("/telegram/resolve-chat", { bot_token, chat_id })
+      .then((r) => r.data),
 };

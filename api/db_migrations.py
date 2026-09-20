@@ -132,6 +132,13 @@ def apply_schema_patches(engine: Engine) -> None:
                     )
                 except Exception:
                     pass
+            if "cancel_requested_at" not in col_names:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE channel_pipelines ADD COLUMN cancel_requested_at TEXT"
+                    )
+                except Exception:
+                    pass
 
         has_manual_downloads = conn.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='manual_downloads'"
@@ -151,6 +158,13 @@ def apply_schema_patches(engine: Engine) -> None:
                 try:
                     conn.exec_driver_sql(
                         "ALTER TABLE manual_downloads ADD COLUMN pipeline_id INTEGER"
+                    )
+                except Exception:
+                    pass
+            if "transcript" not in md_cols:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE manual_downloads ADD COLUMN transcript TEXT"
                     )
                 except Exception:
                     pass
@@ -241,6 +255,11 @@ def seed_app_settings(engine: Engine) -> None:
     defaults = (
         ("llm.enabled", "true"),
         ("llm.mode", "cloud"),
+        # Channel discovery (Phase 5) — see api.services.channel_discovery.
+        ("discovery.min_subscribers", "100"),
+        ("discovery.silent_months", "6"),
+        ("discovery.target_days_per_video", "1"),
+        ("discovery.view_score_reference", "1000000"),
     )
     with engine.begin() as conn:
         # Table may not exist yet on truly fresh installs that skip init_db()

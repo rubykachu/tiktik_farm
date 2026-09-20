@@ -10,6 +10,7 @@ from typing import Optional
 
 import yt_dlp
 
+from api.services.transcript import fetch_transcript
 from api.services.ytdlp_opts import extractor_args
 
 from api.services.youtube_validate import is_youtube_url
@@ -88,11 +89,13 @@ def download(
     video_url: str,
     output_dir: str,
     max_duration_seconds: Optional[int] = None,
-) -> tuple[str, str]:
-    """Download a single video and return ``(file_path, description)``.
+) -> tuple[str, str, str]:
+    """Download a single video and return ``(file_path, description, transcript)``.
 
     The description is yt-dlp's `description` field (falls back to ""). The
-    pipeline worker forwards it to the LLM rewrite step so we don't pay a
+    transcript is flattened plain text from subtitles/auto-captions already
+    present in the extracted info (falls back to "" if none exist). The
+    pipeline worker forwards both to the LLM rewrite step so we don't pay a
     second metadata request.
 
     If max_duration_seconds is set:
@@ -153,14 +156,15 @@ def download(
         raise DownloadError("yt-dlp returned no info (video unavailable?)")
 
     description = str(result.get("description") or "")
+    transcript = fetch_transcript(result)
 
     if downloaded_files:
-        return downloaded_files[-1], description
+        return downloaded_files[-1], description, transcript
 
     video_id = result.get("id", "unknown")
     for ext in ("mp4", "webm", "mkv"):
         candidate = os.path.join(output_dir, f"{video_id}.{ext}")
         if os.path.exists(candidate):
-            return candidate, description
+            return candidate, description, transcript
 
     raise DownloadError(f"Download completed but output file not found for {video_url}")

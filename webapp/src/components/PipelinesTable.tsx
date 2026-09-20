@@ -80,6 +80,10 @@ function needsAttention(p: Pipeline): boolean {
   return s === "failed" || s === "error" || s === "partial";
 }
 
+// A single video download/mux normally takes well under this; past it, the
+// run is worth an admin's attention rather than just "still going".
+const STUCK_RUN_MINUTES = 5;
+
 function LastRunCell({ p }: { p: Pipeline }) {
   const run = p.last_run;
   if (!run) return <span className="text-slate-400">chưa chạy</span>;
@@ -89,11 +93,16 @@ function LastRunCell({ p }: { p: Pipeline }) {
       : run.status === "partial" || run.status === "failed"
         ? `${run.failed_count} lỗi`
         : null;
+  const runningMinutes =
+    run.status === "running" && run.at
+      ? (Date.now() - new Date(run.at).getTime()) / 60_000
+      : 0;
+  const stuck = run.status === "running" && runningMinutes > STUCK_RUN_MINUTES;
   return (
     <span title={formatDateTime(run.at)}>
       <span className="whitespace-nowrap">
-        <span className={RUN_TONE[run.status]}>
-          {RUN_ICON[run.status]} {RUN_LABEL[run.status]}
+        <span className={stuck ? "text-red-600 font-medium" : RUN_TONE[run.status]}>
+          {stuck ? "⚠️" : RUN_ICON[run.status]} {stuck ? "chạy lâu bất thường" : RUN_LABEL[run.status]}
         </span>
         <span className="text-slate-400"> · {formatRelative(run.at)}</span>
       </span>
@@ -191,6 +200,23 @@ export default function PipelinesTable({ onEdit }: Props) {
         toast.info("Đã xếp hàng rồi", { description: "Chờ lần chạy kế tiếp." });
       } else {
         toast.error("Lỗi", { description: e.message });
+      }
+    },
+  });
+
+  const cancelDownloadMut = useMutation({
+    mutationFn: (id: number) => Pipelines.cancelDownload(id),
+    onSuccess: () => {
+      toast.success("Đã gửi yêu cầu huỷ", { description: "Có hiệu lực trong vòng poll kế tiếp (~30s)." });
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
+    },
+    onError: (e: any) => {
+      const detail = e?.response?.data?.detail;
+      if (detail?.code === "NOT_RUNNING") {
+        toast.info("Lịch đã chạy xong", { description: "Không còn gì để huỷ." });
+        qc.invalidateQueries({ queryKey: ["pipelines"] });
+      } else {
+        toast.error("Huỷ thất bại", { description: detail?.message ?? e.message });
       }
     },
   });
@@ -450,8 +476,23 @@ export default function PipelinesTable({ onEdit }: Props) {
                       }
                       if (locked) {
                         return (
-                          <span className="text-xs text-slate-500" title="Đang xử lý lần này">
-                            Đang chạy…
+                          <span className="inline-flex items-center gap-2">
+                            <span className="text-xs text-slate-500" title="Đang xử lý lần này">
+                              Đang chạy…
+                            </span>
+                            {p.source_type === "youtube" && (
+                              <button
+                                className="text-xs text-red-600 disabled:text-slate-400"
+                                title="Huỷ video đang tải cho lần chạy này"
+                                disabled={p.cancel_requested_at != null || cancelDownloadMut.isPending}
+                                onClick={() =>
+                                  window.confirm(`Huỷ tải video đang chạy của lịch "${p.name}"?`) &&
+                                  cancelDownloadMut.mutate(p.id)
+                                }
+                              >
+                                {p.cancel_requested_at != null ? "Đang huỷ…" : "Huỷ tải"}
+                              </button>
+                            )}
                           </span>
                         );
                       }

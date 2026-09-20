@@ -17,6 +17,7 @@ from api.logging import install_global_scrub_filter
 from api.middleware.origin import ALLOWED_ORIGINS, OriginCheckMiddleware
 from api.routers import (
     accounts,
+    discovery,
     douyin_cookies,
     downloads,
     llm_models,
@@ -24,6 +25,7 @@ from api.routers import (
     pipelines,
     settings,
     telegram,
+    telegram_configs,
     videos,
 )
 from api.services import manual_download
@@ -77,6 +79,8 @@ def create_app() -> FastAPI:
         # that were in flight, and nothing else deletes the expired files.
         downloads.fail_interrupted()
         manual_download.purge_expired()
+        # Discovery scans also run as a background task in this process.
+        discovery.fail_interrupted()
 
     @app.get("/health", tags=["meta"])
     def health():
@@ -86,12 +90,14 @@ def create_app() -> FastAPI:
     app.include_router(videos.router)
     app.include_router(pipelines.router)
     app.include_router(telegram.router)
+    app.include_router(telegram_configs.router)
     app.include_router(settings.router)
     app.include_router(llm_models.router)
     app.include_router(douyin_cookies.router)
     app.include_router(downloads.router)
     app.include_router(overview.router)
     app.include_router(downloads.public_router)
+    app.include_router(discovery.router)
     return app
 
 

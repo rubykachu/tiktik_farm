@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import psutil
 from sqlalchemy import delete as sa_delete, update
 from sqlmodel import Session, select
 
@@ -719,6 +720,88 @@ class _SourceItem:
     title: str
     file_path: str = ""
     description: str = ""
+    transcript: str = ""  # YouTube only — Douyin has no captions to draw from
+
+
+# ---------- cancel a stuck YouTube download ---------------------------------
+#
+# Douyin is out of scope: its downloader is a vendored subprocess with a
+# different process shape, not an ffmpeg mux we can target by temp dir.
+#
+# _active_downloads tracks, per pipeline, the temp_dir of whatever YouTube
+# video is downloading right now — set right before youtube_channel.download()
+# and cleared right after, success or failure. check_cancel_requests() (called
+# from the scheduler's poll loop, scheduler/worker.py) reads this to find the
+# right ffmpeg process to kill when an admin requests a cancel.
+_active_downloads: dict[int, str] = {}
+_active_downloads_lock = threading.Lock()
+
+
+def _register_active_download(pipeline_id: int, temp_dir: str) -> None:
+    with _active_downloads_lock:
+        _active_downloads[pipeline_id] = temp_dir
+
+
+def _clear_active_download(pipeline_id: int) -> None:
+    with _active_downloads_lock:
+        _active_downloads.pop(pipeline_id, None)
+
+
+def _kill_ffmpeg_under(temp_dir: str) -> int:
+    """Kill any ffmpeg process whose command line references temp_dir.
+
+    yt-dlp spawns ffmpeg as a subprocess to mux separately-downloaded video
+    and audio streams; it gives us no handle to that process, so this matches
+    on the one thing we do know — the output path we asked it to write into.
+    Returns the number of processes killed.
+    """
+    killed = 0
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        try:
+            if proc.info["name"] != "ffmpeg":
+                continue
+            cmdline = proc.info["cmdline"] or []
+            if not any(temp_dir in arg for arg in cmdline):
+                continue
+            proc.kill()
+            killed += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return killed
+
+
+def check_cancel_requests() -> None:
+    """Act on any pending cancel-download request, then clear it.
+
+    Called once per scheduler poll cycle (~30s) — a cancel click takes effect
+    within one cycle, not instantly. A pipeline with no active download (the
+    request arrived after the download already finished) just gets its flag
+    cleared with nothing killed.
+    """
+    with Session(_api_db.engine) as s:
+        pending = s.exec(
+            select(ChannelPipeline).where(
+                ChannelPipeline.cancel_requested_at.isnot(None)  # type: ignore[union-attr]
+            )
+        ).all()
+        for row in pending:
+            with _active_downloads_lock:
+                temp_dir = _active_downloads.get(row.id)
+            if temp_dir:
+                killed = _kill_ffmpeg_under(temp_dir)
+                log.info(
+                    "cancel-download pipeline %d: killed %d ffmpeg process(es) under %s",
+                    row.id, killed, temp_dir,
+                )
+            else:
+                log.info(
+                    "cancel-download pipeline %d: no active download found (already finished?)",
+                    row.id,
+                )
+            row.cancel_requested_at = None
+            s.add(row)
+        if pending:
+            s.commit()
 
 
 def _split_seen(
@@ -770,8 +853,9 @@ def _download_youtube_only(
         )
         if artifacts is not None:
             artifacts.cleanup_paths.append(temp_dir)
+        _register_active_download(pipeline.id, temp_dir)  # type: ignore[arg-type]
         try:
-            download_path, description = youtube_channel.download(
+            download_path, description, transcript = youtube_channel.download(
                 video_url, temp_dir, pipeline.max_duration_seconds
             )
         except youtube_channel.VideoTooLong:
@@ -784,8 +868,11 @@ def _download_youtube_only(
             if artifacts is None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             continue
+        finally:
+            _clear_active_download(pipeline.id)  # type: ignore[arg-type]
         item.file_path = download_path
         item.description = description
+        item.transcript = transcript
         items.append(item)
     return items, skipped_dup_count
 
@@ -820,6 +907,7 @@ def _finalize_download_only(
                 item.title,
                 item.description,
                 pipeline.channel_description or "",
+                transcript=item.transcript,
             )
             if rewritten:
                 ai_title = rewritten
@@ -938,6 +1026,7 @@ def run_pipeline(
         # Lazy download — only when at least one account needs upload
         download_path: Optional[str] = None
         description: str = ""
+        transcript: str = ""
         temp_dir: Optional[str] = None
 
         try:
@@ -953,12 +1042,13 @@ def run_pipeline(
                     continue
 
                 if download_path is None:
+                    temp_dir = tempfile.mkdtemp(
+                        prefix="pipeline_dl_",
+                        dir=os.environ.get("PIPELINE_TMP_DIR") or None,
+                    )
+                    _register_active_download(pipeline.id, temp_dir)  # type: ignore[arg-type]
                     try:
-                        temp_dir = tempfile.mkdtemp(
-                            prefix="pipeline_dl_",
-                            dir=os.environ.get("PIPELINE_TMP_DIR") or None,
-                        )
-                        download_path, description = youtube_channel.download(
+                        download_path, description, transcript = youtube_channel.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
                         if artifacts is not None:
@@ -990,6 +1080,8 @@ def run_pipeline(
                                 f"- {video_url} [account_id={aid}]: download failed"
                             )
                         break
+                    finally:
+                        _clear_active_download(pipeline.id)  # type: ignore[arg-type]
 
                 # Get username
                 with Session(_api_db.engine) as s:
@@ -1014,6 +1106,7 @@ def run_pipeline(
                             video_title,
                             description,
                             pipeline.channel_description or "",
+                            transcript=transcript,
                         )
                         # Only cache on success. A transient LLM failure must
                         # not poison the cache for the rest of the tick.

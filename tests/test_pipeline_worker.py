@@ -205,7 +205,7 @@ class TestRunPipeline:
             {"id": "v1", "title": "Video 1", "url": "https://www.youtube.com/watch?v=v1"},
             {"id": "v2", "title": "Video 2", "url": "https://www.youtube.com/watch?v=v2"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/@user/video/tk1")
 
         with Session(_api_db.engine) as s:
@@ -231,7 +231,7 @@ class TestRunPipeline:
         mock_list.return_value = [
             {"id": "v1", "title": "Old", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (True, "tk2", "https://tiktok.com/@user/video/tk2")
 
         with Session(_api_db.engine) as s:
@@ -303,7 +303,7 @@ class TestRunPipeline:
         mock_list.return_value = [
             {"id": "v1", "title": "Fail", "url": "https://www.youtube.com/watch?v=v1"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (False, None, None)
 
         with Session(_api_db.engine) as s:
@@ -341,7 +341,7 @@ class TestRunPipeline:
             {"id": "v1", "title": "V1", "url": "https://www.youtube.com/watch?v=v1"},
             {"id": "v2", "title": "V2", "url": "https://www.youtube.com/watch?v=v2"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/@x/video/tk1")
 
         with Session(_api_db.engine) as s:
@@ -366,7 +366,7 @@ class TestRunPipeline:
             {"id": "v1", "title": "Video 1", "url": "https://www.youtube.com/watch?v=v1"},
             {"id": "v2", "title": "Video 2", "url": "https://www.youtube.com/watch?v=v2"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/@user/video/tk1")
 
         with Session(_api_db.engine) as s:
@@ -389,7 +389,7 @@ class TestRunPipeline:
             {"id": "v1", "title": "Video 1", "url": "https://www.youtube.com/watch?v=v1"},
             {"id": "v2", "title": "Video 2", "url": "https://www.youtube.com/watch?v=v2"},
         ]
-        mock_download.return_value = ("/tmp/fake.mp4", "")
+        mock_download.return_value = ("/tmp/fake.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/@user/video/tk1")
 
         with Session(_api_db.engine) as s:
@@ -1369,7 +1369,7 @@ class TestYoutubeMkdtempDir:
         mock_list.return_value = [
             {"id": "v1", "title": "T", "url": "https://www.youtube.com/watch?v=v1"}
         ]
-        mock_download.return_value = ("/data/pipeline_tmp/pipeline_dl_abc/v1.mp4", "")
+        mock_download.return_value = ("/data/pipeline_tmp/pipeline_dl_abc/v1.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/video/tk1")
 
         with Session(_api_db.engine) as s:
@@ -1394,7 +1394,7 @@ class TestYoutubeMkdtempDir:
         mock_list.return_value = [
             {"id": "v1", "title": "T", "url": "https://www.youtube.com/watch?v=v1"}
         ]
-        mock_download.return_value = ("/tmp/pipeline_dl_abc/v1.mp4", "")
+        mock_download.return_value = ("/tmp/pipeline_dl_abc/v1.mp4", "", "")
         mock_upload.return_value = (True, "tk1", "https://tiktok.com/video/tk1")
 
         with Session(_api_db.engine) as s:

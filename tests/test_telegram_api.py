@@ -194,3 +194,43 @@ class TestTestEndpoint:
             headers=HEADERS_OK,
         )
         assert r.status_code == 422
+
+
+class TestResolveChat:
+    @patch("api.routers.telegram.get_chat")
+    def test_resolves_name(self, mock_get_chat, client):
+        mock_get_chat.return_value = {"name": "Kênh vận hành", "type": "supergroup"}
+        r = client.post(
+            "/api/telegram/resolve-chat",
+            json={"bot_token": VALID_TOKEN, "chat_id": VALID_CHAT},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json() == {"name": "Kênh vận hành", "type": "supergroup"}
+
+    @patch("api.routers.telegram.get_chat")
+    def test_unknown_chat_returns_null_name(self, mock_get_chat, client):
+        mock_get_chat.return_value = None
+        r = client.post(
+            "/api/telegram/resolve-chat",
+            json={"bot_token": VALID_TOKEN, "chat_id": VALID_CHAT},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 200
+        assert r.json() == {"name": None, "type": None}
+
+    def test_invalid_token_422(self, client):
+        r = client.post(
+            "/api/telegram/resolve-chat",
+            json={"bot_token": "not-a-token", "chat_id": VALID_CHAT},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+
+    def test_invalid_chat_id_422(self, client):
+        r = client.post(
+            "/api/telegram/resolve-chat",
+            json={"bot_token": VALID_TOKEN, "chat_id": "@nope"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422

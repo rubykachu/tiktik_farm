@@ -386,6 +386,7 @@ class PipelineRead(BaseModel):
     telegram_attach_video: bool = False
     telegram_attach_fields: List[str] = []
     run_now_requested_at: Optional[datetime]
+    cancel_requested_at: Optional[datetime] = None
     lock_until: Optional[datetime]
     created_at: datetime
     updated_at: datetime
@@ -395,6 +396,36 @@ class PipelineRead(BaseModel):
 
 
 # ---------- telegram (web UI helpers) --------------------------------------
+
+
+class TelegramConfigCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    bot_token: str = Field(min_length=1)
+    chat_id: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat_id_shape(cls, v: str) -> str:
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("chat_id format invalid")
+        return v
+
+
+class TelegramConfigRead(BaseModel):
+    id: int
+    name: str
+    bot_token: str
+    chat_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class TelegramDetectChatsRequest(BaseModel):
@@ -440,6 +471,32 @@ class TelegramTestRequest(BaseModel):
 class TelegramTestResponse(BaseModel):
     ok: bool
     message: str
+
+
+class TelegramResolveChatRequest(BaseModel):
+    bot_token: str = Field(min_length=1)
+    chat_id: str = Field(min_length=1)
+
+    @field_validator("bot_token")
+    @classmethod
+    def _bot_token_shape(cls, v: str) -> str:
+        if not _BOT_TOKEN_RE.match(v):
+            raise ValueError("bot_token format invalid")
+        return v
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat_id_shape(cls, v: str) -> str:
+        if not _CHAT_ID_RE.match(v):
+            raise ValueError("chat_id format invalid")
+        return v
+
+
+class TelegramResolveChatResponse(BaseModel):
+    # None when the bot has no history with this chat_id — not an error,
+    # just nothing to show a name for (e.g. an ID pasted in by hand).
+    name: Optional[str] = None
+    type: Optional[str] = None
 
 
 class SampleCaptionPromptResponse(BaseModel):
@@ -677,3 +734,92 @@ class PromptTestResponse(BaseModel):
     original_title: str
     ai_title: str
     description_snippet: str
+
+
+# ---------- channel discovery (Phase 5) -----------------------------------
+
+
+# A batch bigger than this makes one "Quét ngay" click too slow/opaque to
+# follow, not an IP-protection measure — fixed in code, not a setting.
+DISCOVERY_MAX_KEYWORDS_PER_SCAN = 5
+
+
+class DiscoveryKeywordSuggestionsResponse(BaseModel):
+    suggestions: List[str]
+
+
+class DiscoveryScanNowRequest(BaseModel):
+    keywords: List[str] = Field(min_length=1, max_length=DISCOVERY_MAX_KEYWORDS_PER_SCAN)
+    market_gl: str = Field(min_length=2, max_length=8)
+    market_hl: str = Field(min_length=2, max_length=8)
+
+
+class DiscoveryScanNowResponse(BaseModel):
+    scan_run_id: int
+    status: Literal["running", "done", "error"]
+
+
+class DiscoveryScanRunRead(BaseModel):
+    id: int
+    keywords: List[str]
+    market_gl: str
+    market_hl: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    channels_total: int
+    channels_done: int
+    candidates_found: int
+    status: Literal["running", "done", "error"]
+    error_text: Optional[str] = None
+
+
+class DiscoveryScanResultRead(BaseModel):
+    id: int
+    channel_id: str
+    channel_url: str
+    channel_title: str
+    found_via_keyword: str
+    subscriber_count: int
+    median_view_count: int
+    days_since_last_video: float
+    latest_video_posted_at: Optional[datetime] = None
+    cadence_videos_days_per_video: Optional[float] = None
+    cadence_shorts_days_per_video: Optional[float] = None
+    score: float
+    channel_description: Optional[str] = None
+    median_duration_seconds: Optional[int] = None
+    # Joined from the global DiscoveryCandidate row, if any — 'new' when no
+    # row exists yet (the user hasn't acted on this channel).
+    status: Literal["new", "added", "skipped"]
+    added_pipeline_id: Optional[int] = None
+
+
+class DiscoveryChannelSkipRequest(BaseModel):
+    channel_url: str = Field(min_length=1, max_length=2048)
+    channel_title: str = Field(min_length=1, max_length=256)
+
+
+class DiscoveryChannelMarkAddedRequest(BaseModel):
+    channel_url: str = Field(min_length=1, max_length=2048)
+    channel_title: str = Field(min_length=1, max_length=256)
+    pipeline_id: int
+
+
+class DiscoveryChannelActionResponse(BaseModel):
+    channel_id: str
+    status: Literal["added", "skipped"]
+    added_pipeline_id: Optional[int] = None
+
+
+class DiscoverySettingsRead(BaseModel):
+    min_subscribers: int
+    silent_months: int
+    target_days_per_video: float
+    view_score_reference: int
+
+
+class DiscoverySettingsUpdate(BaseModel):
+    min_subscribers: Optional[int] = Field(default=None, ge=0)
+    silent_months: Optional[int] = Field(default=None, ge=1)
+    target_days_per_video: Optional[float] = Field(default=None, gt=0)
+    view_score_reference: Optional[int] = Field(default=None, gt=0)

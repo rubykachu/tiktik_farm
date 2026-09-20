@@ -3,20 +3,23 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { X, ChevronDown, ChevronRight } from "lucide-react";
+import { X, ChevronDown, ChevronRight, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Accounts } from "../api/client";
 import { Pipeline, PipelineCreate, PipelineUpdate, Pipelines } from "../api/pipelines";
 import { DouyinCookies } from "../api/douyin_cookies";
 import { Telegram, TelegramAttachField, TelegramChatItem } from "../api/telegram";
+import { TelegramConfigs } from "../api/telegram_configs";
 import { Settings } from "../api/settings";
+import Tooltip from "./Tooltip";
+import { useTelegramChatName } from "../hooks/useTelegramChatName";
 
 const baseSchema = z.object({
-  name: z.string().min(1, "Required").max(128),
+  name: z.string().min(1, "Bắt buộc nhập").max(128),
   source_type: z.enum(["youtube", "douyin"]).default("youtube"),
   douyin_cookie_id: z.number().nullable().optional(),
-  channel_url: z.string().min(1, "Required"),
+  channel_url: z.string().min(1, "Bắt buộc nhập"),
   interval_value: z.coerce.number().int().min(1),
   interval_unit: z.enum(["minutes", "days"]),
   first_fire_at: z.string().optional().default(""),
@@ -35,7 +38,7 @@ const baseSchema = z.object({
     .optional()
     .default("")
     .refine((v) => !v || /^-?\d+$/.test(v), {
-      message: "Chat ID must be numeric (e.g. -1001234567890)",
+      message: "Chat ID chỉ được nhập số (vd: -1001234567890)",
     }),
   clear_bot_token: z.boolean().optional().default(false),
   telegram_notify_mode: z
@@ -51,7 +54,7 @@ function buildSchema(existingTokenSet: boolean) {
   return baseSchema
     .refine(
       (d) => d.source_type !== "douyin" || !!d.douyin_cookie_id,
-      { message: "Select a Douyin cookie", path: ["douyin_cookie_id"] }
+      { message: "Chọn 1 cookie Douyin", path: ["douyin_cookie_id"] }
     )
     .refine(
       (d) => {
@@ -61,7 +64,7 @@ function buildSchema(existingTokenSet: boolean) {
           return ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "music.youtube.com"].includes(u.hostname);
         } catch { return false; }
       },
-      { message: "Must be a YouTube URL (e.g. https://youtube.com/@channel)", path: ["channel_url"] }
+      { message: "Phải là URL YouTube (vd: https://youtube.com/@channel)", path: ["channel_url"] }
     )
     .refine(
       (d) => {
@@ -71,10 +74,10 @@ function buildSchema(existingTokenSet: boolean) {
           return ["douyin.com", "www.douyin.com", "m.douyin.com", "v.douyin.com"].includes(u.hostname);
         } catch { return false; }
       },
-      { message: "Must be a Douyin URL (e.g. https://www.douyin.com/user/...)", path: ["channel_url"] }
+      { message: "Phải là URL Douyin (vd: https://www.douyin.com/user/...)", path: ["channel_url"] }
     )
     .refine((d) => !(d.interval_unit === "minutes" && d.interval_value < 2), {
-      message: "Interval must be ≥ 2 when using minutes",
+      message: "Khoảng lặp phải ≥ 2 khi dùng đơn vị phút",
       path: ["interval_value"],
     })
     .refine(
@@ -83,14 +86,14 @@ function buildSchema(existingTokenSet: boolean) {
         const delaySet = !!(d.window_delay_minutes !== "" && d.window_delay_minutes !== undefined);
         return endSet === delaySet;
       },
-      { message: "Window end time and repeat interval must both be set or both be empty", path: ["window_end_time"] }
+      { message: "Giờ kết thúc và khoảng lặp lại phải điền đủ cả hai, hoặc để trống cả hai", path: ["window_end_time"] }
     )
     .refine(
       (d) => {
         if (!d.window_end_time || !d.first_fire_at) return true;
         return toMinutes(d.window_end_time) > toMinutes(d.first_fire_at);
       },
-      { message: "Window end must be later than the start time", path: ["window_end_time"] }
+      { message: "Giờ kết thúc phải sau giờ bắt đầu", path: ["window_end_time"] }
     )
     .refine(
       (d) => {
@@ -98,11 +101,11 @@ function buildSchema(existingTokenSet: boolean) {
         const windowMin = toMinutes(d.window_end_time) - toMinutes(d.first_fire_at);
         return windowMin > Number(d.window_delay_minutes);
       },
-      { message: "Window duration must be greater than the repeat interval", path: ["window_delay_minutes"] }
+      { message: "Khoảng thời gian chạy nhiều lần phải dài hơn khoảng lặp lại", path: ["window_delay_minutes"] }
     )
     .refine(
       (d) => d.interval_unit !== "days" || /^\d{2}:\d{2}$/.test(d.first_fire_at ?? ""),
-      { message: "Enter a daily run time (HH:MM)", path: ["first_fire_at"] }
+      { message: "Nhập giờ chạy hằng ngày (HH:MM)", path: ["first_fire_at"] }
     )
     .refine(
       (d) => {
@@ -111,8 +114,7 @@ function buildSchema(existingTokenSet: boolean) {
         return !!(d.caption_ai_prompt && d.caption_ai_prompt.trim());
       },
       {
-        message:
-          "Add an AI prompt or remove {ai_title} from the caption template",
+        message: "Thêm prompt AI hoặc bỏ {ai_title} khỏi mẫu caption",
         path: ["caption_ai_prompt"],
       }
     )
@@ -123,7 +125,7 @@ function buildSchema(existingTokenSet: boolean) {
         return d.caption_template.includes("{ai_title}");
       },
       {
-        message: "{ai_title_hashtag} requires {ai_title} in the caption template",
+        message: "{ai_title_hashtag} cần có {ai_title} trong mẫu caption",
         path: ["caption_template"],
       }
     )
@@ -138,7 +140,7 @@ function buildSchema(existingTokenSet: boolean) {
         return botPresent === chatSet;
       },
       {
-        message: "Bot token and chat ID must be set together (or both empty)",
+        message: "Bot Token và Chat ID phải điền đủ cả hai, hoặc để trống cả hai",
         path: ["telegram_bot_token"],
       }
     );
@@ -146,10 +148,32 @@ function buildSchema(existingTokenSet: boolean) {
 
 type FormData = z.infer<typeof baseSchema>;
 
+// Everything a discovery candidate can hand the create-pipeline form —
+// channel_url is the only field it always has; the rest are best-effort,
+// only filled in when the scan actually found the underlying data.
+export type PipelinePrefill = {
+  channel_url: string;
+  name?: string;
+  channel_description?: string;
+  fetch_count?: number;
+  interval_value?: number;
+  interval_unit?: "minutes" | "days";
+  first_fire_at_local?: string; // "HH:MM", browser-local
+  window_end_time_local?: string; // "HH:MM", browser-local
+  window_delay_minutes?: number;
+  max_duration_seconds?: number;
+  sync_from_date?: string; // "YYYY-MM-DD"
+};
+
 type Props = {
   open: boolean;
   pipeline?: Pipeline | null;
   onClose: () => void;
+  // Prefills the create form (ignored when editing). Used by the "Thêm vào
+  // lịch đăng" action on a discovery candidate.
+  prefill?: PipelinePrefill;
+  // Fired after a successful create (not edit) with the new pipeline.
+  onCreated?: (pipeline: Pipeline) => void;
 };
 
 function formatHttpDetail(detail: unknown, fallback: string): string {
@@ -165,6 +189,12 @@ function formatHttpDetail(detail: unknown, fallback: string): string {
     if (parts.length) return parts.join("; ");
   }
   return fallback;
+}
+
+function formatSecondsAsMinutes(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder > 0 ? `${minutes} phút ${remainder} giây` : `${minutes} phút`;
 }
 
 function toMinutes(hhmm: string): number {
@@ -237,7 +267,7 @@ const NEW_PIPELINE_DEFAULTS: FormData = {
   sync_from_date: TODAY_DATE,
 };
 
-export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
+export default function PipelineFormModal({ open, pipeline, onClose, prefill, onCreated }: Props) {
   const qc = useQueryClient();
   const isEdit = !!pipeline;
 
@@ -259,6 +289,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const { data: douyinCookies } = useQuery({
     queryKey: ["douyin-cookies"],
     queryFn: DouyinCookies.list,
+    enabled: open,
+  });
+
+  const { data: telegramConfigs } = useQuery({
+    queryKey: ["telegram-configs"],
+    queryFn: TelegramConfigs.list,
     enabled: open,
   });
 
@@ -341,15 +377,31 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
         sync_from_date: pipeline.sync_from_date ?? "",
       });
     } else {
-      setMultipleRuns(false);
-      reset(NEW_PIPELINE_DEFAULTS);
+      setMultipleRuns(!!prefill?.window_end_time_local);
+      reset({
+        ...NEW_PIPELINE_DEFAULTS,
+        channel_url: prefill?.channel_url ?? "",
+        name: prefill?.name ?? NEW_PIPELINE_DEFAULTS.name,
+        channel_description: prefill?.channel_description ?? NEW_PIPELINE_DEFAULTS.channel_description,
+        fetch_count: prefill?.fetch_count ?? NEW_PIPELINE_DEFAULTS.fetch_count,
+        interval_value: prefill?.interval_value ?? NEW_PIPELINE_DEFAULTS.interval_value,
+        interval_unit: prefill?.interval_unit ?? NEW_PIPELINE_DEFAULTS.interval_unit,
+        first_fire_at: prefill?.first_fire_at_local ?? NEW_PIPELINE_DEFAULTS.first_fire_at,
+        window_end_time: prefill?.window_end_time_local ?? NEW_PIPELINE_DEFAULTS.window_end_time,
+        window_delay_minutes: (prefill?.window_delay_minutes ??
+          NEW_PIPELINE_DEFAULTS.window_delay_minutes) as any,
+        max_duration_seconds: (prefill?.max_duration_seconds ??
+          NEW_PIPELINE_DEFAULTS.max_duration_seconds) as any,
+        sync_from_date: prefill?.sync_from_date ?? NEW_PIPELINE_DEFAULTS.sync_from_date,
+      });
     }
-  }, [open, pipeline, reset]);
+  }, [open, pipeline, prefill, reset]);
 
   const createMut = useMutation({
     mutationFn: (p: PipelineCreate) => Pipelines.create(p),
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
+      onCreated?.(created);
       onClose();
     },
     onError: handleServerError,
@@ -480,9 +532,15 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
   const fetchCount = watch("fetch_count");
   const clearBotToken = watch("clear_bot_token");
   const intervalValue = watch("interval_value");
+  const maxDurationSeconds = watch("max_duration_seconds");
   const intervalUnit = watch("interval_unit");
   const telegramBotToken = watch("telegram_bot_token");
   const telegramChatId = watch("telegram_chat_id");
+  const resolvedChatName = useTelegramChatName(
+    telegramBotToken || "",
+    telegramChatId || "",
+    telegramDetectChats,
+  );
   const attachFields = watch("telegram_attach_fields") ?? [];
   const captionTemplate = watch("caption_template");
   const captionAiPrompt = watch("caption_ai_prompt");
@@ -646,6 +704,16 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     <option value="minutes">phút</option>
                   </select>
                 </div>
+                {intervalUnit === "days" && (
+                  <div className="flex-1">
+                    <label className="label-required">Chạy lúc ({getTimezoneLabel()})</label>
+                    <input
+                      type="time"
+                      className="input"
+                      {...register("first_fire_at")}
+                    />
+                  </div>
+                )}
               </div>
               {errors.interval_value && (
                 <p className="field-error">{errors.interval_value.message}</p>
@@ -653,24 +721,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               {repeatHint && (
                 <p className="text-xs text-slate-500">{repeatHint}</p>
               )}
+              {errors.first_fire_at && (
+                <p className="field-error">{errors.first_fire_at.message}</p>
+              )}
 
               {intervalUnit === "days" && (
                 <div className="space-y-3">
-                  <div>
-                    <label className="label-required">Chạy lúc ({getTimezoneLabel()})</label>
-                    <input
-                      type="time"
-                      className="input"
-                      {...register("first_fire_at")}
-                    />
-                    {errors.first_fire_at && (
-                      <p className="field-error">{errors.first_fire_at.message}</p>
-                    )}
-                    <p className="text-xs text-slate-400 mt-1">
-                      Nếu giờ này đã qua hôm nay, lần chạy đầu tiên sẽ vào ngày mai.
-                    </p>
-                  </div>
-
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
@@ -729,67 +785,69 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
               Tải xuống
             </legend>
-            {!isEdit && (
-              <div>
-                <label className="label-required">Nguồn video</label>
-                <select className="input" {...register("source_type")}>
-                  <option value="youtube">YouTube</option>
-                  <option value="douyin">Douyin</option>
-                </select>
-              </div>
-            )}
-            {sourceType === "douyin" && (
-              <div>
-                <label className="label-required">Douyin Cookie</label>
-                <select
-                  className="input"
-                  {...register("douyin_cookie_id", { valueAsNumber: true })}
-                >
-                  <option value="">— Chọn cookie —</option>
-                  {douyinCookies?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.douyin_cookie_id && (
-                  <p className="field-error">{errors.douyin_cookie_id.message}</p>
-                )}
-                {(!douyinCookies || douyinCookies.length === 0) && (
-                  <p className="text-xs text-amber-600 mt-1">
-                    Chưa có cookie Douyin nào. Thêm cookie trong{" "}
-                    <Link to="/accounts" className="text-brand-600 hover:underline">
-                      Tài khoản → Douyin Cookies
-                    </Link>
-                    .
-                  </p>
-                )}
-              </div>
-            )}
-            <div>
-              <label className="label-required">
-                {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
-              </label>
-              <input
-                className="input"
-                {...register("channel_url")}
-                placeholder={
-                  sourceType === "douyin"
-                    ? "https://www.douyin.com/user/MS4wLjAB..."
-                    : "https://youtube.com/@channel/videos"
-                }
-              />
-              {errors.channel_url && (
-                <p className="field-error">{errors.channel_url.message}</p>
+            <div className="flex gap-3 items-end">
+              {!isEdit && (
+                <div className="flex-1">
+                  <label className="label-required">Nguồn video</label>
+                  <select className="input" {...register("source_type")}>
+                    <option value="youtube">YouTube</option>
+                    <option value="douyin">Douyin</option>
+                  </select>
+                </div>
               )}
+              {sourceType === "douyin" && (
+                <div className="flex-1">
+                  <label className="label-required">Douyin Cookie</label>
+                  <select
+                    className="input"
+                    {...register("douyin_cookie_id", { valueAsNumber: true })}
+                  >
+                    <option value="">— Chọn cookie —</option>
+                    {douyinCookies?.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex-[2]">
+                <label className="label-required">
+                  {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
+                </label>
+                <input
+                  className="input"
+                  {...register("channel_url")}
+                  placeholder={
+                    sourceType === "douyin"
+                      ? "https://www.douyin.com/user/MS4wLjAB..."
+                      : "https://youtube.com/@channel/videos"
+                  }
+                />
+              </div>
             </div>
+            {errors.douyin_cookie_id && (
+              <p className="field-error">{errors.douyin_cookie_id.message}</p>
+            )}
+            {sourceType === "douyin" && (!douyinCookies || douyinCookies.length === 0) && (
+              <p className="text-xs text-amber-600">
+                Chưa có cookie Douyin nào. Thêm cookie trong{" "}
+                <Link to="/accounts" className="text-brand-600 hover:underline">
+                  Tài khoản → Douyin Cookies
+                </Link>
+                .
+              </p>
+            )}
+            {errors.channel_url && (
+              <p className="field-error">{errors.channel_url.message}</p>
+            )}
             <div>
               <label className="label">
                 Mô tả channel{" "}
                 <span className="text-slate-400 font-normal">(dùng cho AI)</span>
               </label>
               <textarea
-                className="input min-h-[60px]"
+                className="input min-h-[90px]"
                 maxLength={2000}
                 {...register("channel_description")}
                 placeholder="Ví dụ: Kênh review xe điện và công nghệ Trung Quốc. Dùng để giúp AI hiểu context khi tiêu đề/mô tả nguồn mơ hồ."
@@ -798,18 +856,53 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 <p className="field-error">{errors.channel_description.message}</p>
               )}
             </div>
-            <div>
-              <label className="label-required">Số video mỗi lần chạy (1–20)</label>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                max={20}
-                {...register("fetch_count")}
-              />
-              {errors.fetch_count && (
-                <p className="field-error">{errors.fetch_count.message}</p>
-              )}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label-required">Số video/lần (1–20)</label>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  max={20}
+                  {...register("fetch_count")}
+                />
+                {errors.fetch_count && (
+                  <p className="field-error">{errors.fetch_count.message}</p>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Độ dài tối đa (giây)</label>
+                  <Tooltip content='Video dài hơn 3× giá trị này sẽ bị bỏ qua hoàn toàn; ngắn hơn mức đó thì được tải về và cắt ngắn về đúng N giây đầu.'>
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                  {Number(maxDurationSeconds) > 60 && (
+                    <span className="text-xs font-medium text-brand-600 whitespace-nowrap">
+                      ≈ {formatSecondsAsMinutes(Number(maxDurationSeconds))}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  className="input"
+                  min={1}
+                  {...register("max_duration_seconds")}
+                  placeholder="Không giới hạn"
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Lấy video từ ngày</label>
+                  <Tooltip content="Chỉ xử lý video đăng từ ngày này trở đi. Để trống nếu muốn lấy tất cả.">
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                </div>
+                <input
+                  type="date"
+                  className="input"
+                  {...register("sync_from_date")}
+                />
+              </div>
             </div>
             {Number(fetchCount) > 1 && (
               <div>
@@ -829,30 +922,6 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                 )}
               </div>
             )}
-            <div>
-              <label className="label">Độ dài tối đa (giây)</label>
-              <input
-                type="number"
-                className="input"
-                min={1}
-                {...register("max_duration_seconds")}
-                placeholder="Để trống nếu không giới hạn"
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Video dài hơn giá trị này sẽ bị bỏ qua hoặc cắt ngắn về N giây đầu tiên.
-              </p>
-            </div>
-            <div>
-              <label className="label">Lấy video từ ngày</label>
-              <input
-                type="date"
-                className="input"
-                {...register("sync_from_date")}
-              />
-              <p className="text-xs text-slate-400 mt-1">
-                Chỉ xử lý video đăng từ ngày này trở đi. Để trống nếu muốn lấy tất cả.
-              </p>
-            </div>
           </fieldset>
 
           {/* Section 3: Đăng tải */}
@@ -1036,6 +1105,31 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
             <legend className="text-base font-semibold text-slate-800 border-b pb-1 w-full">
               Thông báo <span className="text-slate-400 font-normal text-sm">(tùy chọn)</span>
             </legend>
+            {telegramConfigs && telegramConfigs.length > 0 && (
+              <div>
+                <label className="label">Chọn Telegram config</label>
+                <select
+                  className="input"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) return;
+                    const cfg = telegramConfigs.find((c) => String(c.id) === v);
+                    if (cfg) {
+                      setValue("telegram_bot_token", cfg.bot_token, { shouldValidate: true });
+                      setValue("telegram_chat_id", cfg.chat_id, { shouldValidate: true });
+                    }
+                  }}
+                >
+                  <option value="">Tự nhập...</option>
+                  {telegramConfigs.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid lg:grid-cols-2 gap-3">
               <div>
                 <label className="label">Bot Token</label>
@@ -1075,7 +1169,12 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                   )}
               </div>
               <div>
-                <label className="label">Chat ID</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="label">Chat ID</label>
+                  <Tooltip content={<>Chỉ nhập số (kênh private thường bắt đầu bằng <code>-100…</code>).</>}>
+                    <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                </div>
                 <div className="flex gap-2 items-stretch">
                   <input
                     className="input flex-1 min-w-0"
@@ -1099,10 +1198,9 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
                     {telegramTestSending ? "Đang gửi…" : "Gửi thử"}
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Chỉ nhập số (kênh private thường bắt đầu bằng{" "}
-                  <code className="bg-slate-100 px-1 rounded">-100…</code>). Thêm bot làm admin kênh.
-                </p>
+                {resolvedChatName && (
+                  <p className="text-xs text-brand-600 mt-1">→ {resolvedChatName}</p>
+                )}
                 {errors.telegram_chat_id && (
                   <p className="field-error">{errors.telegram_chat_id.message}</p>
                 )}
@@ -1142,25 +1240,28 @@ export default function PipelineFormModal({ open, pipeline, onClose }: Props) {
               <p className="text-sm text-red-600">{telegramDetectErr}</p>
             )}
             <div className="space-y-2 border-t pt-3">
-              <label className="label">Khi không có video mới</label>
+              <div className="flex items-center gap-1.5">
+                <label className="label">Khi không có video mới</label>
+                <Tooltip
+                  content='Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục cho tới khi bắt được video — chọn "một lần cuối mỗi chu kỳ" để không bị mỗi lần quét một tin nhắn.'
+                >
+                  <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                </Tooltip>
+              </div>
               <select className="input" {...register("telegram_notify_mode")}>
                 <option value="cycle">Báo một lần cuối mỗi chu kỳ</option>
                 <option value="changes_only">Không báo</option>
                 <option value="every_tick">Báo mọi lần chạy</option>
               </select>
-              <p className="text-xs text-slate-500">
-                Lỗi thì luôn báo. Lịch chạy nhiều lần trong ngày sẽ quét liên tục
-                cho tới khi bắt được video — chọn “một lần cuối mỗi chu kỳ” để
-                không bị mỗi lần quét một tin nhắn.
-              </p>
-              <p className="text-xs text-slate-500 pt-2 border-t">
-                Thông báo luôn kèm link tải video, dùng được cả với video lớn.
-                Video giữ trên máy chủ 24 giờ.
-              </p>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" {...register("telegram_attach_video")} />
-                Đính kèm luôn file video vào tin nhắn
-              </label>
+              <div className="flex items-center gap-1.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" {...register("telegram_attach_video")} />
+                  Đính kèm luôn file video vào tin nhắn
+                </label>
+                <Tooltip content="Thông báo luôn kèm link tải video, dùng được cả với video lớn — video giữ trên máy chủ 24 giờ. Bật ô này để đính kèm thêm file trực tiếp vào tin nhắn.">
+                  <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                </Tooltip>
+              </div>
               <p className="text-xs text-slate-500">
                 Telegram chỉ nhận file tối đa 50 MB — vượt quá thì chỉ còn link.
               </p>

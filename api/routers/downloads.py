@@ -65,6 +65,7 @@ def run_download(download_id: int) -> None:
         row.status = "ready"
         row.title = video.title[:500] or None
         row.description = video.description or None
+        row.transcript = video.transcript or None
         row.file_path = video.file_path
         row.file_size = video.file_size
         row.duration_seconds = video.duration_seconds
@@ -196,7 +197,7 @@ def generate_caption(
 
     prompt = (payload.prompt or SAMPLE_CAPTION_PROMPT).strip()
     title = row.title or ""
-    caption = rewrite_with_llm(prompt, title, row.description or "")
+    caption = rewrite_with_llm(prompt, title, row.description or "", transcript=row.transcript or "")
     if not caption or caption == title:
         raise HTTPException(
             status_code=422,

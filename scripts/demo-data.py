@@ -20,7 +20,13 @@ from sqlmodel import Session, select
 
 import api.db as _db
 from api.db import now_utc
-from api.models import Account, ChannelPipeline, PipelineRun, VideoUpload
+from api.models import (
+    Account,
+    ChannelPipeline,
+    PipelineRun,
+    PipelineSeenVideo,
+    VideoUpload,
+)
 
 DEMO_TAG = "[DEMO]"
 
@@ -130,7 +136,18 @@ def remove() -> None:
         runs = s.exec(select(PipelineRun).where(
             PipelineRun.pipeline_id.in_(ids)  # type: ignore[union-attr]
         )).all()
-        for row in [*uploads, *runs, *demo]:
+        seen = s.exec(select(PipelineSeenVideo).where(
+            PipelineSeenVideo.pipeline_id.in_(ids)  # type: ignore[union-attr]
+        )).all()
+
+        # No relationship() is declared between these models, so the ORM has
+        # no dependency graph to sort deletes by — it would otherwise try to
+        # delete channel_pipelines before its FK children and hit SQLite's
+        # FOREIGN KEY constraint. Flush children before parents explicitly.
+        for row in [*uploads, *runs, *seen]:
+            s.delete(row)
+        s.flush()
+        for row in demo:
             s.delete(row)
         s.commit()
         print(f"Removed {len(demo)} pipelines, {len(runs)} runs, {len(uploads)} uploads.")
