@@ -111,6 +111,11 @@ endif
 # cloudflared chạy trên host, ngoài Docker. tunnel-create làm 1 lần đầu (login
 # → create → route → ghi config.yml); tunnel-start/-stop chạy tunnel nền hằng
 # ngày dựa trên config.yml đó. Xem RUNBOOK.md, Bước 5.
+#
+# "tunnel route dns" đọc ~/.cloudflared/config.yml trước khi xét tham số, nên
+# trên máy đã có tunnel nó trỏ tên miền vào tunnel CŨ mà vẫn báo thành công.
+# Vì vậy route chạy với một config tạm chỉ chứa UUID vừa tạo, và truyền UUID
+# thay vì tên tunnel.
 
 .PHONY: tunnel-create
 tunnel-create:  ## Tạo tunnel mới + trỏ domain lần đầu (NAME=farm1 DOMAIN=farm1.tenmien.com make tunnel-create)
@@ -126,6 +131,11 @@ tunnel-create:  ## Tạo tunnel mới + trỏ domain lần đầu (NAME=farm1 DO
 		printf "$(RED)Chưa cài cloudflared$(RESET)\n"; \
 		printf "Chạy: brew install cloudflared — xem RUNBOOK.md, bước Cài cloudflared\n"; \
 		exit 1; }
+	@test ! -f $$HOME/.cloudflared/config.yml || { \
+		printf "$(RED)Máy này đã có tunnel: ~/.cloudflared/config.yml$(RESET)\n"; \
+		printf "Mỗi máy chỉ chạy 1 tunnel. Tạo thêm sẽ ghi đè cấu hình đang dùng.\n"; \
+		printf "Muốn làm lại từ đầu: đổi tên file đó rồi chạy lại lệnh này.\n"; \
+		exit 1; }
 	cloudflared tunnel login
 	@out=$$(cloudflared tunnel create $(NAME) 2>&1); \
 	echo "$$out"; \
@@ -134,7 +144,10 @@ tunnel-create:  ## Tạo tunnel mới + trỏ domain lần đầu (NAME=farm1 DO
 		printf "$(RED)Không đọc được đường dẫn credentials từ output của 'cloudflared tunnel create'$(RESET)\n"; \
 		exit 1; }; \
 	uuid=$$(basename $$cred .json); \
-	cloudflared tunnel route dns $(NAME) $(DOMAIN); \
+	tmpcfg=$$(mktemp); \
+	printf "tunnel: %s\n" "$$uuid" > $$tmpcfg; \
+	cloudflared --config $$tmpcfg tunnel route dns $$uuid $(DOMAIN); \
+	rc=$$?; rm -f $$tmpcfg; test $$rc -eq 0 || exit $$rc; \
 	printf "tunnel: %s\ncredentials-file: %s\n\ningress:\n  - hostname: %s\n    service: http://127.0.0.1:2705\n  - service: http_status:404\n" \
 		"$$uuid" "$$cred" "$(DOMAIN)" > $$HOME/.cloudflared/config.yml; \
 	printf "$(GREEN)Đã tạo tunnel $(NAME), trỏ $(DOMAIN), ghi ~/.cloudflared/config.yml$(RESET)\n"; \

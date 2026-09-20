@@ -212,15 +212,84 @@ Thiếu một trong hai thì AI không được gọi.
 
 ## Phần 5 — Thêm máy thứ hai
 
-Làm lại toàn bộ Phần 1 trên máy mới, đổi `farm1` thành `farm2` ở mọi chỗ:
-tên tunnel, tên miền con, và cả hai dòng trong `.env`.
+Mỗi máy cần tên miền con riêng và tunnel riêng. Máy thứ hai làm lại Phần 1,
+đổi `farm1` thành `farm2` ở mọi chỗ: tên tunnel, tên miền con, và cả hai dòng
+trong `.env`.
 
-Hai điều **bắt buộc**:
+### Cách A — người dùng máy mới tự làm
+
+Họ chạy Phần 1 từ đầu trên máy của họ, kể cả Bước 5. Cần họ đăng nhập được vào
+tài khoản Cloudflare đang giữ tên miền.
+
+### Cách B — bạn chuẩn bị sẵn, họ chỉ việc chép (khuyên dùng)
+
+Bạn tạo tunnel hộ từ máy đang có, rồi gửi họ khoá. Họ không cần tài khoản
+Cloudflare.
+
+Trên máy bạn — thay `farm2.tenmien.com` bằng tên miền con muốn dùng:
+
+```bash
+cloudflared tunnel create farm2
+```
+
+Ghi lại mã tunnel (UUID) trong dòng `Created tunnel farm2 with id ...`. Nó cũng
+là tên file khoá vừa ghi ra trong `~/.cloudflared/`.
+
+Trỏ tên miền vào tunnel đó. Bắt buộc dùng UUID, và bắt buộc có `--config` trỏ
+vào file tạm — nếu không `cloudflared` sẽ đọc `~/.cloudflared/config.yml` của
+máy bạn và trỏ tên miền mới vào tunnel của **máy bạn**, mà vẫn báo thành công:
+
+```bash
+printf 'tunnel: <UUID>\n' > /tmp/route.yml
+cloudflared --config /tmp/route.yml tunnel route dns <UUID> farm2.tenmien.com
+rm /tmp/route.yml
+```
+
+Dòng `Added CNAME ... tunnelID=` in ra phải đúng UUID của tunnel mới. Khác số
+đó là đã trỏ nhầm; chạy lại lệnh trên, thêm `--overwrite-dns` ngay sau
+`route dns`.
+
+Gửi cho họ ba thứ:
+
+1. File khoá `~/.cloudflared/<UUID>.json`. **Giữ bí mật** — ai có nó cũng dựng
+   được tunnel mang tên miền đó. Chuyển bằng USB hoặc AirDrop, không gửi qua
+   chat hay email.
+2. Nội dung `config.yml` dưới đây.
+3. File `config.txt` của bạn.
+
+```yaml
+tunnel: <UUID>
+credentials-file: /Users/<tên-user-máy-họ>/.cloudflared/<UUID>.json
+
+ingress:
+  - hostname: farm2.tenmien.com
+    service: http://127.0.0.1:2705
+  - service: http_status:404
+```
+
+Họ làm Phần 1 nhưng **bỏ Bước 5**, thay bằng:
+
+```bash
+mkdir -p ~/.cloudflared
+cp <UUID>.json ~/.cloudflared/
+```
+
+Rồi tạo `~/.cloudflared/config.yml` với nội dung trên, sửa `credentials-file`
+cho đúng tên user máy họ — xem bằng lệnh `whoami`. Sau đó chạy tiếp Bước 6.
+
+Họ **không** chạy `make tunnel-create`: lệnh đó tạo tunnel mới, và tên miền đã
+trỏ sẵn sẽ không dùng được nữa.
+
+### Hai điều bắt buộc
 
 1. **Không chép file `.env` từ máy cũ sang.** `PUBLIC_BASE_URL` phải là tên miền
    của chính máy đó, nếu không link video gửi đi sẽ trỏ nhầm sang máy kia và
-   không tải được.
+   không tải được. Mật khẩu web (`.htpasswd`) cũng đặt riêng, theo Bước 4.
 
 2. **Không cho hai máy cùng chạy một kênh với cùng một tài khoản TikTok.** Mỗi
    máy ghi nhớ riêng nó đã đăng gì; hai máy cùng chạy sẽ đăng trùng lên cùng
    một tài khoản, dễ bị TikTok coi là spam. Chia theo kênh, hoặc chia theo tài khoản.
+
+Muốn máy mới dùng lại cookie TikTok hoặc khoá LLM của máy cũ thì phải chép cả
+`data/.secret_key` lẫn `data/CookiesDir/`. Thiếu `.secret_key` thì giải mã hỏng.
+Không chép `data/tiktok.db` — đó là lịch sử đăng riêng của từng máy.
