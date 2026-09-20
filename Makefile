@@ -49,6 +49,11 @@ start: check  ## Bật hệ thống (build lại rồi chạy — dùng sau mọ
 	$(COMPOSE) up -d --force-recreate --remove-orphans
 	@$(MAKE) --no-print-directory status
 
+.PHONY: start-bg
+start-bg: start  ## Bật hệ thống + cloudflared (dùng sau mỗi lần bật WSL)
+	@systemctl is-active --quiet cloudflared || sudo systemctl start cloudflared
+	@printf "$(GREEN)cloudflared: $$(systemctl is-active cloudflared)$(RESET)\n"
+
 .PHONY: stop
 stop:  ## Tắt hệ thống (dữ liệu giữ nguyên)
 	$(COMPOSE) down
@@ -219,7 +224,7 @@ tiktok-signature-update:  ## Cập nhật tiktok-signature (khi lỗi "Failed to
 
 # ─── Self-doc ──────────────────────────────────────────────────────────────
 
-EVERYDAY := start stop restart update logs status backup
+EVERYDAY := start start-bg stop restart update logs status backup
 
 .PHONY: help
 help:  ## Danh sách lệnh thường dùng
