@@ -11,6 +11,12 @@ selenium>=4.18
 # newer yt-dlp fixes it. 2026.8.19 is the first release that downloads
 # long videos without a mid-transfer HTTP 403.
 yt-dlp>=2026.8.19
+# yt-dlp's TikTok extractor asks to impersonate a browser TLS fingerprint.
+# Without this it logs "attempting impersonation, but no impersonate target
+# is available" and falls back to plain TLS, which TikTok answers with a
+# profile page stripped of the data yt-dlp needs — the symptom is
+# "Unable to extract secondary user ID" on every TikTok channel.
+curl-cffi>=0.7
 undetected-chromedriver @ git+https://github.com/dustinfarris/undetected-chromedriver.git@b6b58a1eecdadf37e1b159cf2b8138047a0ecc3f
 
 # --- API + scheduler (used by web service, optional for CLI-only users) ---

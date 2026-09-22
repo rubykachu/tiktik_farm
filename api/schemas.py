@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from api.services.caption import find_unknown_vars
+from api.services.tiktok_validate import is_tiktok_url
 from api.services.youtube_validate import is_youtube_url as is_youtube_channel_url
 
 _DOUYIN_ALLOWED_HOSTS = frozenset({
@@ -168,7 +169,7 @@ class PipelineUploadOptions(BaseModel):
 
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
-    source_type: Literal["youtube", "douyin"] = "youtube"
+    source_type: Literal["youtube", "tiktok", "douyin"] = "youtube"
     channel_url: str
     douyin_cookie_id: Optional[int] = None
     fetch_count: int = Field(ge=1, le=20)
@@ -203,6 +204,8 @@ class PipelineCreate(BaseModel):
         source_type = (info.data or {}).get("source_type", "youtube")
         if source_type == "youtube" and not is_youtube_channel_url(v):
             raise ValueError("channel_url must point to a YouTube domain")
+        if source_type == "tiktok" and not is_tiktok_url(v):
+            raise ValueError("channel_url must point to a TikTok domain (tiktok.com)")
         if source_type == "douyin" and not is_douyin_url(v):
             raise ValueError("channel_url must point to a Douyin domain (douyin.com)")
         return v
@@ -211,8 +214,10 @@ class PipelineCreate(BaseModel):
     def _validate_source_cookie(self):
         if self.source_type == "douyin" and not self.douyin_cookie_id:
             raise ValueError("douyin_cookie_id is required when source_type=douyin")
-        if self.source_type == "youtube" and self.douyin_cookie_id:
-            raise ValueError("douyin_cookie_id must be null when source_type=youtube")
+        if self.source_type != "douyin" and self.douyin_cookie_id:
+            raise ValueError(
+                f"douyin_cookie_id must be null when source_type={self.source_type}"
+            )
         return self
 
     @field_validator("caption_template")
@@ -736,12 +741,29 @@ class PromptTestResponse(BaseModel):
     description_snippet: str
 
 
-# ---------- channel discovery (Phase 5) -----------------------------------
+# ---------- channel discovery ----------------------------------------------
 
 
 # A batch bigger than this makes one "Quét ngay" click too slow/opaque to
 # follow, not an IP-protection measure — fixed in code, not a setting.
 DISCOVERY_MAX_KEYWORDS_PER_SCAN = 5
+
+# Keep in sync with api.services.discovery_sources.PLATFORMS; a Literal is
+# what gives the API its 422 on an unknown platform.
+DiscoveryPlatform = Literal["youtube", "tiktok", "douyin"]
+
+
+class DiscoveryPlatformRead(BaseModel):
+    """What one platform can do, so the webapp does not hardcode a second
+    copy of it. `single_feed` platforms report one posting cadence instead
+    of YouTube's Shorts/video-dài pair; `pipeline_source_type` is None when
+    a candidate cannot be turned into a pipeline at all."""
+
+    platform: DiscoveryPlatform
+    single_feed: bool
+    market_aware: bool
+    supports_suggestions: bool
+    pipeline_source_type: Optional[Literal["youtube", "tiktok", "douyin"]] = None
 
 
 class DiscoveryKeywordSuggestionsResponse(BaseModel):
@@ -749,6 +771,7 @@ class DiscoveryKeywordSuggestionsResponse(BaseModel):
 
 
 class DiscoveryScanNowRequest(BaseModel):
+    platform: DiscoveryPlatform = "youtube"
     keywords: List[str] = Field(min_length=1, max_length=DISCOVERY_MAX_KEYWORDS_PER_SCAN)
     market_gl: str = Field(min_length=2, max_length=8)
     market_hl: str = Field(min_length=2, max_length=8)
@@ -761,6 +784,7 @@ class DiscoveryScanNowResponse(BaseModel):
 
 class DiscoveryScanRunRead(BaseModel):
     id: int
+    platform: DiscoveryPlatform
     keywords: List[str]
     market_gl: str
     market_hl: str
@@ -795,11 +819,13 @@ class DiscoveryScanResultRead(BaseModel):
 
 
 class DiscoveryChannelSkipRequest(BaseModel):
+    platform: DiscoveryPlatform = "youtube"
     channel_url: str = Field(min_length=1, max_length=2048)
     channel_title: str = Field(min_length=1, max_length=256)
 
 
 class DiscoveryChannelMarkAddedRequest(BaseModel):
+    platform: DiscoveryPlatform = "youtube"
     channel_url: str = Field(min_length=1, max_length=2048)
     channel_title: str = Field(min_length=1, max_length=256)
     pipeline_id: int

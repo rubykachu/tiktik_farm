@@ -171,3 +171,6 @@ tiktok_uploader/tiktok-signature/command.txt
 
 # Local backups made by `make backup` — contain the DB, cookies and tunnel key.
 backups/
+
+# Per-machine notes for Claude Code (git identity, local quirks) — never committed.
+CLAUDE.local.md

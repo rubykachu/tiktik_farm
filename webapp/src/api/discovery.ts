@@ -1,7 +1,23 @@
 import { api } from "./client";
 
+export type DiscoveryPlatform = "youtube" | "tiktok" | "douyin";
+
+/** What one platform can do. Served by the API so the rules live in one
+ *  place (api/services/discovery_sources) instead of being restated here. */
+export interface DiscoveryPlatformInfo {
+  platform: DiscoveryPlatform;
+  /** One posting cadence instead of YouTube's Shorts / video-dài pair. */
+  single_feed: boolean;
+  /** Whether the market picker changes anything for this platform. */
+  market_aware: boolean;
+  supports_suggestions: boolean;
+  /** null when a candidate cannot be turned into a pipeline at all. */
+  pipeline_source_type: "youtube" | "tiktok" | "douyin" | null;
+}
+
 export interface DiscoveryScanRun {
   id: number;
+  platform: DiscoveryPlatform;
   keywords: string[];
   market_gl: string;
   market_hl: string;
@@ -45,18 +61,23 @@ export type DiscoverySettingsUpdate = Partial<DiscoverySettings>;
 export const DISCOVERY_MAX_KEYWORDS_PER_SCAN = 5;
 
 export const Discovery = {
+  listPlatforms: () => api.get<DiscoveryPlatformInfo[]>("/discovery/platforms").then((r) => r.data),
+
   getSettings: () => api.get<DiscoverySettings>("/discovery/settings").then((r) => r.data),
   patchSettings: (payload: DiscoverySettingsUpdate) =>
     api.patch<DiscoverySettings>("/discovery/settings", payload).then((r) => r.data),
 
-  suggestKeywords: (seed: string, gl: string, hl: string) =>
+  suggestKeywords: (platform: DiscoveryPlatform, seed: string, gl: string, hl: string) =>
     api
-      .get<{ suggestions: string[] }>("/discovery/keyword-suggestions", { params: { seed, gl, hl } })
+      .get<{ suggestions: string[] }>("/discovery/keyword-suggestions", {
+        params: { platform, seed, gl, hl },
+      })
       .then((r) => r.data.suggestions),
 
-  scanNow: (keywords: string[], marketGl: string, marketHl: string) =>
+  scanNow: (platform: DiscoveryPlatform, keywords: string[], marketGl: string, marketHl: string) =>
     api
       .post<{ scan_run_id: number; status: string }>("/discovery/scan-now", {
+        platform,
         keywords,
         market_gl: marketGl,
         market_hl: marketHl,
@@ -69,13 +90,24 @@ export const Discovery = {
   listScanResults: (scanRunId: number) =>
     api.get<DiscoveryScanResult[]>(`/discovery/scan-runs/${scanRunId}/results`).then((r) => r.data),
 
-  skipChannel: (channelId: string, channelUrl: string, channelTitle: string) =>
+  skipChannel: (platform: DiscoveryPlatform, channelId: string, channelUrl: string, channelTitle: string) =>
     api
-      .post(`/discovery/channels/${channelId}/skip`, { channel_url: channelUrl, channel_title: channelTitle })
+      .post(`/discovery/channels/${channelId}/skip`, {
+        platform,
+        channel_url: channelUrl,
+        channel_title: channelTitle,
+      })
       .then((r) => r.data),
-  markChannelAdded: (channelId: string, channelUrl: string, channelTitle: string, pipelineId: number) =>
+  markChannelAdded: (
+    platform: DiscoveryPlatform,
+    channelId: string,
+    channelUrl: string,
+    channelTitle: string,
+    pipelineId: number,
+  ) =>
     api
       .post(`/discovery/channels/${channelId}/mark-added`, {
+        platform,
         channel_url: channelUrl,
         channel_title: channelTitle,
         pipeline_id: pipelineId,

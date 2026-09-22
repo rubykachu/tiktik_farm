@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpDown, CalendarPlus, HelpCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { Discovery, DISCOVERY_MAX_KEYWORDS_PER_SCAN, type DiscoveryScanResult, type DiscoveryScanRun } from "../api/discovery";
+import {
+  Discovery,
+  DISCOVERY_MAX_KEYWORDS_PER_SCAN,
+  type DiscoveryPlatform,
+  type DiscoveryPlatformInfo,
+  type DiscoveryScanResult,
+  type DiscoveryScanRun,
+} from "../api/discovery";
 import type { Pipeline } from "../api/pipelines";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PipelineFormModal, { type PipelinePrefill } from "../components/PipelineFormModal";
@@ -19,6 +26,12 @@ type SortKey =
   | "cadence_videos_days_per_video"
   | "cadence_shorts_days_per_video";
 
+const PLATFORM_LABELS: Record<DiscoveryPlatform, string> = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  douyin: "Douyin",
+};
+
 const MARKETS = [
   { label: "Anh", gl: "GB", hl: "en" },
   { label: "Ấn Độ", gl: "IN", hl: "hi" },
@@ -33,17 +46,35 @@ const MARKETS = [
   { label: "Việt Nam", gl: "VN", hl: "vi" },
 ];
 
-const SCORE_HELP =
+const SCORE_HELP_TWO_FEEDS =
   "Điểm 0-100, ưu tiên nhịp đăng Shorts hơn cả: nhịp đăng Shorts so với mục tiêu " +
   "\"đều đặn\" trong Cài đặt (45đ) + nhịp đăng video dài (20đ) + độ mới video gần nhất (20đ) " +
   "+ view trung vị theo thang log, chỉ cộng thêm không trừ (15đ). Không có Shorts thì mất " +
   "45đ đó, không có video dài thì mất 20đ đó — không cộng bù qua nhau.";
 
-const CADENCE_HELP =
+const SCORE_HELP_ONE_FEED =
+  "Điểm 0-100: nhịp đăng so với mục tiêu \"đều đặn\" trong Cài đặt (65đ) + độ mới video gần " +
+  "nhất (20đ) + view trung vị theo thang log, chỉ cộng thêm không trừ (15đ). Nền tảng này chỉ " +
+  "có một luồng đăng nên toàn bộ 65đ nhịp đăng dồn vào đó — điểm vẫn so sánh được với YouTube.";
+
+const CADENCE_HELP_TWO_FEEDS =
   "Trung bình ngày/video, tính từ tối đa 12 video mới nhất của tab này (video dài và Shorts tính " +
   "riêng). Lấy ngày đăng thật của video mới nhất và video cũ nhất trong 12 video đó, chia khoảng " +
   "thời gian giữa hai video cho số khoảng cách giữa chúng, ví dụ đủ 12 video thì có 11 khoảng. " +
   "Chỉ phản ánh nhịp đăng gần đây, không tính toàn bộ lịch sử kênh.";
+
+const CADENCE_HELP_ONE_FEED =
+  "Trung bình ngày/video, tính từ tối đa 12 video mới nhất của kênh. Lấy ngày đăng thật của video " +
+  "mới nhất và video cũ nhất trong 12 video đó, chia khoảng thời gian giữa hai video cho số khoảng " +
+  "cách giữa chúng, ví dụ đủ 12 video thì có 11 khoảng. Chỉ phản ánh nhịp đăng gần đây, không tính " +
+  "toàn bộ lịch sử kênh.";
+
+// TikTok's channel candidates cannot become a pipeline: ChannelPipeline
+// only pulls from YouTube and Douyin. The API says so per platform
+// (pipeline_source_type), and the table drops its add buttons accordingly.
+const NO_PIPELINE_HELP =
+  "Lịch đăng chưa hỗ trợ lấy video từ nền tảng này, nên chỉ xem và bỏ qua được. " +
+  "Muốn lấy video thì mở kênh rồi dùng màn hình Tải video.";
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}tr`;
@@ -92,14 +123,20 @@ function dayAfterLocalDate(iso: string): string {
 const WINDOW_MINUTES = 15;
 const WINDOW_DELAY_MINUTES = 3;
 
-// Which tab to pull from is the user's explicit choice now (add button lives
-// in the Shorts/Video cadence column they clicked) — sourceTab null only
-// happens from the Thao tác fallback button, when neither tab had enough
-// data to show a cadence-column add button at all.
-function buildPrefill(r: DiscoveryScanResult, sourceTab: "shorts" | "videos" | null): PipelinePrefill {
+// On YouTube, which tab to pull from is the user's explicit choice (the add
+// button lives in the Shorts/Video cadence column they clicked); sourceTab
+// null means either the Thao tác fallback button, when neither tab had
+// enough data to show a cadence-column add button at all, or a single-feed
+// platform, which has no tab to pick.
+function buildPrefill(
+  r: DiscoveryScanResult,
+  sourceTab: "shorts" | "videos" | null,
+  sourceType: "youtube" | "tiktok" | "douyin",
+): PipelinePrefill {
   const baseUrl = r.channel_url.replace(/\/+$/, "");
   const prefill: PipelinePrefill = {
     channel_url: sourceTab ? `${baseUrl}/${sourceTab}` : baseUrl,
+    source_type: sourceType,
     name: r.channel_title,
     channel_description: r.channel_description ?? undefined,
     fetch_count: 1,
@@ -123,6 +160,7 @@ export default function DiscoveryPage() {
   const qc = useQueryClient();
   const [seed, setSeed] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [platform, setPlatform] = useState<DiscoveryPlatform>("youtube");
   const [market, setMarket] = useState(MARKETS.find((m) => m.gl === "US")!);
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -133,6 +171,12 @@ export default function DiscoveryPage() {
   const [viewingRunId, setViewingRunId] = useState<number | null>(null);
 
   const { data: settings } = useQuery({ queryKey: ["discovery-settings"], queryFn: Discovery.getSettings });
+  const { data: platforms } = useQuery({ queryKey: ["discovery-platforms"], queryFn: Discovery.listPlatforms });
+  const platformInfo = (p: DiscoveryPlatform): DiscoveryPlatformInfo | undefined =>
+    platforms?.find((x) => x.platform === p);
+  // The platform being searched for, and the one the results on screen came
+  // from — they differ the moment the picker is changed without re-scanning.
+  const searchInfo = platformInfo(platform);
   // Purely client-side, cleared on every page load — an earlier version
   // persisted this batch across visits, but on a shared multi-user portal
   // that meant stale keywords from someone else's session sat there
@@ -167,8 +211,13 @@ export default function DiscoveryPage() {
     }
   }, [prevStatus, viewingRunId, qc]);
 
+  // Results, and every action on them, belong to the run being viewed —
+  // not to whatever the picker above is currently set to.
+  const viewingPlatform: DiscoveryPlatform = viewingRun?.platform ?? "youtube";
+  const viewingInfo = platformInfo(viewingPlatform);
+
   const suggestMut = useMutation({
-    mutationFn: (s: string) => Discovery.suggestKeywords(s, market.gl, market.hl),
+    mutationFn: (s: string) => Discovery.suggestKeywords(platform, s, market.gl, market.hl),
     onSuccess: (list) => setSuggestions(list),
     onError: () => toast.error("Không lấy được gợi ý"),
   });
@@ -193,7 +242,7 @@ export default function DiscoveryPage() {
   });
 
   const scanNowMut = useMutation({
-    mutationFn: () => Discovery.scanNow(keywords, market.gl, market.hl),
+    mutationFn: () => Discovery.scanNow(platform, keywords, market.gl, market.hl),
     onSuccess: (res) => {
       setViewingRunId(res.scan_run_id);
       qc.invalidateQueries({ queryKey: ["discovery-scan-runs"] });
@@ -204,7 +253,8 @@ export default function DiscoveryPage() {
   });
 
   const skipMut = useMutation({
-    mutationFn: (r: DiscoveryScanResult) => Discovery.skipChannel(r.channel_id, r.channel_url, r.channel_title),
+    mutationFn: (r: DiscoveryScanResult) =>
+      Discovery.skipChannel(viewingPlatform, r.channel_id, r.channel_url, r.channel_title),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["discovery-scan-results", viewingRunId] });
       toast.success("Đã bỏ qua kênh");
@@ -213,7 +263,7 @@ export default function DiscoveryPage() {
 
   const markAddedMut = useMutation({
     mutationFn: ({ r, pipelineId }: { r: DiscoveryScanResult; pipelineId: number }) =>
-      Discovery.markChannelAdded(r.channel_id, r.channel_url, r.channel_title, pipelineId),
+      Discovery.markChannelAdded(viewingPlatform, r.channel_id, r.channel_url, r.channel_title, pipelineId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["discovery-scan-results", viewingRunId] }),
   });
 
@@ -245,16 +295,23 @@ export default function DiscoveryPage() {
   // (badge instead of action buttons) so revisiting an old scan run doesn't
   // quietly lose the record that this channel was ever found and added,
   // e.g. after its pipeline gets deleted later.
+  const singleFeed = viewingInfo?.single_feed ?? false;
+  const canAddToPipeline = !!viewingInfo?.pipeline_source_type;
+
   const visibleResults = useMemo(() => (results ?? []).filter((r) => r.status !== "skipped"), [results]);
   const sortedResults = useMemo(() => {
+    // The video-dài column is not rendered for a single-feed platform, so a
+    // sort left over from a YouTube run would order every row by null there.
+    const key =
+      singleFeed && sortKey === "cadence_videos_days_per_video" ? "score" : sortKey;
     const rows = [...visibleResults];
     rows.sort((a, b) => {
-      const av = a[sortKey] ?? -Infinity;
-      const bv = b[sortKey] ?? -Infinity;
+      const av = a[key] ?? -Infinity;
+      const bv = b[key] ?? -Infinity;
       return sortDir === "desc" ? bv - av : av - bv;
     });
     return rows;
-  }, [visibleResults, sortKey, sortDir]);
+  }, [visibleResults, sortKey, sortDir, singleFeed]);
 
   function SortHeader({ label, k }: { label: string; k: SortKey }) {
     return (
@@ -276,8 +333,8 @@ export default function DiscoveryPage() {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Tìm kênh</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Quét YouTube theo từ khóa, xếp hạng kênh theo độ đều đặn đăng bài. Chỉ gợi ý —
-          bạn tự quyết định thêm kênh nào vào lịch đăng.
+          Quét YouTube, TikTok hoặc Douyin theo từ khóa, xếp hạng kênh theo độ đều đặn đăng bài.
+          Chỉ gợi ý — bạn tự quyết định thêm kênh nào vào lịch đăng.
         </p>
       </div>
 
@@ -287,19 +344,37 @@ export default function DiscoveryPage() {
             <h3 className="font-medium text-sm">Tìm & quét</h3>
             <div className="flex items-center gap-1.5">
               <select
-                className="input w-56 text-sm"
-                value={market.gl}
-                onChange={(e) => setMarket(MARKETS.find((m) => m.gl === e.target.value) ?? market)}
+                className="input w-36 text-sm"
+                value={platform}
+                onChange={(e) => {
+                  setPlatform(e.target.value as DiscoveryPlatform);
+                  setSuggestions([]);
+                }}
               >
-                {MARKETS.map((m) => (
-                  <option key={m.gl} value={m.gl}>
-                    Thị trường: {m.label}
+                {(platforms ?? []).map((p) => (
+                  <option key={p.platform} value={p.platform}>
+                    {PLATFORM_LABELS[p.platform]}
                   </option>
                 ))}
               </select>
-              <Tooltip content="Chỉ chắc chắn đúng cho phần gợi ý từ khóa. Kết quả tìm kênh có thể không đúng thị trường này.">
-                <HelpCircle size={14} className="text-slate-400 cursor-help" />
-              </Tooltip>
+              {searchInfo?.market_aware && (
+                <>
+                  <select
+                    className="input w-56 text-sm"
+                    value={market.gl}
+                    onChange={(e) => setMarket(MARKETS.find((m) => m.gl === e.target.value) ?? market)}
+                  >
+                    {MARKETS.map((m) => (
+                      <option key={m.gl} value={m.gl}>
+                        Thị trường: {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Tooltip content="Chỉ chắc chắn đúng cho phần gợi ý từ khóa. Kết quả tìm kênh có thể không đúng thị trường này.">
+                    <HelpCircle size={14} className="text-slate-400 cursor-help" />
+                  </Tooltip>
+                </>
+              )}
             </div>
           </div>
 
@@ -309,16 +384,38 @@ export default function DiscoveryPage() {
               placeholder="Từ khóa gốc, vd: nhảy thiếu nhi"
               value={seed}
               onChange={(e) => setSeed(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && seed.trim() && suggestMut.mutate(seed.trim())}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || !seed.trim()) return;
+                addKeyword(seed.trim());
+                setSeed("");
+              }}
             />
             <button
-              className="btn-secondary text-sm"
-              disabled={!seed.trim() || suggestMut.isPending}
-              onClick={() => suggestMut.mutate(seed.trim())}
+              className="btn-secondary text-sm whitespace-nowrap"
+              disabled={!seed.trim() || atCap}
+              title={atCap ? `Tối đa ${DISCOVERY_MAX_KEYWORDS_PER_SCAN} từ khóa/lần quét` : "Thêm thẳng từ khóa này"}
+              onClick={() => {
+                addKeyword(seed.trim());
+                setSeed("");
+              }}
             >
-              Gợi ý
+              Thêm
             </button>
+            {searchInfo?.supports_suggestions && (
+              <button
+                className="btn-secondary text-sm"
+                disabled={!seed.trim() || suggestMut.isPending}
+                onClick={() => suggestMut.mutate(seed.trim())}
+              >
+                {suggestMut.isPending ? "Đang lấy…" : "Gợi ý"}
+              </button>
+            )}
           </div>
+          {searchInfo && !searchInfo.supports_suggestions && (
+            <p className="text-xs text-slate-500">
+              {PLATFORM_LABELS[platform]} không có gợi ý từ khóa — gõ từ khóa rồi bấm "Thêm".
+            </p>
+          )}
 
           {suggestions.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -433,8 +530,9 @@ export default function DiscoveryPage() {
               {viewingRun.status === "running" && (
                 <div className="space-y-1">
                   <div>
-                    Đang quét: {viewingRun.channels_done}/{viewingRun.channels_total} kênh — từ khóa:{" "}
-                    {viewingRun.keywords.join(", ")} — thị trường: {marketLabel(viewingRun.market_gl)}
+                    Đang quét {PLATFORM_LABELS[viewingRun.platform]}: {viewingRun.channels_done}/
+                    {viewingRun.channels_total} kênh — từ khóa: {viewingRun.keywords.join(", ")}
+                    {viewingInfo?.market_aware && <> — thị trường: {marketLabel(viewingRun.market_gl)}</>}
                   </div>
                   {viewingRun.channels_total > 0 && (
                     <div className="h-1.5 bg-blue-100 rounded overflow-hidden">
@@ -448,12 +546,19 @@ export default function DiscoveryPage() {
               )}
               {viewingRun.status === "done" && (
                 <>
-                  Tìm được {viewingRun.candidates_found} ứng viên — từ khóa: {viewingRun.keywords.join(", ")} —
-                  thị trường: {marketLabel(viewingRun.market_gl)}
+                  Tìm được {viewingRun.candidates_found} ứng viên trên {PLATFORM_LABELS[viewingRun.platform]} —
+                  từ khóa: {viewingRun.keywords.join(", ")}
+                  {viewingInfo?.market_aware && <> — thị trường: {marketLabel(viewingRun.market_gl)}</>}
                 </>
               )}
               {viewingRun.status === "error" && <>Lỗi: {viewingRun.error_text}</>}
             </div>
+          )}
+
+          {viewingRun && viewingInfo && !canAddToPipeline && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              {NO_PIPELINE_HELP}
+            </p>
           )}
 
           {resultsLoading && <p className="text-sm text-slate-500">Đang tải…</p>}
@@ -472,31 +577,41 @@ export default function DiscoveryPage() {
                     <th className="text-left p-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1">
                         <SortHeader label="Điểm" k="score" />
-                        <Tooltip content={SCORE_HELP} side="bottom">
+                        <Tooltip content={singleFeed ? SCORE_HELP_ONE_FEED : SCORE_HELP_TWO_FEEDS} side="bottom">
                           <HelpCircle size={12} className="text-slate-400 cursor-help" />
                         </Tooltip>
                       </span>
                     </th>
-                    <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Sub" k="subscriber_count" /></th>
+                    <th className="text-left p-2 whitespace-nowrap">
+                      <SortHeader label={singleFeed ? "Follower" : "Sub"} k="subscriber_count" />
+                    </th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="View" k="median_view_count" /></th>
                     <th className="text-left p-2 whitespace-nowrap"><SortHeader label="Last" k="days_since_last_video" /></th>
                     <th className="text-left p-2 whitespace-nowrap">Giờ đăng</th>
                     <th className="text-left p-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1">
-                        <SortHeader label="Shorts" k="cadence_shorts_days_per_video" />
-                        <Tooltip content={CADENCE_HELP} side="bottom">
+                        <SortHeader
+                          label={singleFeed ? "Nhịp đăng" : "Shorts"}
+                          k="cadence_shorts_days_per_video"
+                        />
+                        <Tooltip
+                          content={singleFeed ? CADENCE_HELP_ONE_FEED : CADENCE_HELP_TWO_FEEDS}
+                          side="bottom"
+                        >
                           <HelpCircle size={12} className="text-slate-400 cursor-help" />
                         </Tooltip>
                       </span>
                     </th>
-                    <th className="text-left p-2 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        <SortHeader label="Video" k="cadence_videos_days_per_video" />
-                        <Tooltip content={CADENCE_HELP} side="bottom">
-                          <HelpCircle size={12} className="text-slate-400 cursor-help" />
-                        </Tooltip>
-                      </span>
-                    </th>
+                    {!singleFeed && (
+                      <th className="text-left p-2 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          <SortHeader label="Video" k="cadence_videos_days_per_video" />
+                          <Tooltip content={CADENCE_HELP_TWO_FEEDS} side="bottom">
+                            <HelpCircle size={12} className="text-slate-400 cursor-help" />
+                          </Tooltip>
+                        </span>
+                      </th>
+                    )}
                     <th className="text-left p-2 whitespace-nowrap">Từ khóa</th>
                     <th className="text-right p-2 whitespace-nowrap">Thao tác</th>
                   </tr>
@@ -527,11 +642,11 @@ export default function DiscoveryPage() {
                       <td className="p-2 text-slate-600 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <span>{formatCadence(r.cadence_shorts_days_per_video)}</span>
-                          {r.status !== "added" && r.cadence_shorts_days_per_video != null && (
-                            <Tooltip content="Thêm vào lịch — nguồn: Shorts">
+                          {canAddToPipeline && r.status !== "added" && r.cadence_shorts_days_per_video != null && (
+                            <Tooltip content={singleFeed ? "Thêm vào lịch" : "Thêm vào lịch — nguồn: Shorts"}>
                               <button
                                 className="text-brand-500 hover:text-brand-700"
-                                onClick={() => setAddTarget({ result: r, sourceTab: "shorts" })}
+                                onClick={() => setAddTarget({ result: r, sourceTab: singleFeed ? null : "shorts" })}
                               >
                                 <CalendarPlus size={13} />
                               </button>
@@ -539,21 +654,23 @@ export default function DiscoveryPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-2 text-slate-600 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span>{formatCadence(r.cadence_videos_days_per_video)}</span>
-                          {r.status !== "added" && r.cadence_videos_days_per_video != null && (
-                            <Tooltip content="Thêm vào lịch — nguồn: video dài">
-                              <button
-                                className="text-brand-500 hover:text-brand-700"
-                                onClick={() => setAddTarget({ result: r, sourceTab: "videos" })}
-                              >
-                                <CalendarPlus size={13} />
-                              </button>
-                            </Tooltip>
-                          )}
-                        </div>
-                      </td>
+                      {!singleFeed && (
+                        <td className="p-2 text-slate-600 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span>{formatCadence(r.cadence_videos_days_per_video)}</span>
+                            {canAddToPipeline && r.status !== "added" && r.cadence_videos_days_per_video != null && (
+                              <Tooltip content="Thêm vào lịch — nguồn: video dài">
+                                <button
+                                  className="text-brand-500 hover:text-brand-700"
+                                  onClick={() => setAddTarget({ result: r, sourceTab: "videos" })}
+                                >
+                                  <CalendarPlus size={13} />
+                                </button>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </td>
+                      )}
                       <td className="p-2 text-slate-500 max-w-[120px]">
                         <Tooltip content={r.found_via_keyword} className="block truncate">
                           {r.found_via_keyword}
@@ -568,16 +685,18 @@ export default function DiscoveryPage() {
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-2">
-                            {r.cadence_shorts_days_per_video == null && r.cadence_videos_days_per_video == null && (
-                              <Tooltip content="Chưa rõ nhịp đăng ở tab nào — nhớ kiểm tra lại URL kênh trong form">
-                                <button
-                                  className="btn-primary p-1.5"
-                                  onClick={() => setAddTarget({ result: r, sourceTab: null })}
-                                >
-                                  <CalendarPlus size={14} />
-                                </button>
-                              </Tooltip>
-                            )}
+                            {canAddToPipeline &&
+                              r.cadence_shorts_days_per_video == null &&
+                              r.cadence_videos_days_per_video == null && (
+                                <Tooltip content="Chưa rõ nhịp đăng ở tab nào — nhớ kiểm tra lại URL kênh trong form">
+                                  <button
+                                    className="btn-primary p-1.5"
+                                    onClick={() => setAddTarget({ result: r, sourceTab: null })}
+                                  >
+                                    <CalendarPlus size={14} />
+                                  </button>
+                                </Tooltip>
+                              )}
                             <button
                               className="btn-secondary px-2 py-1 text-xs whitespace-nowrap"
                               disabled={skipMut.isPending}
@@ -611,7 +730,8 @@ export default function DiscoveryPage() {
                   <div className="font-medium truncate">{run.keywords.join(", ")}</div>
                   <div className="text-slate-500 flex items-center justify-between mt-0.5">
                     <span>
-                      {formatRelative(run.started_at)} · {marketLabel(run.market_gl)}
+                      {formatRelative(run.started_at)} · {PLATFORM_LABELS[run.platform]}
+                      {platformInfo(run.platform)?.market_aware && <> · {marketLabel(run.market_gl)}</>}
                     </span>
                     <span>
                       {run.status === "running"
@@ -639,7 +759,11 @@ export default function DiscoveryPage() {
       <PipelineFormModal
         open={!!addTarget}
         pipeline={null}
-        prefill={addTarget ? buildPrefill(addTarget.result, addTarget.sourceTab) : undefined}
+        prefill={
+          addTarget && viewingInfo?.pipeline_source_type
+            ? buildPrefill(addTarget.result, addTarget.sourceTab, viewingInfo.pipeline_source_type)
+            : undefined
+        }
         onClose={() => setAddTarget(null)}
         onCreated={(created: Pipeline) => {
           if (addTarget) markAddedMut.mutate({ r: addTarget.result, pipelineId: created.id });

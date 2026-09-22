@@ -69,6 +69,8 @@ api (FastAPI, container :8000, host 127.0.0.1:2706)
   │                      douyin_cookies, downloads)
   └─ api/services/       tiktok_adapter, youtube_channel, douyin_channel, caption, llm, llm_rewrite,
                          manual_download, account_fields, caption_prompt, secrets, telegram, ...
+       └─ discovery_sources/  one module per keyword-search platform (youtube, tiktok, douyin);
+                              base.py holds the interface + scoring, channel_discovery.py drives them
 scheduler (Python worker)
   └─ polls DB every 30s → pipeline_worker.py: claim lock → yt-dlp/douyin-downloader → tiktok_adapter → VideoUpload
 ```
@@ -144,6 +146,54 @@ To sync only the signing JS (safe): `bash scripts/update-tiktok-signature.sh`.
   summing the returned rows — those are capped.
 - `pipeline_seen_videos` rows have no age cutoff — they are the only dedupe key for account-less
   pipelines and are deleted only with their pipeline.
+- Channel discovery searches YouTube, TikTok and Douyin. What differs per platform lives in
+  `api/services/discovery_sources/` behind the interface `base.py` documents; `GET
+  /api/discovery/platforms` publishes those differences so the webapp never restates them.
+  A `DiscoveryScanRun` is keyed by platform + keyword set, so the same keywords on two
+  platforms are two history entries.
+- TikTok has no usable search API: `/api/search/general/full/` answers 200 with an empty body
+  unless the caller is a browser that first loaded the home page, and yt-dlp has no TikTok
+  search extractor. `discovery_sources/tiktok_search.js` drives headless Chromium through
+  that flow. It resolves `playwright-chromium` from `tiktok_uploader/tiktok-signature/node_modules`
+  via `NODE_PATH` — the only copy in the image — so it needs no dependency of its own.
+- `curl-cffi` must stay in `requirements.txt`. yt-dlp's TikTok extractor asks to impersonate a
+  browser TLS fingerprint; without it yt-dlp warns "attempting impersonation, but no impersonate
+  target is available" and falls back to plain TLS, which TikTok answers with a profile page
+  stripped of the data. The symptom is `Unable to extract secondary user ID` on every TikTok
+  channel, which reads like a yt-dlp bug rather than a missing dependency.
+- TikTok creator feeds are listed by `tiktokuser:<secUid>`, not by the profile URL. Both reach the
+  same endpoint, but the URL form scrapes the profile page first to recover the secUid, and that
+  page does not always carry it. The search response already returns `author.secUid`, so
+  `tiktok_search.js` passes it through as `ChannelRef.feed_key` and the profile URL is only the
+  fallback.
+- TikTok throttles its feed endpoint by answering with an **empty listing**, not an error, so
+  `discovery_sources/tiktok.py` retries an empty result with a doubling backoff before writing
+  the candidate off. Measured without it: a scan of 12 channels found 0 candidates, every feed
+  returning empty in ~0.7s; with it, 12/12. A single empty answer is indistinguishable from a
+  dead account.
+- `ChannelPipeline.source_type` is `youtube`, `tiktok` or `douyin`. YouTube and TikTok share
+  one tick: both pull through yt-dlp, so `api/services/pipeline_sources.py` picks the module
+  and `scheduler/pipeline_worker.py` runs the same code for either. Douyin keeps its own path
+  (`_run_douyin_pipeline`) because it downloads through a vendor subprocess, needs a cookie and
+  yields a different record shape. Adding a fourth yt-dlp-based platform means a module in
+  `pipeline_sources.SOURCES`, not another copy of the tick.
+- The yt-dlp calls a source makes live in `api/services/ytdlp_source.py`, which knows no
+  platform. `youtube_channel.py` and `tiktok_channel.py` add only what is really per-platform:
+  which hosts the URL may use, how a bare video id becomes a URL, and whether there are
+  subtitles to read. Tests patch `api.services.ytdlp_source.yt_dlp`, not the wrapper.
+- A TikTok pipeline needs no cookie — a creator feed is readable without login, unlike Douyin.
+  `PipelineCreate` rejects `douyin_cookie_id` on any non-Douyin source.
+- `sync_from_date` is applied differently per source: YouTube hands it to yt-dlp as `dateafter`,
+  TikTok filters on the `timestamp` its flat entries already carry. Do not assume `dateafter`
+  is honoured by the TikTok extractor.
+- Douyin discovery needs a Douyin cookie and uses the most recently updated
+  `douyin_cookies` row. It reaches the vendor API client through `discovery_sources/
+  douyin_bridge.py` in a subprocess, for the same reason `douyin_channel.py` shells out: the
+  vendor imports its own top-level `core.*` modules and its deps (`aiofiles`, ...) are
+  installed from `vendor/douyin-downloader/requirements.txt` in the image, not in a host venv.
+- Scoring is one 100-point budget: recency 20, cadence 65, median view 15. YouTube splits the
+  cadence 45 (Shorts) / 20 (video dài); a single-feed platform gives all 65 to its one feed, so
+  scores stay comparable instead of being capped at 80.
 - `fake-useragent` must stay pinned in `requirements.txt` to prevent bug #2 regression.
 
 ---

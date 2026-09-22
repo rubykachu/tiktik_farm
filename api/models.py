@@ -68,7 +68,10 @@ class ChannelPipeline(SQLModel, table=True):
     """Recurring channel → TikTok auto-upload pipeline.
 
     Worker polls this table for active rows whose next_fire_at is due.
-    source_type is 'youtube' or 'douyin'.
+    source_type is 'youtube', 'tiktok' or 'douyin'. YouTube and TikTok share
+    one tick — see api.services.pipeline_sources — while Douyin has its own
+    path in scheduler.pipeline_worker because it downloads through a vendor
+    subprocess and needs a cookie.
     """
     __tablename__ = "channel_pipelines"
 
@@ -76,7 +79,7 @@ class ChannelPipeline(SQLModel, table=True):
     name: str = Field(max_length=128)
     channel_url: str
     fetch_count: int  # top-N video per tick, 1..20 enforced at API layer.
-    source_type: str = Field(default="youtube", max_length=16)  # "youtube" | "douyin"
+    source_type: str = Field(default="youtube", max_length=16)  # "youtube" | "tiktok" | "douyin"
     douyin_cookie_id: Optional[int] = Field(default=None)  # no FK — app layer handles missing
 
     interval_value: int  # ≥1 (≥2 when unit=minutes), enforced at API layer.
@@ -270,12 +273,12 @@ class AppSetting(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=now_utc)
 
 
-# ---------- channel discovery (Phase 5) -------------------------------------
+# ---------- channel discovery -----------------------------------------------
 
 
 class DiscoveryCandidate(SQLModel, table=True):
     """Global, channel_id-keyed action state — shared across every scan,
-    regardless of which keyword search found the channel. A channel already
+    regardless of which platform or keyword search found the channel. A channel already
     'skipped' or 'added' here is excluded from all future scans (skipped
     entirely, not just hidden) so re-running a similar keyword never spends
     a request re-evaluating a channel the user already decided on.
@@ -286,7 +289,10 @@ class DiscoveryCandidate(SQLModel, table=True):
     __tablename__ = "discovery_candidates"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Unique across platforms: a YouTube channel id, a TikTok author id and
+    # a Douyin sec_uid never look alike, so one namespace is enough.
     channel_id: str = Field(unique=True, index=True, max_length=64)
+    platform: str = Field(default="youtube", max_length=16)  # "youtube" | "tiktok" | "douyin"
     channel_url: str
     channel_title: str = Field(max_length=256)
     # 'added' | 'skipped' — a row only exists once the user acts; 'new'
@@ -298,9 +304,10 @@ class DiscoveryCandidate(SQLModel, table=True):
 
 
 class DiscoveryScanRun(SQLModel, table=True):
-    """One search: a set of keywords + market, scanned together. Keyed by
-    `keywords_key` (the keyword set, order/case-insensitive) so re-running
-    the same set overwrites this same row and its DiscoveryScanResult
+    """One search: a platform + a set of keywords + market, scanned
+    together. Keyed by `keywords_key` (the platform and the keyword set,
+    order/case-insensitive) so re-running the same set on the same platform
+    overwrites this same row and its DiscoveryScanResult
     children instead of piling up duplicate history entries — see
     api.services.channel_discovery.run_scan. This row IS the history entry;
     the webapp's history list is just these rows ordered by recency.
@@ -310,6 +317,7 @@ class DiscoveryScanRun(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     keywords_key: str = Field(unique=True, index=True, max_length=1200)
     keywords_json: str = Field(default="[]")
+    platform: str = Field(default="youtube", max_length=16)  # "youtube" | "tiktok" | "douyin"
     market_gl: str = Field(max_length=8)
     market_hl: str = Field(max_length=8)
 

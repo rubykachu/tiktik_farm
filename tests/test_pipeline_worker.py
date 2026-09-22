@@ -197,8 +197,8 @@ class TestClaimDuePipeline:
 
 
 class TestRunPipeline:
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_happy_path_2_videos_1_account(self, mock_upload, mock_download, mock_list):
         mock_list.return_value = [
@@ -224,8 +224,8 @@ class TestRunPipeline:
             assert len(uploads) == 2
             assert all(u.status == "succeeded" for u in uploads)
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_dedupe_skips_succeeded(self, mock_upload, mock_download, mock_list):
         mock_list.return_value = [
@@ -262,8 +262,8 @@ class TestRunPipeline:
         assert run.skipped_dup_count == 1
         mock_upload.assert_not_called()
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_exhausted_after_3_fails(self, mock_upload, mock_download, mock_list):
         mock_list.return_value = [
@@ -296,8 +296,8 @@ class TestRunPipeline:
         assert run.uploaded_count == 0
         mock_upload.assert_not_called()
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_upload_failure_records_failed_row(self, mock_upload, mock_download, mock_list):
         mock_list.return_value = [
@@ -319,7 +319,7 @@ class TestRunPipeline:
             assert len(uploads) == 1
             assert uploads[0].status == "failed"
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.list_top_n")
     def test_list_failure_records_error(self, mock_list):
         mock_list.side_effect = Exception("network error")
 
@@ -333,8 +333,8 @@ class TestRunPipeline:
         assert run.error_text is not None
         assert "list_top_n failed" in run.error_text
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_2_accounts_2_videos(self, mock_upload, mock_download, mock_list):
         mock_list.return_value = [
@@ -356,8 +356,8 @@ class TestRunPipeline:
         assert run.uploaded_count == 4  # 2 videos * 2 accounts
 
     @patch("scheduler.pipeline_worker.time.sleep")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_upload_delay_sleeps_between_uploads(
         self, mock_upload, mock_download, mock_list, mock_sleep
@@ -381,8 +381,8 @@ class TestRunPipeline:
         mock_sleep.assert_called_once_with(120)
 
     @patch("scheduler.pipeline_worker.time.sleep")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_upload_delay_zero_no_sleep(self, mock_upload, mock_download, mock_list, mock_sleep):
         mock_list.return_value = [
@@ -400,8 +400,8 @@ class TestRunPipeline:
         run_pipeline(pipeline, "scheduled")
         mock_sleep.assert_not_called()
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_sync_from_date_forwarded_to_list_top_n(self, mock_upload, mock_download, mock_list):
         cutoff = date(2025, 1, 15)
@@ -418,7 +418,7 @@ class TestRunPipeline:
         _, kwargs = mock_list.call_args
         assert kwargs.get("sync_from_date") == cutoff
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.list_top_n")
     def test_summary_text_includes_cutoff_prefix(self, mock_list):
         cutoff = date(2025, 3, 20)
         mock_list.return_value = []
@@ -432,7 +432,7 @@ class TestRunPipeline:
 
         assert run.summary_text.startswith("Cutoff: 2025-03-20")
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.list_top_n")
     def test_summary_text_no_cutoff_prefix_when_none(self, mock_list):
         mock_list.return_value = []
 
@@ -1357,8 +1357,8 @@ class TestCheckDiskSpace:
 
 class TestYoutubeMkdtempDir:
     @patch("scheduler.pipeline_worker._check_disk_space", return_value=True)
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.tempfile.mkdtemp")
     def test_mkdtemp_passes_pipeline_tmp_dir(
@@ -1382,8 +1382,8 @@ class TestYoutubeMkdtempDir:
         mock_mkdtemp.assert_called_once_with(prefix="pipeline_dl_", dir="/data/pipeline_tmp")
 
     @patch("scheduler.pipeline_worker._check_disk_space", return_value=True)
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     @patch("scheduler.pipeline_worker.tempfile.mkdtemp")
     def test_mkdtemp_uses_none_dir_when_env_unset(

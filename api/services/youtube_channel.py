@@ -1,27 +1,29 @@
-"""YouTube channel listing and video download via yt-dlp Python API.
+"""YouTube channel listing and video download.
 
-Does NOT use subprocess. All interaction is through yt_dlp.YoutubeDL.
+The yt-dlp calls themselves live in api.services.ytdlp_source, which knows
+nothing about YouTube; this module adds what is actually YouTube-specific —
+refusing a non-YouTube URL, rebuilding a watch URL from a bare video id, and
+reading subtitles, which only YouTube's extractor populates.
+
+VideoTooLong and DownloadError are re-exported so callers that catch them
+keep working against this module.
 """
 from __future__ import annotations
 
-import os
 from datetime import date
 from typing import Optional
 
-import yt_dlp
-
 from api.services.transcript import fetch_transcript
-from api.services.ytdlp_opts import extractor_args
-
+from api.services.ytdlp_source import DownloadError, VideoTooLong, download_video, extract_info, list_entries
 from api.services.youtube_validate import is_youtube_url
 
-
-class VideoTooLong(Exception):
-    """Raised when a video exceeds the maximum duration filter."""
+__all__ = ["DownloadError", "VideoTooLong", "download", "get_video_info", "list_top_n", "video_url"]
 
 
-class DownloadError(Exception):
-    """Raised when yt-dlp fails to download a video."""
+def video_url(video_id: str) -> str:
+    """Watch URL for a bare video id — the fallback when a flat listing entry
+    carries no URL of its own."""
+    return f"https://www.youtube.com/watch?v={video_id}"
 
 
 def list_top_n(channel_url: str, n: int = 5, sync_from_date: Optional[date] = None) -> list[dict]:
@@ -33,60 +35,41 @@ def list_top_n(channel_url: str, n: int = 5, sync_from_date: Optional[date] = No
     if not is_youtube_url(channel_url):
         raise ValueError(f"Not a valid YouTube URL: {channel_url}")
 
-    opts = {
-        "extract_flat": "in_playlist",
-        "playlistend": n,
-        "quiet": True,
-        "no_warnings": True,
-        "ignoreerrors": True,
-        **extractor_args(),
-    }
-    if sync_from_date is not None:
-        opts["dateafter"] = sync_from_date.strftime("%Y%m%d")
+    entries = list_entries(
+        channel_url,
+        n,
+        dateafter=sync_from_date.strftime("%Y%m%d") if sync_from_date is not None else None,
+    )
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(channel_url, download=False)
-
-    if info is None:
-        return []
-
-    entries = info.get("entries") or []
     results = []
     for entry in entries:
-        if entry is None:
-            continue
         video_id = entry.get("id", "")
-        title = entry.get("title", "")
-        url = entry.get("url") or entry.get("webpage_url") or f"https://www.youtube.com/watch?v={video_id}"
-        results.append({"id": video_id, "title": title, "url": url})
+        results.append({
+            "id": video_id,
+            "title": entry.get("title", ""),
+            "url": entry.get("url") or entry.get("webpage_url") or video_url(video_id),
+        })
         if len(results) >= n:
             break
 
     return results
 
 
-def get_video_info(video_url: str) -> dict:
+def get_video_info(video_url_: str) -> dict:
     """Fetch title and description without downloading. Returns {title, description}."""
-    if not is_youtube_url(video_url):
-        raise ValueError(f"Not a valid YouTube URL: {video_url}")
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        **extractor_args(),
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(video_url, download=False)
+    if not is_youtube_url(video_url_):
+        raise ValueError(f"Not a valid YouTube URL: {video_url_}")
+    info = extract_info(video_url_)
     if not info:
-        raise ValueError("Could not fetch video info")
+        return {"title": "", "description": ""}
     return {
-        "title": info.get("title", ""),
-        "description": info.get("description", ""),
+        "title": str(info.get("title") or ""),
+        "description": str(info.get("description") or ""),
     }
 
 
 def download(
-    video_url: str,
+    video_url_: str,
     output_dir: str,
     max_duration_seconds: Optional[int] = None,
 ) -> tuple[str, str, str]:
@@ -100,71 +83,14 @@ def download(
 
     If max_duration_seconds is set:
     - Videos longer than 3x max_duration_seconds are skipped (VideoTooLong).
-    - Downloaded content is trimmed to 0..max_duration_seconds via --download-sections.
+    - Downloaded content is trimmed to 0..max_duration_seconds.
 
     Raises:
         VideoTooLong: if video duration exceeds 3 * max_duration_seconds.
         DownloadError: if yt-dlp fails for any other reason.
     """
-    if not is_youtube_url(video_url):
-        raise ValueError(f"Not a valid YouTube URL: {video_url}")
+    if not is_youtube_url(video_url_):
+        raise ValueError(f"Not a valid YouTube URL: {video_url_}")
 
-    os.makedirs(output_dir, exist_ok=True)
-    outtmpl = os.path.join(output_dir, "%(id)s.%(ext)s")
-
-    opts: dict = {
-        "outtmpl": outtmpl,
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-        "merge_output_format": "mp4",
-        "max_filesize": 500 * 1024 * 1024,
-        "quiet": True,
-        "no_warnings": True,
-        "overwrites": True,
-        **extractor_args(),
-    }
-
-    if max_duration_seconds is not None:
-        limit = 3 * max_duration_seconds
-        opts["match_filter"] = yt_dlp.utils.match_filter_func(f"duration <= {limit}")
-        opts["download_ranges"] = yt_dlp.utils.download_range_func(
-            None, [(0, max_duration_seconds)]
-        )
-        opts["force_keyframes_at_cuts"] = True
-
-    downloaded_files: list[str] = []
-
-    class _PP(yt_dlp.postprocessor.PostProcessor):
-        def run(self, info):
-            path = info.get("filepath") or info.get("filename", "")
-            if path:
-                downloaded_files.append(path)
-            return [], info
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.add_post_processor(_PP(), when="after_move")
-        try:
-            result = ydl.extract_info(video_url, download=True)
-        except yt_dlp.utils.DownloadError as e:
-            err_msg = str(e)
-            if "match_filter" in err_msg or "Skipping" in err_msg:
-                raise VideoTooLong(
-                    f"Video duration exceeds {3 * max_duration_seconds}s limit"
-                ) from e
-            raise DownloadError(err_msg) from e
-
-    if result is None:
-        raise DownloadError("yt-dlp returned no info (video unavailable?)")
-
-    description = str(result.get("description") or "")
-    transcript = fetch_transcript(result)
-
-    if downloaded_files:
-        return downloaded_files[-1], description, transcript
-
-    video_id = result.get("id", "unknown")
-    for ext in ("mp4", "webm", "mkv"):
-        candidate = os.path.join(output_dir, f"{video_id}.{ext}")
-        if os.path.exists(candidate):
-            return candidate, description, transcript
-
-    raise DownloadError(f"Download completed but output file not found for {video_url}")
+    file_path, info = download_video(video_url_, output_dir, max_duration_seconds)
+    return file_path, str(info.get("description") or ""), fetch_transcript(info)
