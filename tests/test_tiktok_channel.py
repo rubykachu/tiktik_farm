@@ -178,3 +178,23 @@ class TestImpersonation:
         with patch("api.services.youtube_channel.list_entries", return_value=[]) as mocked:
             youtube_channel.list_top_n("https://www.youtube.com/@c/videos", 5)
         assert "impersonate" not in mocked.call_args.kwargs
+
+
+class TestSocketTimeout:
+    """yt-dlp waits on a socket forever by default, and a listing that never
+    answers hangs whatever is driving it — a scan froze partway through with
+    its progress stuck and its run never finalising."""
+
+    def test_listing_sets_a_socket_timeout(self):
+        mock, _ = _ydl(entries=[])
+        with patch("api.services.ytdlp_source.yt_dlp.YoutubeDL", mock):
+            list_top_n(PROFILE, 5)
+        assert mock.call_args.args[0]["socket_timeout"] > 0
+
+    def test_discovery_listing_sets_a_socket_timeout(self):
+        from api.services.discovery_sources import tiktok as disc
+
+        mock, _ = _ydl(entries=[])
+        with patch("api.services.discovery_sources.tiktok.yt_dlp.YoutubeDL", mock):
+            disc._flat_extract("https://www.tiktok.com/@c")
+        assert mock.call_args.args[0]["socket_timeout"] > 0

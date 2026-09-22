@@ -35,6 +35,14 @@ const UA =
 const WARMUP_MS = 5000;
 const RESPONSE_TIMEOUT_MS = 30000;
 const NAV_TIMEOUT_MS = 60000;
+// TikTok sometimes answers a search navigation with a page that never fires
+// the search request at all — no error, nothing to catch, just a keyword that
+// looks like it found nobody. Observed mid-recording: one attempt failed and
+// took the whole scan down with it. Each retry goes back through the home page
+// first, because that is what re-mints the tokens the search call is signed
+// with; retrying the search URL alone repeats the same refusal.
+const SEARCH_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = 4000;
 
 function readStdin() {
   return new Promise((resolve, reject) => {
@@ -53,7 +61,7 @@ function searchUrl(keyword, language) {
 
 /** Navigate to a search page and return the JSON bodies of the API calls the
  *  page made, keyed by the endpoint fragment asked for. */
-async function collect(page, keyword, language, fragments) {
+async function collectOnce(page, keyword, language, fragments) {
   const waits = fragments.map((f) =>
     page
       .waitForResponse((r) => r.url().includes(f) && r.status() === 200, {
@@ -67,6 +75,28 @@ async function collect(page, keyword, language, fragments) {
     timeout: NAV_TIMEOUT_MS,
   });
   return Promise.all(waits);
+}
+
+/** Navigate to a search page and return the JSON bodies of the API calls the
+ *  page made, keyed by the endpoint fragment asked for. Retries through the
+ *  home page while the first fragment — the one the caller actually needs —
+ *  comes back empty. */
+async function collect(page, keyword, language, fragments) {
+  let bodies = [];
+  for (let attempt = 0; attempt < SEARCH_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await page.waitForTimeout(RETRY_BACKOFF_MS * attempt);
+      await warmUp(page);
+    }
+    bodies = await collectOnce(page, keyword, language, fragments);
+    if (bodies[0]) return bodies;
+  }
+  return bodies;
+}
+
+async function warmUp(page) {
+  await page.goto(HOME, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+  await page.waitForTimeout(WARMUP_MS);
 }
 
 function creatorsFrom(payload) {
@@ -114,8 +144,7 @@ async function main() {
       locale: `${language}-US`,
     });
     const page = await context.newPage();
-    await page.goto(HOME, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
-    await page.waitForTimeout(WARMUP_MS);
+    await warmUp(page);
 
     if (request.mode === "suggest") {
       const [preview, guide] = await collect(page, request.seed || "", language, [

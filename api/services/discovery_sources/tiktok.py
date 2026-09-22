@@ -39,7 +39,7 @@ import yt_dlp
 
 from api.services import discovery_settings as settings
 from api.services.discovery_sources.base import ChannelData, ChannelRef, feed_stats
-from api.services.ytdlp_source import impersonating_opts
+from api.services.ytdlp_source import SOCKET_TIMEOUT_SECONDS, impersonating_opts
 
 log = logging.getLogger("api.services.discovery_sources.tiktok")
 
@@ -64,9 +64,10 @@ _BRIDGE = os.path.join(os.path.dirname(__file__), "tiktok_search.js")
 _NODE_MODULES = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "tiktok_uploader", "tiktok-signature", "node_modules"
 )
-# A browser run covers a warm-up plus one navigation per keyword; five
-# keywords (the per-scan cap) measured well inside this.
-_BRIDGE_TIMEOUT = 300
+# A browser run covers a warm-up plus up to three navigations per keyword
+# (tiktok_search.js retries a search TikTok did not answer). Five keywords,
+# the per-scan cap, all retrying still fits inside this.
+_BRIDGE_TIMEOUT = 600
 
 
 class TikTokSearchError(Exception):
@@ -159,6 +160,7 @@ def _flat_extract(url: str) -> Optional[dict]:
         "quiet": True,
         "no_warnings": True,
         "ignoreerrors": True,
+        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
         **impersonating_opts(),
     }
     try:

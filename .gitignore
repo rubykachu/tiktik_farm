@@ -174,3 +174,6 @@ backups/
 
 # Per-machine notes for Claude Code (git identity, local quirks) — never committed.
 CLAUDE.local.md
+
+# Recording evidence (video + screenshots) for a backlog item — regenerate, never commit.
+backlogs/**/evidence/

@@ -15,6 +15,21 @@ import { Settings } from "../api/settings";
 import Tooltip from "./Tooltip";
 import { useTelegramChatName } from "../hooks/useTelegramChatName";
 
+// Keyed by source_type so a new source cannot ship with another platform's
+// wording on the field — the TikTok source first shipped showing
+// "URL kênh YouTube".
+const SOURCE_LABELS: Record<"youtube" | "tiktok" | "douyin", string> = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  douyin: "Douyin",
+};
+
+const SOURCE_URL_PLACEHOLDERS: Record<"youtube" | "tiktok" | "douyin", string> = {
+  youtube: "https://youtube.com/@channel/videos",
+  tiktok: "https://www.tiktok.com/@creator",
+  douyin: "https://www.douyin.com/user/MS4wLjAB...",
+};
+
 const baseSchema = z.object({
   name: z.string().min(1, "Bắt buộc nhập").max(128),
   source_type: z.enum(["youtube", "tiktok", "douyin"]).default("youtube"),
@@ -825,17 +840,11 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                 </div>
               )}
               <div className="flex-[2]">
-                <label className="label-required">
-                  {sourceType === "douyin" ? "URL kênh Douyin" : "URL kênh YouTube"}
-                </label>
+                <label className="label-required">URL kênh {SOURCE_LABELS[sourceType]}</label>
                 <input
                   className="input"
                   {...register("channel_url")}
-                  placeholder={
-                    sourceType === "douyin"
-                      ? "https://www.douyin.com/user/MS4wLjAB..."
-                      : "https://youtube.com/@channel/videos"
-                  }
+                  placeholder={SOURCE_URL_PLACEHOLDERS[sourceType]}
                 />
               </div>
             </div>

@@ -23,6 +23,12 @@ from api.services.ytdlp_opts import extractor_args
 log = logging.getLogger(__name__)
 
 MAX_FILESIZE_BYTES = 500 * 1024 * 1024
+# yt-dlp waits on a socket forever by default. A listing that never answers
+# then hangs the whole caller: a discovery scan froze at 11 of 13 channels for
+# over eight minutes, its progress stuck and its run never finalising, because
+# one channel's request never came back. A listing is a handful of small
+# requests, so a minute is already generous.
+SOCKET_TIMEOUT_SECONDS = 60
 # A video longer than this multiple of the pipeline's max_duration_seconds is
 # skipped outright rather than trimmed: trimming an hour-long upload down to a
 # minute produces something unrelated to what the channel actually posted.
@@ -87,6 +93,7 @@ def list_entries(
         "quiet": True,
         "no_warnings": True,
         "ignoreerrors": True,
+        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
         **extractor_args(),
         **(impersonating_opts() if impersonate else {}),
     }
@@ -107,6 +114,7 @@ def extract_info(video_url: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "socket_timeout": SOCKET_TIMEOUT_SECONDS,
         **extractor_args(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:

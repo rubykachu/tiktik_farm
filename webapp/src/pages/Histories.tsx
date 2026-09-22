@@ -187,7 +187,9 @@ export default function HistoriesPage() {
             <tr>
               <th className="text-left p-3">Thời gian</th>
               <th className="text-left p-3">Tài khoản</th>
-              <th className="text-left p-3">YouTube</th>
+              {/* Any source: the column holds a YouTube, TikTok or Douyin link
+                  depending on the pipeline the row came from. */}
+              <th className="text-left p-3">Video gốc</th>
               <th className="text-left p-3">TikTok</th>
               <th className="text-left p-3">Caption</th>
               <th className="text-left p-3">Trạng thái</th>
