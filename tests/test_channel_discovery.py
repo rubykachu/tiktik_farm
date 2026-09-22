@@ -1,9 +1,10 @@
-"""Tests for api.services.channel_discovery.
+"""Tests for api.services.channel_discovery and its YouTube source.
 
-yt-dlp/HTTP calls are mocked at the module's own wrapper functions
-(_flat_extract, _full_extract, _http_get_text) — these tests never touch
-the network. DB-backed tests use the same override_engine fixture pattern
-as tests/test_discovery_settings.py.
+yt-dlp/HTTP calls are mocked at the source module's own wrapper functions
+(youtube._flat_extract, _full_extract, _http_get_text) — these tests never
+touch the network. DB-backed tests use the same override_engine fixture
+pattern as tests/test_discovery_settings.py. The TikTok and Douyin sources
+have their own file, tests/test_discovery_sources.py.
 """
 from __future__ import annotations
 
@@ -17,6 +18,8 @@ from api.db_migrations import seed_app_settings
 from api.models import ChannelPipeline, DiscoveryCandidate, DiscoveryScanResult, DiscoveryScanRun
 from api.services import channel_discovery as cd
 from api.services import discovery_settings as settings
+from api.services.discovery_sources import base as ds_base
+from api.services.discovery_sources import youtube as yt
 
 
 @pytest.fixture
@@ -33,16 +36,26 @@ def engine(tmp_path):
 
 class TestNormalizeKeywordSet:
     def test_order_independent(self):
-        assert cd.normalize_keyword_set(["b", "a"]) == cd.normalize_keyword_set(["a", "b"])
+        assert cd.normalize_keyword_set(["b", "a"], "youtube") == cd.normalize_keyword_set(["a", "b"], "youtube")
 
     def test_case_and_whitespace_insensitive(self):
-        assert cd.normalize_keyword_set([" Funny Drawings "]) == cd.normalize_keyword_set(["funny drawings"])
+        assert cd.normalize_keyword_set([" Funny Drawings "], "youtube") == cd.normalize_keyword_set(
+            ["funny drawings"], "youtube"
+        )
 
     def test_dedupes(self):
-        assert cd.normalize_keyword_set(["a", "a", "b"]) == cd.normalize_keyword_set(["a", "b"])
+        assert cd.normalize_keyword_set(["a", "a", "b"], "youtube") == cd.normalize_keyword_set(
+            ["a", "b"], "youtube"
+        )
 
     def test_blank_entries_ignored(self):
-        assert cd.normalize_keyword_set(["a", "  ", ""]) == cd.normalize_keyword_set(["a"])
+        assert cd.normalize_keyword_set(["a", "  ", ""], "youtube") == cd.normalize_keyword_set(["a"], "youtube")
+
+    def test_all_blank_gives_empty_key(self):
+        assert cd.normalize_keyword_set(["  ", ""], "youtube") == ""
+
+    def test_same_keywords_on_another_platform_is_a_different_scan(self):
+        assert cd.normalize_keyword_set(["a"], "youtube") != cd.normalize_keyword_set(["a"], "tiktok")
 
 
 # ---------- normalize_channel_key --------------------------------------------
@@ -67,75 +80,89 @@ class TestNormalizeChannelKey:
         assert by_handle != by_id
 
 
-# ---------- score_candidate ---------------------------------------------------
+# ---------- scoring -----------------------------------------------------------
+
+
+def channel_data(**kwargs) -> ds_base.ChannelData:
+    """A ChannelData carrying only the fields scoring looks at."""
+    return ds_base.ChannelData(
+        subscriber_count=kwargs.get("subscriber_count", 0),
+        median_view_count=kwargs.get("median_view_count", 0),
+        days_since_last_video=kwargs.get("days_since_last_video", 0.0),
+        cadence_short_days_per_video=kwargs.get("cadence_shorts_days_per_video"),
+        cadence_long_days_per_video=kwargs.get("cadence_videos_days_per_video"),
+        latest_video_posted_at=None,
+        channel_description="",
+        median_duration_seconds=None,
+    )
 
 
 class TestScoreCandidate:
     def test_fresh_frequent_popular_with_shorts_scores_near_max(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=5000,
             median_view_count=1_000_000,
             days_since_last_video=0.5,
             cadence_videos_days_per_video=1.0,
             cadence_shorts_days_per_video=0.5,
         )
-        assert cd.score_candidate(m) >= 95
+        assert ds_base.score(m, single_feed=False) >= 95
 
     def test_stale_channel_scores_low_on_recency(self, engine):
         settings.set_setting("discovery.silent_months", "6")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=5000,
             median_view_count=1000,
             days_since_last_video=179,  # just under the 180-day cutoff
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=None,
         )
-        score = cd.score_candidate(m)
+        score = ds_base.score(m, single_feed=False)
         assert score < 10
 
     def test_no_cadence_contributes_zero(self, engine):
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=0,
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=None,
         )
-        assert cd.score_candidate(m) == 20.0
+        assert ds_base.score(m, single_feed=False) == 20.0
 
     def test_shorts_cadence_at_target_gets_full_45(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=999999,
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=1.0,
         )
-        assert cd.score_candidate(m) == 45.0
+        assert ds_base.score(m, single_feed=False) == 45.0
 
     def test_shorts_cadence_twice_target_gets_half(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=999999,
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=2.0,
         )
-        assert cd.score_candidate(m) == 22.5
+        assert ds_base.score(m, single_feed=False) == 22.5
 
     def test_video_cadence_at_target_gets_full_20(self, engine):
         settings.set_setting("discovery.target_days_per_video", "1")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=999999,
             cadence_videos_days_per_video=1.0,
             cadence_shorts_days_per_video=None,
         )
-        assert cd.score_candidate(m) == 20.0
+        assert ds_base.score(m, single_feed=False) == 20.0
 
     def test_no_shorts_cadence_loses_the_45_bucket_no_fallback(self, engine):
         """A channel with only long-form videos does not get the video
@@ -143,27 +170,27 @@ class TestScoreCandidate:
         signal this tool is meant to prioritize, so a pure long-form
         channel is capped well below one with an active Shorts cadence."""
         settings.set_setting("discovery.target_days_per_video", "1")
-        m = cd.ChannelMetrics(
+        m = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=0,
             cadence_videos_days_per_video=1.0,
             cadence_shorts_days_per_video=None,
         )
-        assert cd.score_candidate(m) == 40.0  # 20 recency + 20 video cadence, 0 shorts
+        assert ds_base.score(m, single_feed=False) == 40.0  # 20 recency + 20 video cadence, 0 shorts
 
     def test_view_count_only_adds_never_subtracts(self, engine):
         """Low view/sub must not be penalized — a viral channel carries
         more copyright-strike risk and should not be favored for it."""
         settings.set_setting("discovery.target_days_per_video", "1")
-        low_view = cd.ChannelMetrics(
+        low_view = channel_data(
             subscriber_count=100,
             median_view_count=0,
             days_since_last_video=0,
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=1.0,
         )
-        assert cd.score_candidate(low_view) == 65.0  # 20 recency + 45 shorts cadence, 0 view
+        assert ds_base.score(low_view, single_feed=False) == 65.0  # 20 recency + 45 shorts cadence, 0 view
 
 
 # ---------- fetch_phase1 -------------------------------------------------------
@@ -176,8 +203,8 @@ class TestFetchPhase1:
             "channel_follower_count": 50,
             "entries": [{"view_count": 10} for _ in range(5)],
         }
-        with patch.object(cd, "_flat_extract", return_value=videos_info) as mocked:
-            result = cd.fetch_phase1("https://www.youtube.com/@tiny")
+        with patch.object(yt, "_flat_extract", return_value=videos_info) as mocked:
+            result = yt.fetch_phase1("https://www.youtube.com/@tiny")
         assert result is None
         assert mocked.call_count == 1
 
@@ -195,8 +222,8 @@ class TestFetchPhase1:
         def fake_flat(url, playlistend=None, lang=None):
             return shorts_info if url.endswith("/shorts") else videos_info
 
-        with patch.object(cd, "_flat_extract", side_effect=fake_flat):
-            result = cd.fetch_phase1("https://www.youtube.com/@channel")
+        with patch.object(yt, "_flat_extract", side_effect=fake_flat):
+            result = yt.fetch_phase1("https://www.youtube.com/@channel")
 
         assert result is not None
         assert result.subscriber_count == 5000
@@ -213,8 +240,8 @@ class TestFetchPhase1:
         def fake_flat(url, playlistend=None, lang=None):
             return None if url.endswith("/videos") else shorts_info
 
-        with patch.object(cd, "_flat_extract", side_effect=fake_flat):
-            result = cd.fetch_phase1("https://www.youtube.com/@shortsonly")
+        with patch.object(yt, "_flat_extract", side_effect=fake_flat):
+            result = yt.fetch_phase1("https://www.youtube.com/@shortsonly")
 
         assert result is not None
         assert result.subscriber_count == 800
@@ -222,8 +249,8 @@ class TestFetchPhase1:
         assert len(result.shorts_entries) == 2
 
     def test_neither_tab_usable_returns_none(self, engine):
-        with patch.object(cd, "_flat_extract", return_value=None):
-            assert cd.fetch_phase1("https://www.youtube.com/@dead") is None
+        with patch.object(yt, "_flat_extract", return_value=None):
+            assert yt.fetch_phase1("https://www.youtube.com/@dead") is None
 
 
 # ---------- fetch_phase2 / cadence + post time --------------------------------
@@ -240,8 +267,8 @@ class TestFetchPhase2:
                 return {"timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()}
             return None
 
-        with patch.object(cd, "_full_extract", side_effect=fake_full):
-            result = cd.fetch_phase2(entries, [])
+        with patch.object(yt, "_full_extract", side_effect=fake_full):
+            result = yt.fetch_phase2(entries, [])
 
         assert result.cadence_videos_days_per_video == pytest.approx(236 / 9, abs=1)
         assert result.cadence_shorts_days_per_video is None
@@ -260,8 +287,8 @@ class TestFetchPhase2:
                 return {"timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()}
             return None
 
-        with patch.object(cd, "_full_extract", side_effect=fake_full):
-            result = cd.fetch_phase2(entries, [])
+        with patch.object(yt, "_full_extract", side_effect=fake_full):
+            result = yt.fetch_phase2(entries, [])
         assert result.cadence_videos_days_per_video is not None
 
     def test_falls_back_to_upload_date_without_timestamp(self, engine):
@@ -274,8 +301,8 @@ class TestFetchPhase2:
                 return {"upload_date": "20260101"}
             return None
 
-        with patch.object(cd, "_full_extract", side_effect=fake_full):
-            result = cd.fetch_phase2(entries, [])
+        with patch.object(yt, "_full_extract", side_effect=fake_full):
+            result = yt.fetch_phase2(entries, [])
         assert result.latest_video_posted_at == datetime(2026, 8, 25, tzinfo=timezone.utc)
 
     def test_both_tabs_get_independent_cadence(self, engine):
@@ -293,31 +320,31 @@ class TestFetchPhase2:
                 return {"timestamp": datetime(2026, 8, 20, tzinfo=timezone.utc).timestamp()}  # fast cadence
             return None
 
-        with patch.object(cd, "_full_extract", side_effect=fake_full):
-            result = cd.fetch_phase2(video_entries, shorts_entries)
+        with patch.object(yt, "_full_extract", side_effect=fake_full):
+            result = yt.fetch_phase2(video_entries, shorts_entries)
         assert result.cadence_videos_days_per_video == pytest.approx(236 / 2, abs=1)
         assert result.cadence_shorts_days_per_video == pytest.approx(4 / 2, abs=1)
         # Recency still comes from whichever tab has the more recent video (videos, here).
         assert result.latest_video_posted_at == datetime(2026, 8, 25, tzinfo=timezone.utc)
 
     def test_no_usable_dates_returns_inf(self, engine):
-        with patch.object(cd, "_full_extract", return_value=None):
-            result = cd.fetch_phase2([{"id": "a"}, {"id": "b"}], [])
+        with patch.object(yt, "_full_extract", return_value=None):
+            result = yt.fetch_phase2([{"id": "a"}, {"id": "b"}], [])
         assert result.days_since_last_video == float("inf")
         assert result.cadence_videos_days_per_video is None
         assert result.cadence_shorts_days_per_video is None
         assert result.latest_video_posted_at is None
 
     def test_fewer_than_two_entries_is_not_usable(self, engine):
-        with patch.object(cd, "_full_extract", return_value={"timestamp": 1}):
-            result = cd.fetch_phase2([{"id": "only-one"}], [])
+        with patch.object(yt, "_full_extract", return_value={"timestamp": 1}):
+            result = yt.fetch_phase2([{"id": "only-one"}], [])
         assert result.cadence_videos_days_per_video is None
 
 
-# ---------- search_channel_candidates -----------------------------------------
+# ---------- search_channels ---------------------------------------------------
 
 
-class TestSearchChannelCandidates:
+class TestSearchChannels:
     def test_dedupes_by_channel_id(self, engine):
         info = {
             "entries": [
@@ -326,14 +353,14 @@ class TestSearchChannelCandidates:
                 {"channel_id": "UC2", "channel_url": "https://www.youtube.com/channel/UC2", "channel": "B"},
             ]
         }
-        with patch.object(cd, "_flat_extract", return_value=info):
-            result = cd.search_channel_candidates("nhảy thiếu nhi", "en")
-        assert len(result) == 2
+        with patch.object(yt, "_flat_extract", return_value=info):
+            result = yt.search_channels(["nhảy thiếu nhi"], "US", "en")
+        assert [c.channel_id for c in result["nhảy thiếu nhi"]] == ["UC1", "UC2"]
 
     def test_entries_missing_channel_fields_are_skipped(self, engine):
         info = {"entries": [{"title": "no channel info"}]}
-        with patch.object(cd, "_flat_extract", return_value=info):
-            assert cd.search_channel_candidates("kw", "en") == []
+        with patch.object(yt, "_flat_extract", return_value=info):
+            assert yt.search_channels(["kw"], "US", "en") == {"kw": []}
 
 
 # ---------- suggest_keywords ----------------------------------------------------
@@ -343,17 +370,17 @@ class TestSuggestKeywords:
     def test_parses_jsonp_response(self, engine):
         raw = '["seed",[["seed suggestion one",0,[512]],["seed suggestion two",0,[512]]]]'
         jsonp = f"window.google.ac.h({raw})"
-        with patch.object(cd, "_http_get_text", return_value=jsonp):
-            result = cd.suggest_keywords("seed", "US", "en")
+        with patch.object(yt, "_http_get_text", return_value=jsonp):
+            result = yt.suggest_keywords("seed", "US", "en")
         assert result == ["seed suggestion one", "seed suggestion two"]
 
     def test_network_failure_returns_empty_list(self, engine):
-        with patch.object(cd, "_http_get_text", return_value=None):
-            assert cd.suggest_keywords("seed", "US", "en") == []
+        with patch.object(yt, "_http_get_text", return_value=None):
+            assert yt.suggest_keywords("seed", "US", "en") == []
 
     def test_malformed_response_returns_empty_list(self, engine):
-        with patch.object(cd, "_http_get_text", return_value="not jsonp at all"):
-            assert cd.suggest_keywords("seed", "US", "en") == []
+        with patch.object(yt, "_http_get_text", return_value="not jsonp at all"):
+            assert yt.suggest_keywords("seed", "US", "en") == []
 
 
 # ---------- run_scan (DB-backed) -----------------------------------------------
@@ -361,7 +388,7 @@ class TestSuggestKeywords:
 
 class TestRunScan:
     def _fake_phase1(self):
-        return cd.Phase1Result(
+        return yt.Phase1Result(
             subscriber_count=5000,
             median_view_count=10000,
             video_entries=[{"id": "v0"}, {"id": "v1"}],
@@ -371,7 +398,7 @@ class TestRunScan:
         )
 
     def _fake_phase2(self):
-        return cd.Phase2Result(
+        return yt.Phase2Result(
             days_since_last_video=1.0,
             cadence_videos_days_per_video=1.0,
             cadence_shorts_days_per_video=0.5,
@@ -384,7 +411,7 @@ class TestRunScan:
 
         with Session(_db.engine) as s:
             run = DiscoveryScanRun(
-                keywords_key=cd.normalize_keyword_set(list(keywords)),
+                keywords_key=cd.normalize_keyword_set(list(keywords), "youtube"),
                 keywords_json=_json.dumps(list(keywords)),
                 market_gl="US",
                 market_hl="en",
@@ -415,11 +442,11 @@ class TestRunScan:
 
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-existing", "channel_url": "https://www.youtube.com/@already-here", "channel_title": "Already Here"},
+            ds_base.ChannelRef("UC-existing", "https://www.youtube.com/@already-here", "Already Here"),
         ]
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1") as mock_p1:
-            summary = cd.run_scan(run_id, ["kw"], "US", "en")
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1") as mock_p1:
+            summary = cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         assert summary.channels_total == 0
         mock_p1.assert_not_called()
@@ -431,6 +458,7 @@ class TestRunScan:
             s.add(
                 DiscoveryCandidate(
                     channel_id="UC-skip",
+                    platform="youtube",
                     channel_url="https://www.youtube.com/@skipme",
                     channel_title="Skip Me",
                     status="skipped",
@@ -440,11 +468,11 @@ class TestRunScan:
 
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-skip", "channel_url": "https://www.youtube.com/@skipme", "channel_title": "Skip Me"},
+            ds_base.ChannelRef("UC-skip", "https://www.youtube.com/@skipme", "Skip Me"),
         ]
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1") as mock_p1:
-            summary = cd.run_scan(run_id, ["kw"], "US", "en")
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1") as mock_p1:
+            summary = cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         assert summary.channels_total == 0
         mock_p1.assert_not_called()
@@ -452,12 +480,12 @@ class TestRunScan:
     def test_new_candidate_is_saved_with_score(self, engine):
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-new", "channel_url": "https://www.youtube.com/@newchannel", "channel_title": "New Channel"},
+            ds_base.ChannelRef("UC-new", "https://www.youtube.com/@newchannel", "New Channel"),
         ]
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \
-             patch.object(cd, "fetch_phase2", return_value=self._fake_phase2()):
-            summary = cd.run_scan(run_id, ["kw"], "US", "en")
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1", return_value=self._fake_phase1()), \
+             patch.object(yt, "fetch_phase2", return_value=self._fake_phase2()):
+            summary = cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         assert summary.channels_total == 1
         assert summary.candidates_found == 1
@@ -481,19 +509,19 @@ class TestRunScan:
     def test_rescanning_replaces_old_results_for_same_run(self, engine):
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-a", "channel_url": "https://www.youtube.com/@a", "channel_title": "A"},
+            ds_base.ChannelRef("UC-a", "https://www.youtube.com/@a", "A"),
         ]
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \
-             patch.object(cd, "fetch_phase2", return_value=self._fake_phase2()):
-            cd.run_scan(run_id, ["kw"], "US", "en")
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1", return_value=self._fake_phase1()), \
+             patch.object(yt, "fetch_phase2", return_value=self._fake_phase2()):
+            cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         search_result_2 = [
-            {"channel_id": "UC-b", "channel_url": "https://www.youtube.com/@b", "channel_title": "B"},
+            ds_base.ChannelRef("UC-b", "https://www.youtube.com/@b", "B"),
         ]
-        with patch.object(cd, "search_channel_candidates", return_value=search_result_2), \
-             patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \
-             patch.object(cd, "fetch_phase2", return_value=self._fake_phase2()):
+        with patch.object(yt, "search_channels", return_value={"kw": search_result_2}), \
+             patch.object(yt, "fetch_phase1", return_value=self._fake_phase1()), \
+             patch.object(yt, "fetch_phase2", return_value=self._fake_phase2()):
             # Simulate the router's "reset" step: real re-scan deletes old
             # results for this run_id before calling run_scan again.
             from sqlmodel import Session, delete
@@ -501,7 +529,7 @@ class TestRunScan:
             with Session(_db.engine) as s:
                 s.exec(delete(DiscoveryScanResult).where(DiscoveryScanResult.scan_run_id == run_id))
                 s.commit()
-            cd.run_scan(run_id, ["kw"], "US", "en")
+            cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         from sqlmodel import Session, select
 
@@ -513,18 +541,18 @@ class TestRunScan:
         settings.set_setting("discovery.silent_months", "6")
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-silent", "channel_url": "https://www.youtube.com/@silentchannel", "channel_title": "Silent"},
+            ds_base.ChannelRef("UC-silent", "https://www.youtube.com/@silentchannel", "Silent"),
         ]
-        silent_phase2 = cd.Phase2Result(
+        silent_phase2 = yt.Phase2Result(
             days_since_last_video=400.0,
             cadence_videos_days_per_video=None,
             cadence_shorts_days_per_video=None,
             latest_video_posted_at=None,
         )
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \
-             patch.object(cd, "fetch_phase2", return_value=silent_phase2):
-            summary = cd.run_scan(run_id, ["kw"], "US", "en")
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1", return_value=self._fake_phase1()), \
+             patch.object(yt, "fetch_phase2", return_value=silent_phase2):
+            summary = cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         assert summary.candidates_found == 0
         assert summary.candidates_rejected == 1
@@ -532,21 +560,21 @@ class TestRunScan:
     def test_progress_callback_invoked(self, engine):
         run_id = self._make_run()
         search_result = [
-            {"channel_id": "UC-p", "channel_url": "https://www.youtube.com/@progresschannel", "channel_title": "P"},
+            ds_base.ChannelRef("UC-p", "https://www.youtube.com/@progresschannel", "P"),
         ]
         calls = []
-        with patch.object(cd, "search_channel_candidates", return_value=search_result), \
-             patch.object(cd, "fetch_phase1", return_value=self._fake_phase1()), \
-             patch.object(cd, "fetch_phase2", return_value=self._fake_phase2()):
-            cd.run_scan(run_id, ["kw"], "US", "en", progress_cb=lambda done, total: calls.append((done, total)))
+        with patch.object(yt, "search_channels", return_value={"kw": search_result}), \
+             patch.object(yt, "fetch_phase1", return_value=self._fake_phase1()), \
+             patch.object(yt, "fetch_phase2", return_value=self._fake_phase2()):
+            cd.run_scan(run_id, "youtube", ["kw"], "US", "en", progress_cb=lambda done, total: calls.append((done, total)))
         assert calls[0] == (0, 1)
         assert calls[-1] == (1, 1)
 
     def test_failure_finalizes_run_as_error_and_reraises(self, engine):
         run_id = self._make_run()
-        with patch.object(cd, "search_channel_candidates", side_effect=RuntimeError("boom")):
+        with patch.object(yt, "search_channels", side_effect=RuntimeError("boom")):
             with pytest.raises(RuntimeError):
-                cd.run_scan(run_id, ["kw"], "US", "en")
+                cd.run_scan(run_id, "youtube", ["kw"], "US", "en")
 
         from sqlmodel import Session
 

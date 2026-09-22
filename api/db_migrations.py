@@ -248,6 +248,44 @@ def apply_schema_patches(engine: Engine) -> None:
                 except Exception:
                     pass
 
+        # Discovery gained a platform (YouTube / TikTok / Douyin). Rows that
+        # predate it are all YouTube, and their keywords_key predates the
+        # platform prefix api.services.channel_discovery.normalize_keyword_set
+        # now produces — without the backfill, re-scanning an old keyword set
+        # would create a second history entry beside the old one instead of
+        # overwriting it.
+        has_scan_runs = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_scan_runs'"
+        ).fetchone()
+        if has_scan_runs:
+            sr_rows = conn.exec_driver_sql("PRAGMA table_info(discovery_scan_runs)").fetchall()
+            if "platform" not in {row[1] for row in sr_rows}:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE discovery_scan_runs ADD COLUMN "
+                        "platform TEXT NOT NULL DEFAULT 'youtube'"
+                    )
+                    conn.exec_driver_sql(
+                        "UPDATE discovery_scan_runs SET keywords_key = 'youtube:' || keywords_key "
+                        "WHERE keywords_key NOT LIKE 'youtube:%'"
+                    )
+                except Exception:
+                    pass
+
+        has_candidates = conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_candidates'"
+        ).fetchone()
+        if has_candidates:
+            dc_rows = conn.exec_driver_sql("PRAGMA table_info(discovery_candidates)").fetchall()
+            if "platform" not in {row[1] for row in dc_rows}:
+                try:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE discovery_candidates ADD COLUMN "
+                        "platform TEXT NOT NULL DEFAULT 'youtube'"
+                    )
+                except Exception:
+                    pass
+
 
 def seed_app_settings(engine: Engine) -> None:
     """Insert default rows into app_settings on first boot. Idempotent."""
@@ -255,7 +293,7 @@ def seed_app_settings(engine: Engine) -> None:
     defaults = (
         ("llm.enabled", "true"),
         ("llm.mode", "cloud"),
-        # Channel discovery (Phase 5) — see api.services.channel_discovery.
+        # Channel discovery — see api.services.channel_discovery.
         ("discovery.min_subscribers", "100"),
         ("discovery.silent_months", "6"),
         ("discovery.target_days_per_video", "1"),

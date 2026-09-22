@@ -97,8 +97,8 @@ def _fake_download(tmp_path, size_bytes=1024):
 
 
 class TestDownloadOnlyRun:
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_no_account_skips_upload(self, mock_upload, mock_download, mock_list, tmp_path):
         mock_list.return_value = [
@@ -123,8 +123,8 @@ class TestDownloadOnlyRun:
         # The caption is the deliverable on this path — it gets pasted by hand.
         assert [v.caption for v in artifacts.videos] == ["T1", "T2"]
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
     def test_registers_and_clears_active_download(
         self, mock_upload, mock_download, mock_list, tmp_path
@@ -154,8 +154,8 @@ class TestDownloadOnlyRun:
         assert seen_during_call["temp_dir"] is not None
         assert pipeline.id not in _active_downloads
 
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     def test_second_tick_dedupes(self, mock_download, mock_list, tmp_path):
         mock_list.return_value = [
             {"id": "v1", "title": "T1", "url": "https://www.youtube.com/watch?v=v1"},
@@ -176,8 +176,8 @@ class TestDownloadOnlyRun:
 
 
 class TestSeenVideoRetention:
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
     def test_purge_keeps_seen_videos(self, mock_download, mock_list, tmp_path):
         """A video still in the channel's top-N must stay deduped forever."""
         from datetime import timedelta

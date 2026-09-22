@@ -4,8 +4,16 @@ Read the module docstring on api.services.channel_discovery first. There is
 no automatic scheduling here — POST /scan-now starts a scan immediately as
 an API background task (mirrors api.routers.downloads' manual-download
 pattern) and returns right away; the webapp polls GET /scan-runs/{id} for
-progress. Every DiscoveryScanRun is keyed by its keyword set, so re-running
-the same set overwrites that same history entry instead of piling up.
+progress. Every DiscoveryScanRun is keyed by its platform + keyword set, so
+re-running the same set overwrites that same history entry instead of
+piling up.
+
+GET /platforms is what the webapp builds its platform picker from, so the
+per-platform differences (two cadences or one, whether the market applies,
+whether candidates can become pipelines) stay defined once, in
+api.services.discovery_sources. A source with SEARCH_ENABLED False is left
+out of that listing and refused a scan, so a platform that cannot currently
+run never appears as a choice.
 """
 from __future__ import annotations
 
@@ -23,6 +31,8 @@ from api.schemas import (
     DiscoveryChannelMarkAddedRequest,
     DiscoveryChannelSkipRequest,
     DiscoveryKeywordSuggestionsResponse,
+    DiscoveryPlatform,
+    DiscoveryPlatformRead,
     DiscoveryScanNowRequest,
     DiscoveryScanNowResponse,
     DiscoveryScanResultRead,
@@ -32,6 +42,7 @@ from api.schemas import (
 )
 from api.services import channel_discovery as cd
 from api.services import discovery_settings as settings
+from api.services import discovery_sources
 
 log = logging.getLogger("api.routers.discovery")
 
@@ -92,21 +103,41 @@ def patch_settings(payload: DiscoverySettingsUpdate):
 # The keyword batch is now purely client-side, cleared on every page load.
 
 
+@router.get("/platforms", response_model=list[DiscoveryPlatformRead])
+def list_platforms():
+    """Only the platforms a scan can actually run on. A parked source stays
+    in the codebase and keeps its history rows readable, but never reaches
+    the picker."""
+    return [
+        DiscoveryPlatformRead(
+            platform=name,
+            single_feed=source.SINGLE_FEED,
+            market_aware=source.MARKET_AWARE,
+            supports_suggestions=source.SUPPORTS_SUGGESTIONS,
+            pipeline_source_type=source.PIPELINE_SOURCE_TYPE,
+        )
+        for name, source in discovery_sources.SOURCES.items()
+        if source.SEARCH_ENABLED
+    ]
+
+
 @router.get("/keyword-suggestions", response_model=DiscoveryKeywordSuggestionsResponse)
-def keyword_suggestions(seed: str, gl: str, hl: str):
-    if not seed.strip():
+def keyword_suggestions(seed: str, gl: str, hl: str, platform: DiscoveryPlatform = "youtube"):
+    if not seed.strip() or not discovery_sources.get(platform).SEARCH_ENABLED:
         return DiscoveryKeywordSuggestionsResponse(suggestions=[])
-    return DiscoveryKeywordSuggestionsResponse(suggestions=cd.suggest_keywords(seed.strip(), gl, hl))
+    return DiscoveryKeywordSuggestionsResponse(
+        suggestions=cd.suggest_keywords(platform, seed.strip(), gl, hl)
+    )
 
 
 # ---------- scan-now + history -------------------------------------------------
 
 
-def _run_scan_background(scan_run_id: int, keywords: list[str], gl: str, hl: str) -> None:
+def _run_scan_background(scan_run_id: int, platform: str, keywords: list[str], gl: str, hl: str) -> None:
     """Background worker — mirrors api.routers.downloads.run_download.
     channel_discovery.run_scan writes its own final status onto the row."""
     try:
-        cd.run_scan(scan_run_id, keywords, gl, hl)
+        cd.run_scan(scan_run_id, platform, keywords, gl, hl)
     except Exception:
         log.exception("discovery scan %d raised", scan_run_id)
 
@@ -115,7 +146,15 @@ def _run_scan_background(scan_run_id: int, keywords: list[str], gl: str, hl: str
 def scan_now(
     payload: DiscoveryScanNowRequest, background: BackgroundTasks, session: Session = Depends(get_session)
 ):
-    keywords_key = cd.normalize_keyword_set(payload.keywords)
+    if not discovery_sources.get(payload.platform).SEARCH_ENABLED:
+        # A client holding a stale platform list would otherwise start a scan
+        # that can only end in an error the user cannot act on.
+        raise HTTPException(
+            status_code=422,
+            detail=f"Nền tảng {payload.platform} chưa quét được từ khóa",
+        )
+
+    keywords_key = cd.normalize_keyword_set(payload.keywords, payload.platform)
     if not keywords_key:
         raise HTTPException(status_code=422, detail="Cần ít nhất 1 từ khóa hợp lệ")
 
@@ -129,6 +168,7 @@ def scan_now(
         run = DiscoveryScanRun(
             keywords_key=keywords_key,
             keywords_json=json.dumps(payload.keywords),
+            platform=payload.platform,
             market_gl=payload.market_gl,
             market_hl=payload.market_hl,
             status="running",
@@ -137,6 +177,7 @@ def scan_now(
     else:
         run = existing
         run.keywords_json = json.dumps(payload.keywords)
+        run.platform = payload.platform
         run.market_gl = payload.market_gl
         run.market_hl = payload.market_hl
         run.started_at = now_utc()
@@ -151,7 +192,9 @@ def scan_now(
     session.commit()
     session.refresh(run)
 
-    background.add_task(_run_scan_background, run.id, payload.keywords, payload.market_gl, payload.market_hl)
+    background.add_task(
+        _run_scan_background, run.id, payload.platform, payload.keywords, payload.market_gl, payload.market_hl
+    )
     return DiscoveryScanNowResponse(scan_run_id=run.id, status="running")
 
 
@@ -189,6 +232,7 @@ def delete_scan_run(scan_run_id: int, session: Session = Depends(get_session)):
 def _to_run_read(row: DiscoveryScanRun) -> DiscoveryScanRunRead:
     return DiscoveryScanRunRead(
         id=row.id,
+        platform=row.platform,
         keywords=json.loads(row.keywords_json),
         market_gl=row.market_gl,
         market_hl=row.market_hl,
@@ -258,7 +302,10 @@ def skip_channel(channel_id: str, payload: DiscoveryChannelSkipRequest, session:
     row = session.exec(select(DiscoveryCandidate).where(DiscoveryCandidate.channel_id == channel_id)).first()
     if row is None:
         row = DiscoveryCandidate(
-            channel_id=channel_id, channel_url=payload.channel_url, channel_title=payload.channel_title
+            channel_id=channel_id,
+            platform=payload.platform,
+            channel_url=payload.channel_url,
+            channel_title=payload.channel_title,
         )
     row.status = "skipped"
     row.updated_at = now_utc()
@@ -277,7 +324,10 @@ def mark_channel_added(
     row = session.exec(select(DiscoveryCandidate).where(DiscoveryCandidate.channel_id == channel_id)).first()
     if row is None:
         row = DiscoveryCandidate(
-            channel_id=channel_id, channel_url=payload.channel_url, channel_title=payload.channel_title
+            channel_id=channel_id,
+            platform=payload.platform,
+            channel_url=payload.channel_url,
+            channel_title=payload.channel_title,
         )
     row.status = "added"
     row.added_pipeline_id = payload.pipeline_id

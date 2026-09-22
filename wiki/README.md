@@ -18,6 +18,9 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 12. [Lấy Telegram Chat ID (Bot API)](how_to_get_telegram_chat_id.md) — token, `getUpdates`, group/channel
 13. [Settings — LLM caption rewrite](12-settings.md) — toggle global, CRUD model (Gemini/OpenAI/Grok/Azure), secret key, SSRF guard, validation `{ai_title}`
 14. [Douyin Pipeline](13-douyin-pipeline.md) — source_type=douyin, DouyinCookie, vendor subprocess, dedup aweme_id, anti-bot, vận hành
+15. [Bối cảnh OSS](14-oss-landscape.md) — thư viện nào tải/list/tìm được gì trên YouTube/TikTok/Douyin, chạy thật hỏng ở đâu, cách đo lại
+16. [Tìm kênh theo từ khóa](15-discovery.md) — bảng tính năng 3 nền tảng, cơ chế gợi ý + tìm, cách chấm điểm, lỗi hay gặp
+17. [Lịch đăng nguồn TikTok](16-tiktok-pipeline.md) — source_type=tiktok, dùng chung tick với YouTube, giới hạn đã biết
 
 ## Quick reference
 
@@ -29,12 +32,17 @@ Tài liệu nghiệp vụ + vận hành. Đọc theo thứ tự nếu lần đ�
 | Cập nhật code / tránh image cũ | `make start` — [03-setup-docker](03-setup-docker.md) |
 | Thêm account mới | [05-accounts](05-accounts.md) |
 | Pipeline kênh YouTube → TikTok lặp lại | [07-schedules](07-schedules.md) |
+| Pipeline kênh TikTok → TikTok | [16-tiktok-pipeline](16-tiktok-pipeline.md) |
 | Pipeline kênh Douyin → TikTok | [13-douyin-pipeline](13-douyin-pipeline.md) |
 | Xem lịch sử upload (pipeline) + filter (`/histories`) | [08-videos](08-videos.md) |
 | Dev Docker hot-reload (override) | [09-operations](09-operations.md) § Dev với override |
 | Debug khi UI lỗi | [09-operations](09-operations.md) |
 | Hiểu vì sao có 4 fix tiktok.py | [10-known-bugs](10-known-bugs.md) |
 | Mở rộng SaaS | [11-roadmap](11-roadmap.md) |
+| Quét từ khóa tìm kênh mới (YouTube/TikTok/Douyin) | [15-discovery](15-discovery.md) |
+| Biết nền tảng nào gợi ý được từ khóa, nền tảng nào cần cookie | [15-discovery](15-discovery.md) |
+| Cân nhắc dùng thư viện OSS thay cho code tự viết | [14-oss-landscape](14-oss-landscape.md) |
+| Biết vì sao TikTok search phải mở browser | [14-oss-landscape](14-oss-landscape.md) |
 | Lấy `chat_id` số cho Telegram (pipeline) | [how_to_get_telegram_chat_id](how_to_get_telegram_chat_id.md) |
 | Cấu hình LLM rewrite caption (Gemini/OpenAI/Grok/Azure) | [12-settings](12-settings.md) |
 | Setup Azure OpenAI / Foundry model | [12-settings § Provider matrix](12-settings.md#4-provider-matrix) |

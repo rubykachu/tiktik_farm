@@ -45,6 +45,7 @@ from api.schemas import (
 from api.services.caption import template_uses_ai_title, template_uses_ai_title_hashtag
 from api.services.llm_config import get_default_llm_model, get_llm_mode, is_llm_enabled
 from api.services.local_time import local_day, sqlite_day_offset
+from api.services.tiktok_validate import is_tiktok_url
 from api.services.youtube_validate import is_youtube_url
 
 
@@ -291,6 +292,11 @@ def update_pipeline(
             raise HTTPException(
                 status_code=422,
                 detail=[{"loc": ["body", "channel_url"], "msg": "channel_url must point to a YouTube domain", "type": "value_error"}],
+            )
+        if row.source_type == "tiktok" and not is_tiktok_url(payload.channel_url):
+            raise HTTPException(
+                status_code=422,
+                detail=[{"loc": ["body", "channel_url"], "msg": "channel_url must point to a TikTok domain", "type": "value_error"}],
             )
         if row.source_type == "douyin" and not is_douyin_url(payload.channel_url):
             raise HTTPException(

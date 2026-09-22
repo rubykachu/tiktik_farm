@@ -81,8 +81,8 @@ def _default_llm(s):
 
 class TestOfflineMode:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_mode_calls_rewrite_title_offline(
@@ -107,8 +107,8 @@ class TestOfflineMode:
         mock_cloud.assert_not_called()
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_mode_uses_env_model_and_url(
@@ -134,8 +134,8 @@ class TestOfflineMode:
         assert kw["base_url"] == "http://localhost:11434"
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_failure_falls_back_to_raw_title(
         self, mock_offline, mock_list, mock_download, mock_upload
@@ -162,8 +162,8 @@ class TestOfflineMode:
             assert up.rendered_caption.startswith("raw-title")
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_cloud_mode_does_not_call_offline(
@@ -186,8 +186,8 @@ class TestOfflineMode:
         mock_cloud.assert_called_once()
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_offline_skipped_when_llm_disabled(
         self, mock_offline, mock_list, mock_download, mock_upload
@@ -211,8 +211,8 @@ class TestOfflineMode:
 
 class TestOfflineModeEdgeCases:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title_offline")
     def test_empty_offline_response_falls_back_to_raw_title(
         self, mock_offline, mock_list, mock_download, mock_upload

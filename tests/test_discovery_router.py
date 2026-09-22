@@ -79,6 +79,32 @@ class TestPatchSettings:
         assert r.status_code == 403
 
 
+class TestListPlatforms:
+    def test_lists_runnable_platforms_with_their_capabilities(self, client):
+        r = client.get("/api/discovery/platforms", headers=HEADERS_OK)
+        assert r.status_code == 200, r.text
+        by_name = {p["platform"]: p for p in r.json()}
+        assert set(by_name) == {"youtube", "tiktok"}
+        assert by_name["youtube"]["single_feed"] is False
+        assert by_name["tiktok"]["single_feed"] is True
+        assert by_name["tiktok"]["pipeline_source_type"] == "tiktok"
+
+    def test_parked_platform_is_left_out(self, client):
+        """Douyin refuses keyword search without a logged-in session, so it
+        must not appear as a choice — offering one that always fails is
+        worse than not offering it."""
+        r = client.get("/api/discovery/platforms", headers=HEADERS_OK)
+        assert "douyin" not in {p["platform"] for p in r.json()}
+
+    def test_a_parked_platform_still_exists_in_the_registry(self):
+        """Parked, not deleted: its history rows stay readable and turning
+        it back on is one flag."""
+        from api.services import discovery_sources
+
+        assert "douyin" in discovery_sources.SOURCES
+        assert discovery_sources.get("douyin").SEARCH_ENABLED is False
+
+
 class TestKeywordSuggestions:
     def test_calls_service_with_given_market(self, client):
         with patch.object(cd, "suggest_keywords", return_value=["a", "b"]) as mock_suggest:
@@ -89,7 +115,7 @@ class TestKeywordSuggestions:
             )
         assert r.status_code == 200
         assert r.json() == {"suggestions": ["a", "b"]}
-        mock_suggest.assert_called_once_with("kids dance", "JP", "ja")
+        mock_suggest.assert_called_once_with("youtube", "kids dance", "JP", "ja")
 
     def test_blank_seed_returns_empty_without_calling_service(self, client):
         with patch.object(cd, "suggest_keywords") as mock_suggest:
@@ -103,6 +129,47 @@ class TestKeywordSuggestions:
 
 
 class TestScanNow:
+    def test_platform_is_passed_through(self, client):
+        with patch.object(cd, "run_scan") as mock_run:
+            r = client.post(
+                "/api/discovery/scan-now",
+                json={"platform": "tiktok", "keywords": ["kw"], "market_gl": "US", "market_hl": "en"},
+                headers=HEADERS_OK,
+            )
+        assert r.status_code == 200, r.text
+        assert mock_run.call_args.args[1:] == ("tiktok", ["kw"], "US", "en")
+
+    def test_parked_platform_is_refused(self, client):
+        r = client.post(
+            "/api/discovery/scan-now",
+            json={"platform": "douyin", "keywords": ["kw"], "market_gl": "CN", "market_hl": "zh-CN"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+        assert "douyin" in r.text
+
+    def test_unknown_platform_is_rejected(self, client):
+        r = client.post(
+            "/api/discovery/scan-now",
+            json={"platform": "vimeo", "keywords": ["kw"], "market_gl": "US", "market_hl": "en"},
+            headers=HEADERS_OK,
+        )
+        assert r.status_code == 422
+
+    def test_same_keywords_on_two_platforms_are_separate_runs(self, client):
+        with patch.object(cd, "run_scan"):
+            first = client.post(
+                "/api/discovery/scan-now",
+                json={"platform": "youtube", "keywords": ["kw"], "market_gl": "US", "market_hl": "en"},
+                headers=HEADERS_OK,
+            ).json()
+            second = client.post(
+                "/api/discovery/scan-now",
+                json={"platform": "tiktok", "keywords": ["kw"], "market_gl": "US", "market_hl": "en"},
+                headers=HEADERS_OK,
+            ).json()
+        assert first["scan_run_id"] != second["scan_run_id"]
+
     def test_starts_a_scan(self, client):
         with patch.object(cd, "run_scan") as mock_run:
             r = client.post(
@@ -114,7 +181,7 @@ class TestScanNow:
         body = r.json()
         assert body["status"] == "running"
         mock_run.assert_called_once()
-        assert mock_run.call_args.args[1:] == (["kw"], "US", "en")
+        assert mock_run.call_args.args[1:] == ("youtube", ["kw"], "US", "en")
 
     def test_rejects_more_than_five_keywords(self, client):
         r = client.post(

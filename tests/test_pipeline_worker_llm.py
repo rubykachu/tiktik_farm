@@ -101,8 +101,8 @@ def _default_llm(s):
 
 class TestLLMRewriteHappy:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_rewrite_called_once_per_video_across_accounts(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -137,8 +137,8 @@ class TestLLMRewriteHappy:
         assert captions["v2"].startswith("AI-raw2")
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_description_forwarded_to_llm(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -168,8 +168,8 @@ class TestLLMRewriteHappy:
         )
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_transcript_forwarded_to_llm(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -197,8 +197,8 @@ class TestLLMRewriteHappy:
 
 class TestLLMRewriteFallback:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_llm_call_failed_falls_back_to_raw_title(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -230,8 +230,8 @@ class TestLLMRewriteFallback:
             assert up.rendered_caption.startswith("raw-title")
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_no_llm_call_when_template_has_no_ai_title(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -254,8 +254,8 @@ class TestLLMRewriteFallback:
         mock_rewrite.assert_not_called()
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_no_llm_when_no_default_model_set(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -282,8 +282,8 @@ class TestLLMRewriteFallback:
             assert up.rendered_caption.startswith("raw")
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_no_llm_when_globally_disabled(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -312,8 +312,8 @@ class TestLLMRewriteFallback:
 
 class TestChannelDescriptionForwarding:
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_channel_description_forwarded_to_llm(
         self, mock_rewrite, mock_list, mock_download, mock_upload
@@ -340,8 +340,8 @@ class TestChannelDescriptionForwarding:
         assert call_kwargs.get("channel_description") == "food review channel from China"
 
     @patch("scheduler.pipeline_worker.tiktok_adapter.upload_from_options")
-    @patch("scheduler.pipeline_worker.youtube_channel.download")
-    @patch("scheduler.pipeline_worker.youtube_channel.list_top_n")
+    @patch("api.services.youtube_channel.download")
+    @patch("api.services.youtube_channel.list_top_n")
     @patch("api.services.llm_rewrite.llm.rewrite_title")
     def test_null_channel_description_forwarded_as_empty_string(
         self, mock_rewrite, mock_list, mock_download, mock_upload

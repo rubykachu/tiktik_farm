@@ -38,9 +38,9 @@ from api.services import (
     account_fields,
     douyin_channel,
     manual_download,
+    pipeline_sources,
     telegram,
     tiktok_adapter,
-    youtube_channel,
 )
 from api.services import secrets
 from api.services.llm_rewrite import rewrite_with_llm as _rewrite_with_llm
@@ -728,8 +728,8 @@ class _SourceItem:
 # Douyin is out of scope: its downloader is a vendored subprocess with a
 # different process shape, not an ffmpeg mux we can target by temp dir.
 #
-# _active_downloads tracks, per pipeline, the temp_dir of whatever YouTube
-# video is downloading right now — set right before youtube_channel.download()
+# _active_downloads tracks, per pipeline, the temp_dir of whatever video is
+# downloading right now — set right before the source module's download()
 # and cleared right after, success or failure. check_cancel_requests() (called
 # from the scheduler's poll loop, scheduler/worker.py) reads this to find the
 # right ffmpeg process to kill when an admin requests a cancel.
@@ -822,7 +822,7 @@ def _split_seen(
     return fresh, skipped
 
 
-def _download_youtube_only(
+def _download_without_upload(
     pipeline: ChannelPipeline,
     run_id: int,
     videos: list[dict],
@@ -833,10 +833,11 @@ def _download_youtube_only(
     Returns (successfully downloaded items, already-seen count). Download
     failures are logged and dropped so one bad video does not abort the tick.
     """
+    source = pipeline_sources.get(pipeline.source_type)
     candidates = [
         _SourceItem(
             source_key=v["id"],
-            source_url=v.get("url", f"https://www.youtube.com/watch?v={v['id']}"),
+            source_url=v.get("url") or source.video_url(v["id"]),
             title=v.get("title", ""),
         )
         for v in videos
@@ -855,10 +856,10 @@ def _download_youtube_only(
             artifacts.cleanup_paths.append(temp_dir)
         _register_active_download(pipeline.id, temp_dir)  # type: ignore[arg-type]
         try:
-            download_path, description, transcript = youtube_channel.download(
+            download_path, description, transcript = source.download(
                 video_url, temp_dir, pipeline.max_duration_seconds
             )
-        except youtube_channel.VideoTooLong:
+        except source.VideoTooLong:
             log.info("Skipping %s — longer than max_duration_seconds", video_url)
             if artifacts is None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -979,9 +980,10 @@ def run_pipeline(
         return _get_run(run_id)
 
     # List top-N videos
+    source = pipeline_sources.get(pipeline.source_type)
     _update_run_status(run_id, f"Fetching video list (up to {pipeline.fetch_count})…")
     try:
-        videos = youtube_channel.list_top_n(
+        videos = source.list_top_n(
             pipeline.channel_url, pipeline.fetch_count,
             sync_from_date=pipeline.sync_from_date,
         )
@@ -1002,7 +1004,7 @@ def run_pipeline(
     upload_opts: dict = json.loads(pipeline.upload_options_json)
 
     if not account_ids:
-        fresh, skipped_dup_count = _download_youtube_only(
+        fresh, skipped_dup_count = _download_without_upload(
             pipeline, run_id, videos, artifacts
         )
         _finalize_download_only(
@@ -1021,7 +1023,7 @@ def run_pipeline(
     for vi, video in enumerate(videos):
         video_id = video["id"]
         video_title = video.get("title", "")
-        video_url = video.get("url", f"https://www.youtube.com/watch?v={video_id}")
+        video_url = video.get("url") or source.video_url(video_id)
 
         # Lazy download — only when at least one account needs upload
         download_path: Optional[str] = None
@@ -1048,7 +1050,7 @@ def run_pipeline(
                     )
                     _register_active_download(pipeline.id, temp_dir)  # type: ignore[arg-type]
                     try:
-                        download_path, description, transcript = youtube_channel.download(
+                        download_path, description, transcript = source.download(
                             video_url, temp_dir, pipeline.max_duration_seconds
                         )
                         if artifacts is not None:
@@ -1057,7 +1059,7 @@ def run_pipeline(
                                 source_url=video_url,
                                 title=video_title,
                             ))
-                    except youtube_channel.VideoTooLong:
+                    except source.VideoTooLong:
                         skipped_exhausted_count += 1
                         break  # skip all accounts for this video
                     except Exception as e:

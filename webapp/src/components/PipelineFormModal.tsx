@@ -17,7 +17,7 @@ import { useTelegramChatName } from "../hooks/useTelegramChatName";
 
 const baseSchema = z.object({
   name: z.string().min(1, "Bắt buộc nhập").max(128),
-  source_type: z.enum(["youtube", "douyin"]).default("youtube"),
+  source_type: z.enum(["youtube", "tiktok", "douyin"]).default("youtube"),
   douyin_cookie_id: z.number().nullable().optional(),
   channel_url: z.string().min(1, "Bắt buộc nhập"),
   interval_value: z.coerce.number().int().min(1),
@@ -65,6 +65,16 @@ function buildSchema(existingTokenSet: boolean) {
         } catch { return false; }
       },
       { message: "Phải là URL YouTube (vd: https://youtube.com/@channel)", path: ["channel_url"] }
+    )
+    .refine(
+      (d) => {
+        if (d.source_type !== "tiktok") return true;
+        try {
+          const u = new URL(d.channel_url);
+          return ["tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"].includes(u.hostname);
+        } catch { return false; }
+      },
+      { message: "Phải là URL TikTok (vd: https://www.tiktok.com/@creator)", path: ["channel_url"] }
     )
     .refine(
       (d) => {
@@ -153,6 +163,7 @@ type FormData = z.infer<typeof baseSchema>;
 // only filled in when the scan actually found the underlying data.
 export type PipelinePrefill = {
   channel_url: string;
+  source_type?: "youtube" | "tiktok" | "douyin";
   name?: string;
   channel_description?: string;
   fetch_count?: number;
@@ -316,7 +327,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
     mode: "onSubmit",
     defaultValues: {
       name: "",
-      source_type: "youtube" as "youtube" | "douyin",
+      source_type: "youtube" as "youtube" | "tiktok" | "douyin",
       douyin_cookie_id: null,
       channel_url: "",
       interval_value: 1,
@@ -351,7 +362,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
       setMultipleRuns(!!pipeline.window_end_time);
       reset({
         name: pipeline.name,
-        source_type: (pipeline.source_type ?? "youtube") as "youtube" | "douyin",
+        source_type: (pipeline.source_type ?? "youtube") as "youtube" | "tiktok" | "douyin",
         douyin_cookie_id: pipeline.douyin_cookie_id ?? null,
         channel_url: pipeline.channel_url,
         interval_value: pipeline.interval_unit === "hours" ? 1 : pipeline.interval_value,
@@ -381,6 +392,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
       reset({
         ...NEW_PIPELINE_DEFAULTS,
         channel_url: prefill?.channel_url ?? "",
+        source_type: prefill?.source_type ?? NEW_PIPELINE_DEFAULTS.source_type,
         name: prefill?.name ?? NEW_PIPELINE_DEFAULTS.name,
         channel_description: prefill?.channel_description ?? NEW_PIPELINE_DEFAULTS.channel_description,
         fetch_count: prefill?.fetch_count ?? NEW_PIPELINE_DEFAULTS.fetch_count,
@@ -791,6 +803,7 @@ export default function PipelineFormModal({ open, pipeline, onClose, prefill, on
                   <label className="label-required">Nguồn video</label>
                   <select className="input" {...register("source_type")}>
                     <option value="youtube">YouTube</option>
+                    <option value="tiktok">TikTok</option>
                     <option value="douyin">Douyin</option>
                   </select>
                 </div>

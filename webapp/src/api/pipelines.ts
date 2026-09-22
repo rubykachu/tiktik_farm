@@ -17,7 +17,7 @@ export interface Pipeline {
   last_run: PipelineLastRun | null;
   name: string;
   channel_url: string;
-  source_type: "youtube" | "douyin";
+  source_type: "youtube" | "tiktok" | "douyin";
   fetch_count: number;
   interval_value: number;
   interval_unit: "minutes" | "hours" | "days";
@@ -50,7 +50,7 @@ export interface Pipeline {
 export interface PipelineCreate {
   name: string;
   channel_url: string;
-  source_type?: "youtube" | "douyin";
+  source_type?: "youtube" | "tiktok" | "douyin";
   douyin_cookie_id?: number | null;
   fetch_count: number;
   interval_value: number;
