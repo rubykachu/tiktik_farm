@@ -1,4 +1,8 @@
-"""Tests for api/services/youtube_channel.py — mocked yt-dlp."""
+"""Tests for api/services/youtube_channel.py — mocked yt-dlp.
+
+yt-dlp is patched in api.services.ytdlp_source, which is where the calls
+live; youtube_channel adds the YouTube-only parts around them.
+"""
 import os
 from datetime import date
 import pytest
@@ -17,7 +21,7 @@ VALID_VIDEO = "https://www.youtube.com/watch?v=abc123"
 
 
 class TestListTopN:
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_happy_path(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -35,7 +39,7 @@ class TestListTopN:
         assert result[0] == {"id": "vid1", "title": "First", "url": "https://www.youtube.com/watch?v=vid1"}
         mock_ydl.extract_info.assert_called_once_with(VALID_CHANNEL, download=False)
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_empty_channel(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -45,7 +49,7 @@ class TestListTopN:
         result = list_top_n(VALID_CHANNEL, 5)
         assert result == []
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_none_result(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -59,7 +63,7 @@ class TestListTopN:
         with pytest.raises(ValueError, match="Not a valid YouTube URL"):
             list_top_n("https://evil.com/videos", 3)
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_limits_to_n(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -71,7 +75,7 @@ class TestListTopN:
         result = list_top_n(VALID_CHANNEL, 2)
         assert len(result) == 2
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_sync_from_date_adds_dateafter(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -83,7 +87,7 @@ class TestListTopN:
         opts = mock_ydl_cls.call_args[0][0]
         assert opts["dateafter"] == "20250115"
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_no_sync_from_date_omits_dateafter(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -95,7 +99,7 @@ class TestListTopN:
         opts = mock_ydl_cls.call_args[0][0]
         assert "dateafter" not in opts
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_fallback_url_construction(self, mock_ydl_cls):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -109,7 +113,7 @@ class TestListTopN:
 
 
 class TestDownload:
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_happy_path(self, mock_ydl_cls, tmp_path):
         out_file = str(tmp_path / "abc123.mp4")
         open(out_file, "w").close()
@@ -129,7 +133,7 @@ class TestDownload:
         with pytest.raises(ValueError, match="Not a valid YouTube URL"):
             download("https://evil.com/video.mp4", str(tmp_path))
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_none_result_raises(self, mock_ydl_cls, tmp_path):
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -140,7 +144,7 @@ class TestDownload:
         with pytest.raises(DownloadError, match="no info"):
             download(VALID_VIDEO, str(tmp_path))
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_max_duration_sets_opts(self, mock_ydl_cls, tmp_path):
         out_file = str(tmp_path / "abc123.mp4")
         open(out_file, "w").close()
@@ -156,7 +160,7 @@ class TestDownload:
         init_call = mock_ydl_cls.call_args[0][0] if mock_ydl_cls.call_args[0] else mock_ydl_cls.call_args[1]
         assert "match_filter" in init_call or True  # opts checked via constructor
 
-    @patch("api.services.youtube_channel.yt_dlp.YoutubeDL")
+    @patch("api.services.ytdlp_source.yt_dlp.YoutubeDL")
     def test_video_too_long_raises(self, mock_ydl_cls, tmp_path):
         import yt_dlp as real_yt_dlp
 
